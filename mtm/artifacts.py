@@ -6,43 +6,69 @@ from pathlib import Path
 from runpy import run_path
 
 from .compiled_band import EncodedBand
-from .tape_encoding import Encoding
 from .raw_tm import RawTM
+from .semantic_objects import TMAbi, UTMEncodingArtifact, encoded_band_from_utm_artifact, start_head_from_encoded_band, utm_artifact_from_band
+from .tape_encoding import Encoding
 
 
 def _literal(value) -> str:
     return repr(value)
 
 
-def band_start_head(band: EncodedBand) -> int:
-    left_addresses = list(range(-len(band.left_band), 0))
-    return left_addresses[band.left_band.index("#CUR_STATE")]
+def _abi_literal(abi: TMAbi) -> dict[str, object]:
+    return {
+        "state_width": abi.state_width,
+        "symbol_width": abi.symbol_width,
+        "dir_width": abi.dir_width,
+        "grammar_version": abi.grammar_version,
+        "family_label": abi.family_label,
+    }
 
 
-def write_utm(path: str | Path, band: EncodedBand) -> None:
+def _load_abi(namespace: dict[str, object], name: str, *, fallback_encoding: Encoding) -> TMAbi:
+    data = namespace.get(name)
+    if data is None:
+        return TMAbi(
+            state_width=fallback_encoding.state_width,
+            symbol_width=fallback_encoding.symbol_width,
+            dir_width=fallback_encoding.direction_width,
+            family_label=f"U[Wq={fallback_encoding.state_width},Ws={fallback_encoding.symbol_width},Wd={fallback_encoding.direction_width}]",
+        )
+    return TMAbi(
+        state_width=data["state_width"],
+        symbol_width=data["symbol_width"],
+        dir_width=data["dir_width"],
+        grammar_version=data.get("grammar_version", "mtm-v1"),
+        family_label=data.get("family_label", ""),
+    )
+
+
+def write_utm_artifact(path: str | Path, artifact: UTMEncodingArtifact) -> None:
     path = Path(path)
     encoding = {
-        "state_ids": band.encoding.state_ids,
-        "symbol_ids": band.encoding.symbol_ids,
-        "direction_ids": band.encoding.direction_ids,
-        "state_width": band.encoding.state_width,
-        "symbol_width": band.encoding.symbol_width,
-        "direction_width": band.encoding.direction_width,
-        "blank": band.encoding.blank,
-        "initial_state": band.encoding.initial_state,
-        "halt_state": band.encoding.halt_state,
+        "state_ids": artifact.encoding.state_ids,
+        "symbol_ids": artifact.encoding.symbol_ids,
+        "direction_ids": artifact.encoding.direction_ids,
+        "state_width": artifact.encoding.state_width,
+        "symbol_width": artifact.encoding.symbol_width,
+        "direction_width": artifact.encoding.direction_width,
+        "blank": artifact.encoding.blank,
+        "initial_state": artifact.encoding.initial_state,
+        "halt_state": artifact.encoding.halt_state,
     }
     text = "\n".join([
         "format = 'mtm-outer-band-v1'",
-        f"start_head = {band_start_head(band)!r}",
+        f"start_head = {artifact.start_head!r}",
         f"encoding = {_literal(encoding)}",
-        f"left_band = {_literal(band.left_band)}",
-        f"right_band = {_literal(band.right_band)}",
+        f"left_band = {_literal(list(artifact.left_band))}",
+        f"right_band = {_literal(list(artifact.right_band))}",
+        f"target_abi = {_literal(_abi_literal(artifact.target_abi))}",
+        f"minimal_abi = {_literal(_abi_literal(artifact.minimal_abi))}",
     ])
     path.write_text(text + "\n")
 
 
-def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
+def read_utm_artifact(path: str | Path) -> UTMEncodingArtifact:
     namespace = run_path(str(path))
     encoding_data = namespace["encoding"]
     encoding = Encoding(
@@ -56,8 +82,27 @@ def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
         initial_state=encoding_data["initial_state"],
         halt_state=encoding_data["halt_state"],
     )
-    left_band, right_band = namespace["left_band"], namespace["right_band"]
-    return EncodedBand(encoding, left_band, right_band), namespace["start_head"]
+    return UTMEncodingArtifact(
+        encoding=encoding,
+        left_band=tuple(namespace["left_band"]),
+        right_band=tuple(namespace["right_band"]),
+        start_head=namespace["start_head"],
+        target_abi=_load_abi(namespace, "target_abi", fallback_encoding=encoding),
+        minimal_abi=_load_abi(namespace, "minimal_abi", fallback_encoding=encoding),
+    )
+
+
+def band_start_head(band: EncodedBand) -> int: return start_head_from_encoded_band(band)
+
+
+def write_utm(path: str | Path, band_or_artifact: EncodedBand | UTMEncodingArtifact) -> None:
+    artifact = band_or_artifact if isinstance(band_or_artifact, UTMEncodingArtifact) else utm_artifact_from_band(band_or_artifact)
+    write_utm_artifact(path, artifact)
+
+
+def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
+    artifact = read_utm_artifact(path)
+    return encoded_band_from_utm_artifact(artifact), artifact.start_head
 
 
 def write_tm(path: str | Path, tm: RawTM) -> None:
@@ -84,4 +129,12 @@ def read_tm(path: str | Path) -> RawTM:
     )
 
 
-__all__ = ["band_start_head", "read_tm", "read_utm", "write_tm", "write_utm"]
+__all__ = [
+    "band_start_head",
+    "read_tm",
+    "read_utm",
+    "read_utm_artifact",
+    "write_tm",
+    "write_utm",
+    "write_utm_artifact",
+]

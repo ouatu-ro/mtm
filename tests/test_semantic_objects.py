@@ -2,10 +2,14 @@ from mtm import (
     TMAbi,
     TMBand,
     decoded_view_from_encoded_band,
+    encoded_band_from_utm_artifact,
+    read_utm,
+    read_utm_artifact,
     load_fixture,
     source_band_from_simulated_tape,
     utm_artifact_from_band,
     utm_encoded_from_band,
+    write_utm_artifact,
 )
 
 
@@ -27,6 +31,7 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     minimal_abi = TMAbi(2, 2, 1, "mtm-v1", "incrementer-min")
     encoded = utm_encoded_from_band(band, minimal_abi=minimal_abi)
     artifact = utm_artifact_from_band(band, minimal_abi=minimal_abi)
+    round_tripped_band = encoded_band_from_utm_artifact(artifact)
 
     assert encoded.current_state == "qFindMargin"
     assert encoded.simulated_head == 0
@@ -37,6 +42,24 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     assert artifact.left_band[0] == "#REGS"
     assert artifact.right_band[0] == "#TAPE"
     assert artifact.start_head < 0
+    assert round_tripped_band.left_band == band.left_band
+    assert round_tripped_band.right_band == band.right_band
+
+
+def test_utm_artifact_round_trip(tmp_path) -> None:
+    band = load_fixture("incrementer").build_band()
+    artifact = utm_artifact_from_band(band)
+    path = tmp_path / "incrementer.utm"
+
+    write_utm_artifact(path, artifact)
+
+    loaded = read_utm_artifact(path)
+    legacy_band, start_head = read_utm(path)
+
+    assert loaded == artifact
+    assert loaded.to_encoded_band() == band
+    assert legacy_band == band
+    assert start_head == artifact.start_head
 
 
 def test_source_band_helper() -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 from runpy import run_path
 
 from .fixtures import TMFixture
+from .semantic_objects import TMBand, TMInstance
 from .tape_encoding import L, R
 
 
@@ -41,4 +42,13 @@ def load_python_tm(path: str | Path) -> TMFixture:
     )
 
 
-__all__ = ["load_python_tm"]
+def load_python_tm_instance(path: str | Path) -> TMInstance:
+    fixture = load_python_tm(path)
+    cells = tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right)
+    return TMInstance(
+        program=fixture.tm_program,
+        band=TMBand(cells=cells, head=fixture.blanks_left, blank=fixture.blank),
+    )
+
+
+__all__ = ["load_python_tm", "load_python_tm_instance"]

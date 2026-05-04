@@ -103,6 +103,9 @@ class UTMEncodingArtifact:
     target_abi: TMAbi
     minimal_abi: TMAbi
 
+    def to_encoded_band(self) -> EncodedBand:
+        return encoded_band_from_utm_artifact(self)
+
 
 @dataclass(frozen=True)
 class RawTMConfig:
@@ -193,6 +196,10 @@ def utm_artifact_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = Non
     )
 
 
+def encoded_band_from_utm_artifact(artifact: UTMEncodingArtifact) -> EncodedBand:
+    return EncodedBand(artifact.encoding, list(artifact.left_band), list(artifact.right_band))
+
+
 __all__ = [
     "AbiRequirement",
     "DecodedBandView",
@@ -207,6 +214,7 @@ __all__ = [
     "UTMSimulatedTape",
     "abi_from_encoding",
     "decoded_view_from_encoded_band",
+    "encoded_band_from_utm_artifact",
     "source_band_from_simulated_tape",
     "start_head_from_encoded_band",
     "utm_artifact_from_band",

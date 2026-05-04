@@ -2,8 +2,10 @@ from pathlib import Path
 
 from mtm.cli import main as cli_main
 from mtm.demo import main
-from mtm.artifacts import read_tm, read_utm
-from mtm.program_input import load_python_tm
+from mtm.artifacts import read_tm, read_utm, read_utm_artifact, write_utm
+from mtm.program_input import load_python_tm, load_python_tm_instance
+from mtm.semantic_objects import encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.tape_encoding import R
 
 
 INCREMENTER_FILE = """\
@@ -41,6 +43,16 @@ def test_load_python_tm_file(tmp_path: Path) -> None:
     assert fixture.halt_state == "qDone"
     assert len(fixture.tm_program) == 6
     assert band.encoding.halt_state == "qDone"
+
+
+def test_load_python_tm_instance(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    instance = load_python_tm_instance(tm_path)
+
+    assert instance.program[("qFindMargin", "0")] == ("qFindMargin", "0", R)
+    assert instance.band.blank == "_"
+    assert instance.band.head == 0
+    assert instance.band.cells[:4] == tuple("1011")
 
 
 def test_demo_tm_file_emit_and_run(tmp_path: Path, capsys) -> None:
@@ -84,3 +96,22 @@ def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
     assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
     tm = read_tm(raw_tm_path)
     assert tm.halt_state == "U_HALT"
+
+
+def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    fixture = load_python_tm(tm_path)
+    band = fixture.build_band()
+    utm_path = tmp_path / "incrementer.utm"
+
+    write_utm(utm_path, utm_artifact_from_band(band))
+    artifact = read_utm_artifact(utm_path)
+    reconstructed_band = encoded_band_from_utm_artifact(artifact)
+    compatibility_band, start_head = read_utm(utm_path)
+
+    assert artifact.start_head < 0
+    assert reconstructed_band.left_band == band.left_band
+    assert reconstructed_band.right_band == band.right_band
+    assert compatibility_band.left_band == band.left_band
+    assert compatibility_band.right_band == band.right_band
+    assert start_head == artifact.start_head

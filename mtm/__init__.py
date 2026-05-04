@@ -1,6 +1,6 @@
 """Readable building blocks for the Meta Turing Machine experiment."""
 
-from .artifacts import read_tm, read_utm, write_tm, write_utm
+from .artifacts import read_tm, read_utm, read_utm_artifact, write_tm, write_utm, write_utm_artifact
 from .cli import main as cli_main
 from .compiled_band import EncodedBand, build_outer_tape, compile_tm_to_universal_tape
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
@@ -8,7 +8,7 @@ from .lowering import lower_instruction, lower_instruction_sequence, lower_progr
 from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, format_program
 from .meta_asm_host import MetaInterpreterRules, build_meta_interpreter_rules, format_meta_trace, run_meta_asm_block, run_meta_asm_host
 from .pretty import pretty_band, pretty_fixture
-from .program_input import load_python_tm
+from .program_input import load_python_tm, load_python_tm_instance
 from .raw_tm import RawTM, TMBuilder, format_raw_tm, run_raw_tm
 from .semantic_objects import (
     AbiRequirement,
@@ -24,6 +24,7 @@ from .semantic_objects import (
     UTMSimulatedTape,
     abi_from_encoding,
     decoded_view_from_encoded_band,
+    encoded_band_from_utm_artifact,
     source_band_from_simulated_tape,
     start_head_from_encoded_band,
     utm_artifact_from_band,
@@ -82,19 +83,23 @@ __all__ = [
     "lower_program_to_raw_tm",
     "load_fixture",
     "load_python_tm",
+    "load_python_tm_instance",
     "pretty_band",
     "pretty_fixture",
     "read_tm",
     "read_utm",
+    "read_utm_artifact",
     "format_raw_tm",
     "run_meta_asm_block",
     "run_raw_tm",
     "run_meta_asm_host",
     "decoded_view_from_encoded_band",
+    "encoded_band_from_utm_artifact",
     "source_band_from_simulated_tape",
     "start_head_from_encoded_band",
     "utm_artifact_from_band",
     "utm_encoded_from_band",
     "write_tm",
     "write_utm",
+    "write_utm_artifact",
 ]

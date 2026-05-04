@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .artifacts import read_tm, read_utm, write_tm, write_utm
+from .artifacts import read_tm, read_utm_artifact, write_tm, write_utm_artifact
 from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from .meta_asm import build_universal_meta_asm, format_program
 from .compiled_band import CUR_STATE, EncodedBand, split_outer_tape
 from .pretty import pretty_registers, pretty_tape
 from .program_input import load_python_tm
 from .raw_tm import run_raw_tm
+from .semantic_objects import utm_artifact_from_band
 
 
 def _compile_from_py(path: str | Path):
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "compile":
         _fixture, band, program, raw_tm = _compile_from_py(args.input)
-        write_utm(args.output, band)
+        write_utm_artifact(args.output, utm_artifact_from_band(band))
         if args.asm_out:
             _write_text(args.asm_out, format_program(program))
         if args.tm_out:
@@ -88,7 +89,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.input is None:
         raise SystemExit("run requires either INPUT.utm or --input-string")
-    band, start_head = read_utm(args.input)
+    artifact = read_utm_artifact(args.input)
+    band = artifact.to_encoded_band()
+    start_head = artifact.start_head
     result = run_raw_tm(tm, band.outer_tape, head=start_head, max_steps=args.max_steps)
     final_left_band, final_right_band = band.left_band, band.right_band
     if result["tape"] != band.outer_tape:
