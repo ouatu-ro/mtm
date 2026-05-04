@@ -29,6 +29,15 @@ class TMTransitionProgram:
 
         return read_tm(path)
 
+    def to_artifact(self, *, target_abi=None, minimal_abi=None):
+        from .semantic_objects import UTMProgramArtifact
+
+        return UTMProgramArtifact(
+            program=self,
+            target_abi=target_abi,
+            minimal_abi=minimal_abi,
+        )
+
 
 RawTM = TMTransitionProgram
 

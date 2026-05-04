@@ -118,6 +118,36 @@ class Program:
     blocks: tuple[Block, ...]
     entry_label: LabelName
 
+    def lower(
+        self,
+        alphabet: list[str] | tuple[str, ...],
+        *,
+        halt_state: str = "U_HALT",
+        blank: str = "_OUTER_BLANK",
+    ):
+        from .lowering import lower_program_to_raw_tm
+
+        return lower_program_to_raw_tm(
+            self,
+            alphabet,
+            halt_state=halt_state,
+            blank=blank,
+        )
+
+    def to_artifact(
+        self,
+        alphabet: list[str] | tuple[str, ...],
+        *,
+        halt_state: str = "U_HALT",
+        blank: str = "_OUTER_BLANK",
+        target_abi=None,
+        minimal_abi=None,
+    ):
+        return self.lower(alphabet, halt_state=halt_state, blank=blank).to_artifact(
+            target_abi=target_abi,
+            minimal_abi=minimal_abi,
+        )
+
 
 def bits(value: str) -> BitString: return tuple(value)
 

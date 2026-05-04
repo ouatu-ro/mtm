@@ -7,7 +7,9 @@ from mtm import (
     compile_tm_to_encoded_band,
     compile_tm_to_universal_tape,
     compile_tm_to_runtime_tape,
+    build_universal_meta_asm,
     infer_minimal_abi,
+    lower_program_to_raw_tm,
     TMAbi,
     TMBand,
     TMInstance,
@@ -26,10 +28,11 @@ from mtm import (
     split_runtime_tape,
     utm_artifact_from_band,
     utm_encoded_from_band,
+    UniversalInterpreter,
     write_utm_artifact,
 )
 from mtm.raw_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import TMRunConfig, UTMBandArtifact
+from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact
 
 
 def test_semantic_view_from_encoded_band() -> None:
@@ -126,6 +129,51 @@ def test_primary_tm_program_names_and_io(tmp_path) -> None:
     assert loaded == raw_tm
     assert config.program == raw_tm
     assert config.state == raw_tm.start_state
+
+
+def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
+    band = load_fixture("incrementer").build_band()
+    band_artifact = utm_artifact_from_band(band)
+    interpreter = UniversalInterpreter.for_encoding(band.encoding)
+    program_artifact = interpreter.lower_for_band(band_artifact)
+    path = tmp_path / "utm.tm"
+
+    program_artifact.write(path)
+    loaded = UTMProgramArtifact.read(
+        path,
+        target_abi=band_artifact.target_abi,
+        minimal_abi=band_artifact.minimal_abi,
+    )
+    config = band_artifact.to_run_config(loaded)
+    result = loaded.run(band_artifact, fuel=200_000)
+    final_band = type(band).from_runtime_tape(band.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
+
+    assert loaded.program == program_artifact.program
+    assert loaded.target_abi == band_artifact.target_abi
+    assert config.head == band_artifact.start_head
+    assert config.state == loaded.program.start_state
+    assert result["status"] == "halted"
+    assert result["state"] == "U_HALT"
+    assert final_view.current_state == band.encoding.halt_state
+    assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
+
+
+def test_universal_interpreter_for_encoded_matches_legacy_lowering() -> None:
+    band = load_fixture("incrementer").build_band()
+    encoded = utm_encoded_from_band(band)
+    interpreter = UniversalInterpreter.for_encoded(encoded)
+    band_artifact = encoded.to_band_artifact()
+
+    artifact = interpreter.lower_for_band(band_artifact)
+    legacy_program = build_universal_meta_asm(band.encoding)
+    legacy_lowered = lower_program_to_raw_tm(
+        legacy_program,
+        interpreter.alphabet_for_band(band_artifact),
+    )
+
+    assert interpreter.to_meta_asm() == legacy_program
+    assert artifact.program == legacy_lowered
 
 
 def test_source_band_helper() -> None:

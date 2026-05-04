@@ -33,7 +33,7 @@ from .compiled_band import (
     wrap_field,
 )
 from .pretty import parse_registers, parse_rules, parse_tape
-from .raw_tm import TMTransitionProgram
+from .raw_tm import TMTransitionProgram, run_raw_tm
 from .tape_encoding import (
     AbiRequirement,
     Encoding,
@@ -156,6 +156,15 @@ class UTMBandArtifact:
     def to_runtime_tape(self) -> dict[int, str]:
         return self.to_encoded_band().to_runtime_tape()
 
+    def to_run_config(self, program_artifact: "UTMProgramArtifact | TMTransitionProgram") -> "TMRunConfig":
+        program = program_artifact.program if isinstance(program_artifact, UTMProgramArtifact) else program_artifact
+        return TMRunConfig(
+            program=program,
+            tape=self.to_runtime_tape(),
+            head=self.start_head,
+            state=program.start_state,
+        )
+
     def write(self, path: str | "Path") -> None:
         from .artifacts import write_utm_artifact
 
@@ -182,6 +191,42 @@ class TMRunConfig:
 
 
 RawTMConfig = TMRunConfig
+
+
+@dataclass(frozen=True)
+class UTMProgramArtifact:
+    """Lowered universal-machine transition program artifact."""
+
+    program: TMTransitionProgram
+    target_abi: TMAbi | None = None
+    minimal_abi: TMAbi | None = None
+
+    def write(self, path: str | "Path") -> None:
+        self.program.write(path)
+
+    @classmethod
+    def read(
+        cls,
+        path: str | "Path",
+        *,
+        target_abi: TMAbi | None = None,
+        minimal_abi: TMAbi | None = None,
+    ) -> "UTMProgramArtifact":
+        return cls(
+            program=TMTransitionProgram.read(path),
+            target_abi=target_abi,
+            minimal_abi=minimal_abi,
+        )
+
+    def run(self, band_artifact: UTMBandArtifact, *, fuel: int = 100) -> dict[str, object]:
+        config = band_artifact.to_run_config(self)
+        return run_raw_tm(
+            config.program,
+            config.tape,
+            head=config.head,
+            state=config.state,
+            max_steps=fuel,
+        )
 
 
 @dataclass(frozen=True)
@@ -336,6 +381,7 @@ __all__ = [
     "TMAbi",
     "TMInstance",
     "UTMEncoded",
+    "UTMProgramArtifact",
     "UTMBandArtifact",
     "UTMEncodedRule",
     "UTMEncodingArtifact",

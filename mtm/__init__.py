@@ -37,6 +37,8 @@ from .semantic_objects import (
     TMAbi,
     TMInstance,
     UTMEncoded,
+    UTMProgramArtifact,
+    UTMBandArtifact,
     UTMEncodedRule,
     UTMEncodingArtifact,
     UTMRegisters,
@@ -51,6 +53,7 @@ from .semantic_objects import (
     utm_encoded_from_band,
 )
 from .tape_encoding import Encoding
+from .universal import UniversalInterpreter
 
 def build_utm_encoded(*args, **kwargs):
     """Compatibility wrapper for :func:`utm_encoded_from_band`."""
@@ -87,11 +90,14 @@ __all__ = [
     "build_utm_encoded",
     "build_utm_encoding_artifact",
     "UTMEncoded",
+    "UTMProgramArtifact",
+    "UTMBandArtifact",
     "UTMEncodedRule",
     "UTMEncodingArtifact",
     "UTMRegisters",
     "UTMSimulatedTape",
     "Unimplemented",
+    "UniversalInterpreter",
     "abi_from_encoding",
     "build_meta_interpreter_rules",
     "build_encoded_band",
