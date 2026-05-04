@@ -15,7 +15,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("fixture", nargs="?", default="incrementer")
     parser.add_argument("--list", action="store_true", help="List available fixtures.")
     parser.add_argument("--asm", action="store_true", help="Show the compiled Meta-ASM program too.")
-    parser.add_argument("--run-asm", action="store_true", help="Run the partial Meta-ASM host interpreter and show its trace.")
+    parser.add_argument("--run-asm", action="store_true", help="Run the Meta-ASM host interpreter and show its trace.")
+    parser.add_argument("--max-steps", type=int, default=500, help="Maximum host-interpreter steps for --run-asm.")
     parser.add_argument("--show-outer", action="store_true", help="Show concrete outer tape addresses too.")
     args = parser.parse_args(argv)
 
@@ -36,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_program(program))
     if args.run_asm:
-        status, final_outer_tape, trace, reason = run_meta_asm_host(program, band.outer_tape)
+        status, final_outer_tape, trace, reason = run_meta_asm_host(program, band.encoding, band.outer_tape, max_steps=args.max_steps)
         final_left_band, final_right_band = split_outer_tape(final_outer_tape)
         final_band = EncodedBand(band.encoding, final_outer_tape, final_left_band, final_right_band)
         print()

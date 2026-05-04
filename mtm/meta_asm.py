@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
-from .outer_tape import CUR_STATE, CUR_SYMBOL, Encoding, encode_direction, encode_state, L, R
+from .outer_tape import CUR_STATE, CUR_SYMBOL, END_RULES, Encoding, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL, encode_direction, encode_state, L, R
 
 LabelName: TypeAlias = str
 Marker: TypeAlias = str
@@ -171,10 +171,6 @@ def format_program(program: Program) -> str:
     return "\n\n".join(parts)
 
 
-def stub_block(label: LabelName, note: str) -> Block:
-    return Block(label, (Unimplemented(note),))
-
-
 def build_universal_meta_asm(encoding: Encoding) -> Program:
     halt_bits = encode_state(encoding, encoding.halt_state)
     left_bits, right_bits = encode_direction(encoding, L), encode_direction(encoding, R)
@@ -191,15 +187,49 @@ def build_universal_meta_asm(encoding: Encoding) -> Program:
                 FindFirstRule(),
                 Goto("LOOKUP_RULE"),
             )),
-            stub_block("LOOKUP_RULE", "branch on #END_RULES, then inspect the current rule"),
-            stub_block("CHECK_STATE", "compare #CUR_STATE with the rule's #STATE field"),
-            stub_block("CHECK_READ", "compare #CUR_SYMBOL with the rule's #READ field"),
-            stub_block("NEXT_RULE", "advance to the next rule and continue lookup"),
-            stub_block("MATCHED_RULE", "copy WRITE/NEXT/MOVE out of the matched rule and apply them"),
-            stub_block("DISPATCH_MOVE", f"branch on #MOVE_DIR using L={''.join(left_bits)} and R={''.join(right_bits)}"),
-            stub_block("CHECK_RIGHT", f"fallthrough branch for right-move bits {''.join(right_bits)}"),
-            stub_block("MOVE_LEFT", "move the simulated head left, then restart the interpreter cycle"),
-            stub_block("MOVE_RIGHT", "move the simulated head right, then restart the interpreter cycle"),
+            Block("LOOKUP_RULE", (
+                BranchAt(END_RULES, "STUCK", "CHECK_STATE"),
+            )),
+            Block("CHECK_STATE", (
+                CompareGlobalLocal(CUR_STATE, STATE, encoding.state_width),
+                BranchCmp("CHECK_READ", "NEXT_RULE"),
+            )),
+            Block("CHECK_READ", (
+                CompareGlobalLocal(CUR_SYMBOL, READ, encoding.symbol_width),
+                BranchCmp("MATCHED_RULE", "NEXT_RULE"),
+            )),
+            Block("NEXT_RULE", (
+                FindNextRule(),
+                Goto("LOOKUP_RULE"),
+            )),
+            Block("MATCHED_RULE", (
+                CopyLocalGlobal(WRITE, WRITE_SYMBOL, encoding.symbol_width),
+                CopyLocalGlobal(NEXT, NEXT_STATE, encoding.state_width),
+                CopyLocalGlobal(MOVE, MOVE_DIR, encoding.direction_width),
+                FindHeadCell(),
+                CopyGlobalToHeadSymbol(WRITE_SYMBOL, encoding.symbol_width),
+                CopyGlobalGlobal(NEXT_STATE, CUR_STATE, encoding.state_width),
+                CompareGlobalLiteral(CUR_STATE, halt_bits),
+                BranchCmp("HALT", "DISPATCH_MOVE"),
+            )),
+            Block("DISPATCH_MOVE", (
+                CompareGlobalLiteral(MOVE_DIR, left_bits),
+                BranchCmp("MOVE_LEFT", "CHECK_RIGHT"),
+            )),
+            Block("CHECK_RIGHT", (
+                CompareGlobalLiteral(MOVE_DIR, right_bits),
+                BranchCmp("MOVE_RIGHT", "START_STEP"),
+            )),
+            Block("MOVE_LEFT", (
+                FindHeadCell(),
+                MoveSimHeadLeft(),
+                Goto("START_STEP"),
+            )),
+            Block("MOVE_RIGHT", (
+                FindHeadCell(),
+                MoveSimHeadRight(),
+                Goto("START_STEP"),
+            )),
             Block("HALT", (Halt(),)),
             Block("STUCK", (Halt(),)),
         ),
@@ -237,5 +267,4 @@ __all__ = [
     "build_universal_meta_asm",
     "format_instruction",
     "format_program",
-    "stub_block",
 ]
