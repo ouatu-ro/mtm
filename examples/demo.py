@@ -5,17 +5,16 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from ..mtm.fixtures import list_fixtures, load_fixture
-from ..mtm.compiler import Compiler
-from ..mtm.utm_band_layout import EncodedBand, split_runtime_tape
-from ..tests.lowering_checks import lowering_smoke_rows
-from ..mtm.meta_asm import format_program
-from ..mtm.meta_asm_host import format_meta_trace, run_meta_asm_runtime
-from ..mtm.pretty import pretty_fixture, pretty_registers, pretty_tape, table
-from ..mtm.source_file import load_python_tm
-from ..mtm.raw_transition_tm import format_raw_tm, run_raw_tm
-from ..mtm.semantic_objects import TMBand, TMInstance
-from ..mtm.universal import UniversalInterpreter
+from mtm.fixtures import list_fixtures, load_fixture
+from mtm.compiler import Compiler
+from mtm.utm_band_layout import EncodedBand, split_runtime_tape
+from mtm.meta_asm import format_program
+from mtm.meta_asm_host import format_meta_trace, run_meta_asm_runtime
+from mtm.pretty import pretty_fixture, pretty_registers, pretty_tape
+from mtm.source_file import load_python_tm
+from mtm.raw_transition_tm import format_raw_tm, run_raw_tm
+from mtm.semantic_objects import TMBand, TMInstance
+from mtm.universal import UniversalInterpreter
 
 
 def _instance_from_fixture(fixture: Any) -> TMInstance:
@@ -37,11 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-asm", action="store_true", help="Run the Meta-ASM host interpreter and show its trace.")
     parser.add_argument("--emit-raw-tm", action="store_true", help="Show the lowered raw TM for the universal interpreter.")
     parser.add_argument("--run-utm", action="store_true", help="Run the lowered raw TM on the generated runtime tape.")
-    parser.add_argument("--test-lowering", action="store_true", help="Run smoke checks for the first lowered raw-TM fragments.")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum host-interpreter steps for --run-asm.")
     parser.add_argument("--max-raw-steps", type=int, default=200_000, help="Maximum raw-TM steps for --run-utm.")
     parser.add_argument("--show-runtime", action="store_true", help="Show the concrete runtime tape addresses too.")
-    parser.add_argument("--show-outer", action="store_true", help="Compatibility alias for --show-runtime.")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -58,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     program_artifact = interpreter.lower_for_band(band_artifact)
     raw_tm = program_artifact.program
 
-    print(pretty_fixture(fixture, show_runtime=args.show_runtime or args.show_outer))
+    print(pretty_fixture(fixture, show_runtime=args.show_runtime))
     if args.asm or args.run_asm:
         print()
         print("=" * 88)
@@ -120,13 +117,6 @@ def main(argv: list[str] | None = None) -> int:
         print("FINAL TAPE")
         print()
         print(pretty_tape(final_band.encoding, final_band.right_band))
-    if args.test_lowering:
-        print()
-        print("=" * 88)
-        print()
-        print("LOWERING SMOKE TESTS")
-        print()
-        print(table(["instruction", "status", "state", "head", "note"], lowering_smoke_rows(fixture)))
     return 0
 
 

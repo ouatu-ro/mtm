@@ -16,7 +16,7 @@ class TMTransitionProgram:
     start_state: str
     halt_state: str
     alphabet: tuple[str, ...]
-    blank: str = "_OUTER_BLANK"
+    blank: str = "_RUNTIME_BLANK"
 
     def write(self, path: str | "Path") -> None:
         from .artifacts import write_tm
@@ -39,11 +39,8 @@ class TMTransitionProgram:
         )
 
 
-RawTM = TMTransitionProgram
-
-
 class TMBuilder:
-    def __init__(self, alphabet: list[str] | tuple[str, ...], *, halt_state: str = "U_HALT", blank: str = "_OUTER_BLANK"):
+    def __init__(self, alphabet: list[str] | tuple[str, ...], *, halt_state: str = "U_HALT", blank: str = "_RUNTIME_BLANK"):
         self.alphabet = tuple(dict.fromkeys([blank, *alphabet]))
         self.halt_state = halt_state
         self.blank = blank
@@ -100,4 +97,4 @@ def format_raw_tm(tm: TMTransitionProgram) -> str:
     ])
 
 
-__all__ = ["L", "R", "S", "RawTM", "TMBuilder", "TMTransitionProgram", "format_raw_tm", "run_raw_tm"]
+__all__ = ["L", "R", "S", "TMBuilder", "TMTransitionProgram", "format_raw_tm", "run_raw_tm"]

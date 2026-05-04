@@ -1,39 +1,30 @@
 import mtm
 from mtm import (
-    build_encoded_band,
-    build_outer_tape,
-    build_runtime_tape,
     Compiler,
-    compile_tm_to_encoded_band,
-    compile_tm_to_universal_tape,
-    compile_tm_to_runtime_tape,
-    build_universal_meta_asm,
-    infer_minimal_abi,
-    lower_program_to_raw_tm,
     TMAbi,
     TMBand,
     TMInstance,
     TMProgram,
+    load_fixture,
+    UniversalInterpreter,
+)
+from mtm.artifacts import read_utm_artifact, write_utm_artifact
+from mtm.lowering import lower_program_to_raw_tm
+from mtm.meta_asm import build_universal_meta_asm
+from mtm.pretty import pretty_runtime_tape
+from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
+from mtm.semantic_objects import (
+    TMRunConfig,
+    UTMBandArtifact,
+    UTMProgramArtifact,
     decoded_view_from_encoded_band,
     encoded_band_from_utm_artifact,
-    load_fixture,
-    materialize_raw_tape,
-    materialize_runtime_tape,
-    pretty_outer_tape,
-    pretty_runtime_tape,
-    read_utm,
-    read_utm_artifact,
+    infer_minimal_abi,
     source_band_from_simulated_tape,
-    split_outer_tape,
-    split_raw_tape,
-    split_runtime_tape,
     utm_artifact_from_band,
     utm_encoded_from_band,
-    UniversalInterpreter,
-    write_utm_artifact,
 )
-from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact
+from mtm.utm_band_layout import compile_tm_to_universal_tape
 
 
 def test_tm_program_wraps_source_transitions_immutably() -> None:
@@ -116,13 +107,10 @@ def test_utm_artifact_round_trip(tmp_path) -> None:
     write_utm_artifact(path, artifact)
 
     loaded = read_utm_artifact(path)
-    legacy_band, start_head = read_utm(path)
 
     assert loaded == artifact
     assert loaded.to_encoded_band() == band
     assert loaded.to_runtime_tape() == band.runtime_tape
-    assert legacy_band == band
-    assert start_head == artifact.start_head
 
 
 def test_primary_artifact_class_methods_round_trip(tmp_path) -> None:
@@ -147,7 +135,7 @@ def test_primary_tm_program_names_and_io(tmp_path) -> None:
     assert isinstance(raw_tm, TMTransitionProgram)
     raw_tm.write(path)
     loaded = TMTransitionProgram.read(path)
-    config = TMRunConfig(program=loaded, tape={0: "_OUTER_BLANK"}, head=0, state=loaded.start_state)
+    config = TMRunConfig(program=loaded, tape={0: "_RUNTIME_BLANK"}, head=0, state=loaded.start_state)
 
     assert loaded == raw_tm
     assert config.program == raw_tm
@@ -182,21 +170,21 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
     assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
-def test_universal_interpreter_for_encoded_matches_legacy_lowering() -> None:
+def test_universal_interpreter_for_encoded_matches_direct_lowering() -> None:
     band = load_fixture("incrementer").build_band()
     encoded = utm_encoded_from_band(band)
     interpreter = UniversalInterpreter.for_encoded(encoded)
     band_artifact = encoded.to_band_artifact()
 
     artifact = interpreter.lower_for_band(band_artifact)
-    legacy_program = build_universal_meta_asm(band.encoding)
-    legacy_lowered = lower_program_to_raw_tm(
-        legacy_program,
+    direct_program = build_universal_meta_asm(band.encoding)
+    direct_lowered = lower_program_to_raw_tm(
+        direct_program,
         interpreter.alphabet_for_band(band_artifact),
     )
 
-    assert interpreter.to_meta_asm() == legacy_program
-    assert artifact.program == legacy_lowered
+    assert interpreter.to_meta_asm() == direct_program
+    assert artifact.program == direct_lowered
 
 
 def test_source_band_helper() -> None:
@@ -290,42 +278,16 @@ def test_compile_rejects_too_small_abi() -> None:
         raise AssertionError("expected selected ABI to be rejected")
 
 
-def test_runtime_alias_exports_remain_compatible() -> None:
+def test_runtime_tape_printer() -> None:
     band = load_fixture("incrementer").build_band()
-    fixture = load_fixture("incrementer")
 
-    assert build_runtime_tape is build_outer_tape
-    assert compile_tm_to_runtime_tape is compile_tm_to_universal_tape
-    assert compile_tm_to_runtime_tape is compile_tm_to_encoded_band
-    assert materialize_raw_tape is materialize_runtime_tape
-    assert split_raw_tape is split_runtime_tape
-    assert split_outer_tape is split_runtime_tape
-    assert pretty_runtime_tape is pretty_outer_tape
-    assert build_encoded_band(
-        fixture.tm_program,
-        fixture.input_symbols,
-        initial_state=fixture.initial_state,
-        halt_state=fixture.halt_state,
-        blank=fixture.blank,
-        blanks_left=fixture.blanks_left,
-        blanks_right=fixture.blanks_right,
-    ) == build_outer_tape(
-        fixture.tm_program,
-        fixture.input_symbols,
-        initial_state=fixture.initial_state,
-        halt_state=fixture.halt_state,
-        blank=fixture.blank,
-        blanks_left=fixture.blanks_left,
-        blanks_right=fixture.blanks_right,
-    )
     assert "RUNTIME TAPE" in pretty_runtime_tape(band.runtime_tape)
 
 
-def test_public_compatibility_boundary_is_explicit() -> None:
-    band = load_fixture("incrementer").build_band()
+def test_public_boundary_is_small() -> None:
     public = set(mtm.__all__)
 
-    primary_names = {
+    expected = {
         "L",
         "R",
         "TMProgram",
@@ -336,42 +298,19 @@ def test_public_compatibility_boundary_is_explicit() -> None:
         "Compiler",
         "UTMEncoded",
         "UTMBandArtifact",
-        "MetaASMProgram",
         "UTMProgramArtifact",
         "TMTransitionProgram",
         "TMRunConfig",
         "DecodedBandView",
         "UniversalInterpreter",
-    }
-    alias_names = {
-        "build_encoded_band",
-        "build_runtime_tape",
-        "build_outer_tape",
-        "compile_tm_to_universal_tape",
-        "compile_tm_to_runtime_tape",
-        "compile_tm_to_encoded_band",
-        "materialize_runtime_tape",
-        "materialize_raw_tape",
-        "split_runtime_tape",
-        "split_raw_tape",
-        "split_outer_tape",
-        "pretty_runtime_tape",
-        "pretty_outer_tape",
-        "run_meta_asm_runtime",
-        "run_meta_asm_block_runtime",
-        "run_meta_asm_host",
-        "run_meta_asm_block",
-        "build_utm_encoded",
-        "build_utm_encoding_artifact",
-        "utm_encoded_from_band",
-        "utm_artifact_from_band",
-        "decoded_view_from_encoded_band",
-        "encoded_band_from_utm_artifact",
+        "TMFixture",
+        "get_fixture",
+        "list_fixtures",
+        "load_fixture",
+        "load_python_tm",
+        "load_python_tm_instance",
     }
 
-    assert primary_names <= public
-    assert alias_names <= public
+    assert expected == public
     assert "lower_instruction" not in public
     assert "TMBuilder" not in public
-    assert mtm.build_utm_encoded(band) == mtm.utm_encoded_from_band(band)
-    assert mtm.build_utm_encoding_artifact(band) == mtm.utm_artifact_from_band(band)

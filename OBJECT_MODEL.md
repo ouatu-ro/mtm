@@ -100,15 +100,8 @@ Meaning:
 - `grammar_version` identifies the marker/layout grammar
 - `family_label` is a readable label such as `U[Wq=8,Ws=8,Wd=1]`
 
-### `AbiRequirement`
-
-Minimum ABI required by a source instance.
-
-Fields are the same as `TMAbi`. Conceptually, an `AbiRequirement` describes
-what the source instance needs, while a `TMAbi` describes what the selected UTM
-family provides.
-
-Compatibility condition:
+The compiler infers a minimal `TMAbi` for each source instance. A selected
+target `TMAbi` must be wide enough for that instance:
 
 ```text
 selected_abi.state_width >= required.state_width
@@ -283,7 +276,7 @@ Fields:
 Responsibilities:
 
 - serialize and deserialize the `.tm` file
-- run against a compatible `UTMBandArtifact`
+- run against a matching `UTMBandArtifact`
 
 Expected methods:
 
@@ -385,7 +378,7 @@ Compilation stages:
 
 ```text
 TMInstance
--> AbiRequirement
+-> minimal TMAbi
 -> Encoding
 -> UTMEncoded
 -> UTMBandArtifact

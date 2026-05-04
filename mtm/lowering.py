@@ -26,7 +26,7 @@ from .meta_asm import (
     WriteGlobal,
 )
 from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TMP, WRITE_SYMBOL
-from .raw_transition_tm import L, R, RawTM, S, TMBuilder
+from .raw_transition_tm import L, R, S, TMBuilder, TMTransitionProgram
 
 GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
 ACTIVE_RULE = "#ACTIVE_RULE"
@@ -301,10 +301,10 @@ def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: st
     - `GOTO`: no precondition on head position.
     - `BRANCH_CMP`: head is on the `#CMP_FLAG` marker.
     - `WRITE_GLOBAL`: head is on the target global marker.
-    - `SEEK` / `SEEK_ONE_OF`: head is somewhere on the outer tape.
-    - `FIND_FIRST_RULE`: head is somewhere on the outer tape.
+    - `SEEK` / `SEEK_ONE_OF`: head is somewhere on the runtime tape.
+    - `FIND_FIRST_RULE`: head is somewhere on the runtime tape.
     - `FIND_NEXT_RULE`: head is on the current `#RULE`.
-    - `FIND_HEAD_CELL`: head is somewhere on the outer tape.
+    - `FIND_HEAD_CELL`: head is somewhere on the runtime tape.
     """
 
     match instruction:
@@ -457,8 +457,8 @@ def lower_program_to_raw_tm(
     alphabet: list[str] | tuple[str, ...],
     *,
     halt_state: str = "U_HALT",
-    blank: str = "_OUTER_BLANK",
-) -> RawTM:
+    blank: str = "_RUNTIME_BLANK",
+) -> TMTransitionProgram:
     builder = TMBuilder([*alphabet, ACTIVE_RULE], halt_state=halt_state, blank=blank)
     lower_program(builder, program)
     return builder.build(program.entry_label)

@@ -114,9 +114,6 @@ class TMAbi:
     family_label: str = ""
 
 
-AbiRequirement = TMAbi
-
-
 def width_for(count: int) -> int: return 1 if count <= 1 else ceil(log2(count))
 def assign_ids(values: Iterable[str | int]) -> dict[str | int, int]: return {value: index for index, value in enumerate(values)}
 
@@ -243,7 +240,6 @@ def encode_direction(encoding: Encoding, direction: int) -> tuple[str, ...]: ret
 
 
 __all__ = [
-    "AbiRequirement",
     "Encoding",
     "L",
     "R",

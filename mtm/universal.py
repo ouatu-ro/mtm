@@ -35,7 +35,7 @@ class UniversalInterpreter:
         target_abi=None,
         minimal_abi=None,
         halt_state: str = "U_HALT",
-        blank: str = "_OUTER_BLANK",
+        blank: str = "_RUNTIME_BLANK",
     ) -> UTMProgramArtifact:
         return self.to_meta_asm().to_artifact(
             alphabet,
@@ -50,7 +50,7 @@ class UniversalInterpreter:
         band_artifact: UTMBandArtifact,
         *,
         halt_state: str = "U_HALT",
-        blank: str = "_OUTER_BLANK",
+        blank: str = "_RUNTIME_BLANK",
     ) -> UTMProgramArtifact:
         return self.lower(
             self.alphabet_for_band(band_artifact),
@@ -66,7 +66,7 @@ class UniversalInterpreter:
         *,
         fuel: int = 100,
         halt_state: str = "U_HALT",
-        blank: str = "_OUTER_BLANK",
+        blank: str = "_RUNTIME_BLANK",
     ) -> dict[str, object]:
         return self.lower_for_band(
             band_artifact,

@@ -1,8 +1,4 @@
-"""Pretty-printers for MTM fixtures and encoded bands.
-
-``pretty_runtime_tape`` is the primary tape printer.
-``pretty_outer_tape`` remains a compatibility alias.
-"""
+"""Pretty-printers for MTM fixtures and encoded bands."""
 
 from __future__ import annotations
 
@@ -23,7 +19,7 @@ from .utm_band_layout import (
     NEXT,
     NEXT_STATE,
     NO_HEAD,
-    OUTER_BLANK,
+    RUNTIME_BLANK,
     READ,
     REGS,
     RULE,
@@ -192,22 +188,13 @@ def pretty_tape(encoding: Encoding, right_band: list[str]) -> str:
     return section("TAPE", table(["cell", "head", "symbol", "bits"], rows), visual_symbols, visual_head)
 
 
-def pretty_raw_tape(raw_tape: dict[int, str]) -> str:
-    live = [address for address, value in raw_tape.items() if value != OUTER_BLANK]
-    rows = [[address, "left" if address < 0 else "right", raw_tape[address]] for address in range(min(live), max(live) + 1)]
+def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str:
+    live = [address for address, value in runtime_tape.items() if value != RUNTIME_BLANK]
+    rows = [[address, "left" if address < 0 else "right", runtime_tape[address]] for address in range(min(live), max(live) + 1)]
     return section("RUNTIME TAPE", table(["addr", "side", "value"], rows))
 
 
-def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str: return pretty_raw_tape(runtime_tape)
-
-
-def pretty_outer_tape(outer_tape: dict[int, str]) -> str:
-    """Compatibility alias for pretty_runtime_tape()."""
-    return pretty_runtime_tape(outer_tape)
-
-
-def pretty_band(band: EncodedBand, *, show_runtime: bool = False, show_outer: bool | None = None) -> str:
-    show_runtime = show_runtime or bool(show_outer)
+def pretty_band(band: EncodedBand, *, show_runtime: bool = False) -> str:
     parts = [
         pretty_encoding(band.encoding),
         pretty_registers(band.encoding, band.left_band),
@@ -219,9 +206,8 @@ def pretty_band(band: EncodedBand, *, show_runtime: bool = False, show_outer: bo
     return ("\n\n" + "=" * 88 + "\n\n").join(parts)
 
 
-def pretty_fixture(fixture, *, show_runtime: bool = False, show_outer: bool | None = None) -> str:
+def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
     band = fixture.build_band()
-    show_runtime = show_runtime or bool(show_outer)
     summary = section(
         "FIXTURE",
         table(
@@ -248,9 +234,7 @@ __all__ = [
     "pretty_band",
     "pretty_encoding",
     "pretty_fixture",
-    "pretty_raw_tape",
     "pretty_runtime_tape",
-    "pretty_outer_tape",
     "pretty_registers",
     "pretty_rules",
     "pretty_tape",

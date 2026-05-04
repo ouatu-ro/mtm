@@ -1,12 +1,6 @@
-"""Host interpreter for Meta-ASM over compiled runtime bands.
-
-``run_meta_asm_runtime`` is the primary entrypoint.
-``run_meta_asm_host`` and ``run_meta_asm_block`` remain compatibility wrappers.
-"""
+"""Host interpreter for Meta-ASM over compiled runtime bands."""
 
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import (
@@ -33,14 +27,7 @@ from .meta_asm import (
     format_instruction,
 )
 from .pretty import table
-from .source_encoding import TMProgram, encode_symbol
-
-
-@dataclass(frozen=True)
-class MetaInterpreterRules:
-    """Raw TM rules for the interpreter side of the system."""
-
-    tm_program: TMProgram; start_state: str = "U_START"; halt_state: str = "U_HALT"
+from .source_encoding import encode_symbol
 
 
 def left_index(left_band: list[str], address: int) -> int:
@@ -87,7 +74,7 @@ def find_first_rule(left_band: list[str]) -> int:
 
 def current_rule_index(left_band: list[str], head_address: int | None) -> int:
     if head_address is None or head_address >= 0:
-        raise ValueError("current instruction requires the outer head to be on a rule marker")
+        raise ValueError("current instruction requires the runtime head to be on a rule marker")
     index = left_index(left_band, head_address)
     if left_band[index] != RULE:
         raise ValueError(f"expected current rule marker, got {left_band[index]!r}")
@@ -165,7 +152,7 @@ def all_addresses(left_band: list[str], right_band: list[str]) -> list[int]:
 def seek_address(left_band: list[str], right_band: list[str], start: int | None, markers: set[str], direction: str) -> int:
     addresses = all_addresses(left_band, right_band)
     if start is None:
-        raise ValueError("SEEK requires the outer head to be positioned")
+        raise ValueError("SEEK requires the runtime head to be positioned")
     start_index = addresses.index(start)
     step = -1 if direction == "L" else 1
     index = start_index
@@ -235,7 +222,7 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 outcome = f"goto {target}"
             case BranchAt(marker, label_true, label_false):
                 if head_address is None:
-                    raise ValueError("BRANCH_AT requires the outer head to be positioned")
+                    raise ValueError("BRANCH_AT requires the runtime head to be positioned")
                 target = label_true if token_at(left_band, right_band, head_address) == marker else label_false
                 label, instruction_index = target, 0
                 outcome = f"goto {target}"
@@ -245,7 +232,7 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 outcome = f"head at {head_address}"
             case CopyHeadSymbolTo(global_marker, width):
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
-                    raise ValueError("COPY_HEAD_SYMBOL_TO requires the outer head to be at a simulated #CELL")
+                    raise ValueError("COPY_HEAD_SYMBOL_TO requires the runtime head to be at a simulated #CELL")
                 symbol_bits = read_head_symbol_bits(right_band, head_address, width)
                 left_band = set_global_bits(left_band, global_marker, symbol_bits)
                 runtime_tape = materialize_runtime_tape(left_band, right_band)
@@ -253,7 +240,7 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 outcome = f"{global_marker}={''.join(symbol_bits)}"
             case CopyGlobalToHeadSymbol(global_marker, width):
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
-                    raise ValueError("COPY_GLOBAL_TO_HEAD_SYMBOL requires the outer head to be at a simulated #CELL")
+                    raise ValueError("COPY_GLOBAL_TO_HEAD_SYMBOL requires the runtime head to be at a simulated #CELL")
                 symbol_bits = get_global_bits(left_band, global_marker)
                 if len(symbol_bits) != width:
                     raise ValueError(f"wrong width for {global_marker}: expected {width}, got {len(symbol_bits)}")
@@ -289,14 +276,14 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 outcome = f"{global_marker}={''.join(literal_bits)}"
             case MoveSimHeadLeft():
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
-                    raise ValueError("MOVE_SIM_HEAD_LEFT requires the outer head to be at a simulated #CELL")
+                    raise ValueError("MOVE_SIM_HEAD_LEFT requires the runtime head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, -1)
                 runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case MoveSimHeadRight():
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
-                    raise ValueError("MOVE_SIM_HEAD_RIGHT requires the outer head to be at a simulated #CELL")
+                    raise ValueError("MOVE_SIM_HEAD_RIGHT requires the runtime head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, 1)
                 runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
@@ -333,7 +320,6 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
     return {
         "status": status,
         "runtime_tape": runtime_tape,
-        "outer_tape": runtime_tape,
         "trace": trace,
         "reason": reason,
         "label": label,
@@ -351,27 +337,8 @@ def run_meta_asm_runtime(program: Program, encoding, runtime_tape: dict[int, str
     return result["status"], result["runtime_tape"], result["trace"], result["reason"]
 
 
-def run_meta_asm_block(program: Program, encoding, outer_tape: dict[int, str], *, label: str, max_steps: int = 100):
-    """Compatibility wrapper for run_meta_asm_block_runtime()."""
-    return run_meta_asm_block_runtime(program, encoding, outer_tape, label=label, max_steps=max_steps)
-
-
-def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int = 100):
-    """Compatibility wrapper for run_meta_asm_runtime()."""
-    status, runtime_tape, trace, reason = run_meta_asm_runtime(program, encoding, outer_tape, max_steps=max_steps)
-    return status, runtime_tape, trace, reason
-
-
-def build_meta_interpreter_rules(encoding) -> MetaInterpreterRules:
-    raise NotImplementedError(f"Next step: generate interpreter rules for {encoding!r}.")
-
-
 __all__ = [
-    "MetaInterpreterRules",
-    "build_meta_interpreter_rules",
     "format_meta_trace",
-    "run_meta_asm_block",
     "run_meta_asm_block_runtime",
-    "run_meta_asm_host",
     "run_meta_asm_runtime",
 ]

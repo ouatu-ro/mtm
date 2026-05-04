@@ -1,8 +1,4 @@
-"""Compiled runtime-band layout for encoded source Turing machines.
-
-Primary public names use ``runtime_tape`` vocabulary.
-``outer_tape`` and ``raw_tape`` remain compatibility aliases for now.
-"""
+"""Compiled runtime-band layout for encoded source Turing machines."""
 
 from __future__ import annotations
 
@@ -24,12 +20,12 @@ CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE = "#CUR_STATE", "#CUR_SYMBOL", "
 MOVE_DIR, CMP_FLAG, TMP = "#MOVE_DIR", "#CMP_FLAG", "#TMP"
 STATE, READ, WRITE, NEXT, MOVE = "#STATE", "#READ", "#WRITE", "#NEXT", "#MOVE"
 HEAD, NO_HEAD = "#HEAD", "#NO_HEAD"
-OUTER_BLANK = "_OUTER_BLANK"
+RUNTIME_BLANK = "_RUNTIME_BLANK"
 
 
 @dataclass(frozen=True)
 class EncodedBand:
-    """Concrete encoded band with a derived raw-tape runtime view."""
+    """Concrete encoded band with a derived runtime tape view."""
 
     encoding: Encoding; left_band: list[str]; right_band: list[str]
     minimal_abi: TMAbi | None = None; target_abi: TMAbi | None = None
@@ -37,29 +33,13 @@ class EncodedBand:
     def linear(self) -> list[str]: return self.left_band + self.right_band
     def view(self) -> str: return " ".join(self.left_band + ["|"] + self.right_band)
     def to_runtime_tape(self) -> dict[int, str]: return materialize_runtime_tape(self.left_band, self.right_band)
-    # Compatibility alias for older callers that still expect "raw" tape wording.
-    def to_raw_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
     @property
     def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
-    # Compatibility alias for older callers that still use "outer_tape".
-    @property
-    def outer_tape(self) -> dict[int, str]: return self.runtime_tape
-
     @classmethod
     def from_runtime_tape(cls, encoding: Encoding, runtime_tape: dict[int, str]) -> "EncodedBand":
         left_band, right_band = split_runtime_tape(runtime_tape)
-        return cls(encoding, left_band, right_band)
-
-    @classmethod
-    def from_raw_tape(cls, encoding: Encoding, raw_tape: dict[int, str]) -> "EncodedBand":
-        left_band, right_band = split_raw_tape(raw_tape)
-        return cls(encoding, left_band, right_band)
-
-    @classmethod
-    def from_outer_tape(cls, encoding: Encoding, outer_tape: dict[int, str]) -> "EncodedBand":
-        left_band, right_band = split_outer_tape(outer_tape)
         return cls(encoding, left_band, right_band)
 
 
@@ -126,27 +106,18 @@ def place_on_positive_side(tokens: list[str], *, start: int = 0) -> dict[int, st
 
 
 def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
-    raw_tape = defaultdict(lambda: OUTER_BLANK)
-    raw_tape.update(place_on_negative_side(left_band, start=-1))
-    raw_tape.update(place_on_positive_side(right_band, start=0))
-    return raw_tape
-
-
-materialize_raw_tape = materialize_runtime_tape
+    runtime_tape = defaultdict(lambda: RUNTIME_BLANK)
+    runtime_tape.update(place_on_negative_side(left_band, start=-1))
+    runtime_tape.update(place_on_positive_side(right_band, start=0))
+    return runtime_tape
 
 
 def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[str]]:
-    live_cells = [address for address, symbol in runtime_tape.items() if symbol != OUTER_BLANK]
+    live_cells = [address for address, symbol in runtime_tape.items() if symbol != RUNTIME_BLANK]
     if not live_cells:
         return [], []
     lowest, highest = min(live_cells), max(live_cells)
     return [runtime_tape[address] for address in range(lowest, 0)], [runtime_tape[address] for address in range(0, highest + 1)]
-
-
-split_raw_tape = split_runtime_tape
-
-
-split_outer_tape = split_runtime_tape
 
 
 def _coerce_source_band(
@@ -179,7 +150,7 @@ def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
     )
 
 
-def build_encoded_band(
+def compile_tm_to_universal_tape(
     tm_program: TMProgram,
     source: Iterable[str] | "TMBand",
     *,
@@ -212,76 +183,6 @@ def build_encoded_band(
     return EncodedBand(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
 
 
-def build_outer_tape(
-    tm_program: TMProgram,
-    source: Iterable[str] | "TMBand",
-    *,
-    initial_state: str,
-    halt_state: str,
-    blank: str = "_",
-    blanks_left: int = 0,
-    blanks_right: int = 8,
-    abi: TMAbi | None = None,
-) -> EncodedBand:
-    """Compatibility alias for build_encoded_band()."""
-    return build_encoded_band(
-        tm_program,
-        source,
-        initial_state=initial_state,
-        halt_state=halt_state,
-        blank=blank,
-        blanks_left=blanks_left,
-        blanks_right=blanks_right,
-        abi=abi,
-    )
-
-
-def compile_tm_to_universal_tape(
-    tm_program: TMProgram,
-    source: Iterable[str] | "TMBand",
-    *,
-    initial_state: str,
-    halt_state: str,
-    blank: str = "_",
-    blanks_left: int = 0,
-    blanks_right: int = 8,
-    abi: TMAbi | None = None,
-) -> EncodedBand:
-    return build_encoded_band(
-        tm_program,
-        source,
-        initial_state=initial_state,
-        halt_state=halt_state,
-        blank=blank,
-        blanks_left=blanks_left,
-        blanks_right=blanks_right,
-        abi=abi,
-    )
-
-
-def compile_tm_to_encoded_band(
-    tm_program: TMProgram,
-    source: Iterable[str] | "TMBand",
-    *,
-    initial_state: str,
-    halt_state: str,
-    blank: str = "_",
-    blanks_left: int = 0,
-    blanks_right: int = 8,
-    abi: TMAbi | None = None,
-) -> EncodedBand:
-    return compile_tm_to_universal_tape(
-        tm_program,
-        source,
-        initial_state=initial_state,
-        halt_state=halt_state,
-        blank=blank,
-        blanks_left=blanks_left,
-        blanks_right=blanks_right,
-        abi=abi,
-    )
-
-
 __all__ = [
     "CELL",
     "CMP_FLAG",
@@ -300,7 +201,7 @@ __all__ = [
     "NEXT",
     "NEXT_STATE",
     "NO_HEAD",
-    "OUTER_BLANK",
+    "RUNTIME_BLANK",
     "READ",
     "REGS",
     "RULE",
@@ -310,20 +211,14 @@ __all__ = [
     "TMP",
     "WRITE",
     "WRITE_SYMBOL",
-    "build_encoded_band",
-    "build_outer_tape",
     "build_register_band",
     "build_rule_band",
     "build_tape_band",
     "build_tape_band_from_source_band",
     "compile_tm_to_universal_tape",
-    "compile_tm_to_encoded_band",
-    "materialize_raw_tape",
     "materialize_runtime_tape",
     "place_on_negative_side",
     "place_on_positive_side",
-    "split_raw_tape",
     "split_runtime_tape",
-    "split_outer_tape",
     "wrap_field",
 ]

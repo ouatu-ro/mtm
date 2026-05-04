@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from runpy import run_path
 
-from .utm_band_layout import EncodedBand
 from .raw_transition_tm import TMTransitionProgram
-from .semantic_objects import TMAbi, UTMBandArtifact, encoded_band_from_utm_artifact, start_head_from_encoded_band, utm_artifact_from_band
+from .semantic_objects import TMAbi, UTMBandArtifact
 from .source_encoding import Encoding
 
 
@@ -57,7 +56,7 @@ def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
         "halt_state": artifact.encoding.halt_state,
     }
     text = "\n".join([
-        "format = 'mtm-outer-band-v1'",
+        "format = 'mtm-utm-band-v1'",
         f"start_head = {artifact.start_head!r}",
         f"encoding = {_literal(encoding)}",
         f"left_band = {_literal(list(artifact.left_band))}",
@@ -92,19 +91,6 @@ def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
     )
 
 
-def band_start_head(band: EncodedBand) -> int: return start_head_from_encoded_band(band)
-
-
-def write_utm(path: str | Path, band_or_artifact: EncodedBand | UTMBandArtifact) -> None:
-    artifact = band_or_artifact if isinstance(band_or_artifact, UTMBandArtifact) else utm_artifact_from_band(band_or_artifact)
-    write_utm_artifact(path, artifact)
-
-
-def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
-    artifact = read_utm_artifact(path)
-    return encoded_band_from_utm_artifact(artifact), artifact.start_head
-
-
 def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
     path = Path(path)
     text = "\n".join([
@@ -130,11 +116,8 @@ def read_tm(path: str | Path) -> TMTransitionProgram:
 
 
 __all__ = [
-    "band_start_head",
     "read_tm",
-    "read_utm",
     "read_utm_artifact",
     "write_tm",
-    "write_utm",
     "write_utm_artifact",
 ]

@@ -755,7 +755,7 @@ The runtime alphabet contains:
 - bits `0` and `1`
 - active marker variants such as `#RULE_ACTIVE` and `#CELL_ACTIVE`
 - marked bit variants when required by a lowering routine
-- the outer blank symbol
+- the runtime blank symbol
 
 Cycle-boundary invariants:
 

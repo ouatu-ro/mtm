@@ -2,13 +2,11 @@
 name = "mtm"
 version = "0.1.0"
 description = "Add your description here"
-readme = "README.md"
 requires-python = ">=3.13"
 dependencies = ["pytest>=8.4.2"]
 
 [project.scripts]
 mtm = "mtm.cli:main"
-mtm-demo = "mtm.demo:main"
 
 [build-system]
 requires = ["hatchling"]

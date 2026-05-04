@@ -4,7 +4,7 @@ import pytest
 
 from mtm.cli import main as cli_main
 from examples.demo import main
-from mtm.artifacts import read_tm, read_utm, read_utm_artifact, write_utm
+from mtm.artifacts import read_utm_artifact
 from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.source_file import load_python_tm, load_python_tm_instance
@@ -96,14 +96,14 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
 
     assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--asm-out", str(asm_path), "--tm-out", str(raw_tm_path)]) == 0
     artifact = read_utm_artifact(utm_path)
-    band, start_head = read_utm(utm_path)
+    band = artifact.to_encoded_band()
     tm = UTMProgramArtifact.read(raw_tm_path, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
 
     assert utm_path.exists()
     assert asm_path.exists()
     assert raw_tm_path.exists()
     assert artifact.to_encoded_band() == band
-    assert start_head < 0
+    assert artifact.start_head < 0
     assert tm.program.start_state == "START_STEP"
     assert "LABEL START_STEP" in asm_path.read_text()
 
@@ -142,7 +142,7 @@ def test_cli_compile_with_explicit_target_abi(tmp_path: Path) -> None:
 def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
     raw_tm_path = tmp_path / "utm.tm"
     assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
-    tm = read_tm(raw_tm_path)
+    tm = TMTransitionProgram.read(raw_tm_path)
     assert tm.halt_state == "U_HALT"
 
 
@@ -152,17 +152,13 @@ def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
     band = fixture.build_band()
     utm_path = tmp_path / "incrementer.utm.band"
 
-    write_utm(utm_path, utm_artifact_from_band(band))
+    utm_artifact_from_band(band).write(utm_path)
     artifact = read_utm_artifact(utm_path)
     reconstructed_band = encoded_band_from_utm_artifact(artifact)
-    compatibility_band, start_head = read_utm(utm_path)
 
     assert artifact.start_head < 0
     assert reconstructed_band.left_band == band.left_band
     assert reconstructed_band.right_band == band.right_band
-    assert compatibility_band.left_band == band.left_band
-    assert compatibility_band.right_band == band.right_band
-    assert start_head == artifact.start_head
 
 
 def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:

@@ -35,7 +35,6 @@ from .utm_band_layout import (
 from .pretty import parse_registers, parse_rules, parse_tape
 from .raw_transition_tm import TMTransitionProgram, run_raw_tm
 from .source_encoding import (
-    AbiRequirement,
     Encoding,
     TMAbi,
     TMProgram,
@@ -177,9 +176,6 @@ class UTMBandArtifact:
         return read_utm_artifact(path)
 
 
-UTMEncodingArtifact = UTMBandArtifact
-
-
 @dataclass(frozen=True)
 class TMRunConfig:
     """Runner-facing raw TM execution state."""
@@ -188,9 +184,6 @@ class TMRunConfig:
     tape: dict[int, str]
     head: int
     state: str
-
-
-RawTMConfig = TMRunConfig
 
 
 @dataclass(frozen=True)
@@ -373,9 +366,7 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
 
 
 __all__ = [
-    "AbiRequirement",
     "DecodedBandView",
-    "RawTMConfig",
     "TMRunConfig",
     "TMBand",
     "TMAbi",
@@ -384,7 +375,6 @@ __all__ = [
     "UTMProgramArtifact",
     "UTMBandArtifact",
     "UTMEncodedRule",
-    "UTMEncodingArtifact",
     "UTMRegisters",
     "UTMSimulatedTape",
     "abi_from_encoding",

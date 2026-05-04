@@ -1,17 +1,12 @@
-from mtm import (
-    build_universal_meta_asm,
-    load_fixture,
-    lower_instruction,
-    lower_instruction_sequence,
-    lower_program_to_raw_tm,
-    run_raw_tm,
-)
+from mtm import load_fixture
 from mtm.lowering import ACTIVE_RULE
+from mtm.lowering import lower_instruction, lower_instruction_sequence, lower_program_to_raw_tm
 from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo
+from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import lowering_smoke_rows
 from mtm.utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_runtime_tape, split_runtime_tape
-from mtm.raw_transition_tm import TMBuilder
+from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
 def _set_global_bits(band, marker: str, bits: str):

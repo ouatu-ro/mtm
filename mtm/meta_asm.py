@@ -123,7 +123,7 @@ class Program:
         alphabet: list[str] | tuple[str, ...],
         *,
         halt_state: str = "U_HALT",
-        blank: str = "_OUTER_BLANK",
+        blank: str = "_RUNTIME_BLANK",
     ):
         from .lowering import lower_program_to_raw_tm
 
@@ -139,7 +139,7 @@ class Program:
         alphabet: list[str] | tuple[str, ...],
         *,
         halt_state: str = "U_HALT",
-        blank: str = "_OUTER_BLANK",
+        blank: str = "_RUNTIME_BLANK",
         target_abi=None,
         minimal_abi=None,
     ):
