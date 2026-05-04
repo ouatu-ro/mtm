@@ -4,11 +4,120 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil, log2
-from typing import Iterable
+from types import MappingProxyType
+from typing import Iterable, Mapping
 
 L, R = -1, 1
 
-TMProgram = dict[tuple[str, str], tuple[str, str, int]]
+TransitionKey = tuple[str, str]
+Transition = tuple[str, str, int]
+TransitionMap = Mapping[TransitionKey, Transition]
+
+
+@dataclass(frozen=True)
+class TMProgram:
+    """Immutable source-level Turing machine transition program."""
+
+    transitions: TransitionMap
+    initial_state: str | None = None
+    halt_state: str | None = None
+    blank: str = "_"
+
+    def __post_init__(self) -> None:
+        copied = dict(self.transitions)
+        for key, transition in copied.items():
+            if len(key) != 2:
+                raise ValueError(f"transition key must be (state, read_symbol), got {key!r}")
+            if len(transition) != 3:
+                raise ValueError(f"transition value must be (next_state, write_symbol, move), got {transition!r}")
+            move_direction = transition[2]
+            if move_direction not in {L, R}:
+                raise ValueError(f"unsupported move direction {move_direction!r}; expected L or R")
+        object.__setattr__(self, "transitions", MappingProxyType(copied))
+
+    def __getitem__(self, key: TransitionKey) -> Transition:
+        return self.transitions[key]
+
+    def __iter__(self):
+        return iter(self.transitions)
+
+    def __len__(self) -> int:
+        return len(self.transitions)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.transitions
+
+    def items(self):
+        return self.transitions.items()
+
+    def keys(self):
+        return self.transitions.keys()
+
+    def values(self):
+        return self.transitions.values()
+
+    def get(self, key: TransitionKey, default=None):
+        return self.transitions.get(key, default)
+
+    def transition_for(self, state: str, symbol: str) -> Transition | None:
+        return self.transitions.get((state, symbol))
+
+    def states(self, *, initial_state: str | None = None, halt_state: str | None = None) -> tuple[str, ...]:
+        states = set()
+        if self.initial_state is not None:
+            states.add(self.initial_state)
+        if self.halt_state is not None:
+            states.add(self.halt_state)
+        if initial_state is not None:
+            states.add(initial_state)
+        if halt_state is not None:
+            states.add(halt_state)
+        for (state, _read_symbol), (next_state, _write_symbol, _move_direction) in self.transitions.items():
+            states.update((state, next_state))
+        return tuple(sorted(states))
+
+    def symbols(self, *, source_symbols: Iterable[str] = (), blank: str | None = None) -> tuple[str, ...]:
+        symbols = {self.blank if blank is None else blank}
+        for (_state, read_symbol), (_next_state, write_symbol, _move_direction) in self.transitions.items():
+            symbols.update((read_symbol, write_symbol))
+        symbols.update(source_symbols)
+        return tuple(sorted(symbols))
+
+    def required_abi(
+        self,
+        source_symbols: Iterable[str] = (),
+        *,
+        initial_state: str | None = None,
+        halt_state: str | None = None,
+        blank: str | None = None,
+    ) -> "TMAbi":
+        resolved_initial = initial_state if initial_state is not None else self.initial_state
+        resolved_halt = halt_state if halt_state is not None else self.halt_state
+        if resolved_initial is None or resolved_halt is None:
+            raise ValueError("required_abi requires initial_state and halt_state")
+        return infer_minimal_abi(
+            self,
+            initial_state=resolved_initial,
+            halt_state=resolved_halt,
+            blank=self.blank if blank is None else blank,
+            source_symbols=source_symbols,
+        )
+
+
+TMProgramLike = TMProgram | TransitionMap
+
+
+def coerce_tm_program(tm_program: TMProgramLike, *, initial_state: str | None = None, halt_state: str | None = None, blank: str = "_") -> TMProgram:
+    if isinstance(tm_program, TMProgram):
+        if initial_state is None and halt_state is None and blank == tm_program.blank:
+            return tm_program
+        return TMProgram(
+            tm_program.transitions,
+            initial_state=tm_program.initial_state if initial_state is None else initial_state,
+            halt_state=tm_program.halt_state if halt_state is None else halt_state,
+            blank=tm_program.blank if blank == "_" else blank,
+        )
+    return TMProgram(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
 
 
 @dataclass(frozen=True)
@@ -63,25 +172,19 @@ class Encoding:
 
 
 def collect_alphabet(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     *,
     halt_state: str,
     blank: str,
     initial_state: str | None = None,
     source_symbols: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
-    states, symbols = {halt_state}, {blank}
-    for (state, read_symbol), (next_state, write_symbol, _move_direction) in tm_program.items():
-        states.update((state, next_state))
-        symbols.update((read_symbol, write_symbol))
-    if initial_state is not None:
-        states.add(initial_state)
-    symbols.update(source_symbols)
-    return sorted(states), sorted(symbols)
+    program = coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
+    return list(program.states(initial_state=initial_state, halt_state=halt_state)), list(program.symbols(source_symbols=source_symbols, blank=blank))
 
 
 def infer_minimal_abi(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     *,
     initial_state: str,
     halt_state: str,
@@ -107,7 +210,7 @@ def infer_minimal_abi(
 
 
 def build_encoding(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     *,
     initial_state: str,
     halt_state: str,
@@ -115,8 +218,9 @@ def build_encoding(
     source_symbols: Iterable[str] = (),
     abi: TMAbi | None = None,
 ) -> Encoding:
+    program = coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
     states, symbols = collect_alphabet(
-        tm_program,
+        program,
         halt_state=halt_state,
         blank=blank,
         initial_state=initial_state,
@@ -174,4 +278,9 @@ __all__ = [
     "infer_minimal_abi",
     "unbits",
     "width_for",
+    "TMProgramLike",
+    "Transition",
+    "TransitionKey",
+    "TransitionMap",
+    "coerce_tm_program",
 ]

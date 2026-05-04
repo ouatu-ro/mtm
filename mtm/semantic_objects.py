@@ -39,6 +39,7 @@ from .tape_encoding import (
     Encoding,
     TMAbi,
     TMProgram,
+    TMProgramLike,
     encode_direction,
     encode_state,
     encode_symbol,
@@ -59,7 +60,7 @@ class TMBand:
 class TMInstance:
     """Source-level program plus source-level band."""
 
-    program: TMProgram
+    program: TMProgramLike
     band: TMBand
     initial_state: str | None = None
     halt_state: str | None = None
@@ -294,7 +295,7 @@ def _tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> lis
     return band + [END_TAPE]
 
 
-def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_state: str, halt_state: str) -> TMAbi:
+def infer_minimal_abi(tm_program: TMProgramLike, source_band: TMBand, *, initial_state: str, halt_state: str) -> TMAbi:
     return infer_minimal_encoding_abi(
         tm_program,
         initial_state=initial_state,

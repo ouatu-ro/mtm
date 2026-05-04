@@ -7,7 +7,7 @@ from runpy import run_path
 
 from .fixtures import TMFixture
 from .semantic_objects import TMBand, TMInstance
-from .tape_encoding import L, R
+from .tape_encoding import L, R, TMProgram
 
 
 def _read_required(namespace: dict[str, object], name: str):
@@ -29,9 +29,10 @@ def load_python_tm(path: str | Path) -> TMFixture:
     blanks_left = namespace.get("blanks_left", 0)
     blanks_right = namespace.get("blanks_right", 8)
     note = namespace.get("note", f"Loaded from {path.name}.")
+    program = TMProgram(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
     return TMFixture(
         name=namespace.get("name", path.stem),
-        tm_program=tm_program,
+        tm_program=program,
         input_symbols=list(input_symbols),
         initial_state=initial_state,
         halt_state=halt_state,

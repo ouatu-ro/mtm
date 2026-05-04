@@ -8,7 +8,7 @@ from mtm.meta_asm import build_universal_meta_asm
 from mtm.program_input import load_python_tm, load_python_tm_instance
 from mtm.raw_tm import TMTransitionProgram
 from mtm.semantic_objects import UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
-from mtm.tape_encoding import R
+from mtm.tape_encoding import R, TMProgram
 
 
 INCREMENTER_FILE = """\
@@ -41,6 +41,7 @@ def test_load_python_tm_file(tmp_path: Path) -> None:
     band = fixture.build_band()
 
     assert fixture.name == "incrementer_tm"
+    assert isinstance(fixture.tm_program, TMProgram)
     assert fixture.input_symbols == list("1011")
     assert fixture.initial_state == "qFindMargin"
     assert fixture.halt_state == "qDone"

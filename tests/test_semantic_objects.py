@@ -13,6 +13,7 @@ from mtm import (
     TMAbi,
     TMBand,
     TMInstance,
+    TMProgram,
     decoded_view_from_encoded_band,
     encoded_band_from_utm_artifact,
     load_fixture,
@@ -33,6 +34,28 @@ from mtm import (
 )
 from mtm.raw_tm import TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact
+
+
+def test_tm_program_wraps_source_transitions_immutably() -> None:
+    transitions = {("q0", "1"): ("qH", "0", 1)}
+    program = TMProgram(transitions, initial_state="q0", halt_state="qH", blank="_")
+    transitions[("q0", "1")] = ("q0", "1", 1)
+
+    assert len(program) == 1
+    assert program[("q0", "1")] == ("qH", "0", 1)
+    assert program.transition_for("q0", "1") == ("qH", "0", 1)
+    assert program.states() == ("q0", "qH")
+    assert program.symbols() == ("0", "1", "_")
+    assert program.required_abi(source_symbols=("1",)) == TMAbi(1, 2, 1, "mtm-v1", "min[Wq=1,Ws=2,Wd=1]")
+
+
+def test_tm_program_rejects_unsupported_direction() -> None:
+    try:
+        TMProgram({("q0", "1"): ("qH", "0", 0)}, initial_state="q0", halt_state="qH")
+    except ValueError as exc:
+        assert "unsupported move direction" in str(exc)
+    else:
+        raise AssertionError("expected unsupported direction to be rejected")
 
 
 def test_semantic_view_from_encoded_band() -> None:

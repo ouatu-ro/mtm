@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Iterable
 
-from .tape_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
+from .tape_encoding import Encoding, TMAbi, TMProgramLike, build_encoding, coerce_tm_program, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
 
 if TYPE_CHECKING:
     from .semantic_objects import TMBand
@@ -81,9 +81,10 @@ def build_register_band(encoding: Encoding) -> list[str]:
     ]
 
 
-def build_rule_band(encoding: Encoding, tm_program: TMProgram) -> list[str]:
+def build_rule_band(encoding: Encoding, tm_program: TMProgramLike) -> list[str]:
+    program = coerce_tm_program(tm_program)
     band = [RULES]
-    for (state, read_symbol), (next_state, write_symbol, move_direction) in tm_program.items():
+    for (state, read_symbol), (next_state, write_symbol, move_direction) in program.items():
         band.extend([
             RULE,
             *wrap_field(STATE, encode_state(encoding, state)),
@@ -180,7 +181,7 @@ def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
 
 
 def build_encoded_band(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
@@ -213,7 +214,7 @@ def build_encoded_band(
 
 
 def build_outer_tape(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
@@ -237,7 +238,7 @@ def build_outer_tape(
 
 
 def compile_tm_to_universal_tape(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
@@ -260,7 +261,7 @@ def compile_tm_to_universal_tape(
 
 
 def compile_tm_to_encoded_band(
-    tm_program: TMProgram,
+    tm_program: TMProgramLike,
     source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
