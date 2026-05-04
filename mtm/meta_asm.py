@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import Callable, TypeAlias
 
 from .compiled_band import CUR_STATE, CUR_SYMBOL, END_RULES, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL
 from .tape_encoding import Encoding, L, R, encode_direction, encode_state
@@ -155,46 +155,95 @@ MetaASMProgram = Program
 def bits(value: str) -> BitString: return tuple(value)
 
 
+@dataclass(frozen=True)
+class InstructionFormatSpec:
+    opcode: str
+    format_operands: Callable[[Instruction], str] = lambda _instruction: ""
+
+
+def _join_bits(bit_string: BitString) -> str:
+    return "".join(bit_string)
+
+
+def _format_seek_one_of(instruction: Instruction) -> str:
+    assert isinstance(instruction, SeekOneOf)
+    return f"[{', '.join(instruction.markers)}] {instruction.direction}"
+
+
+def _format_compare_global_local(instruction: Instruction) -> str:
+    assert isinstance(instruction, CompareGlobalLocal)
+    return f"{instruction.global_marker} {instruction.local_marker} {instruction.width}"
+
+
+def _format_compare_global_literal(instruction: Instruction) -> str:
+    assert isinstance(instruction, CompareGlobalLiteral)
+    return f"{instruction.global_marker} {_join_bits(instruction.literal_bits)}"
+
+
+def _format_branch_cmp(instruction: Instruction) -> str:
+    assert isinstance(instruction, BranchCmp)
+    return f"{instruction.label_equal} {instruction.label_not_equal}"
+
+
+def _format_copy_local_global(instruction: Instruction) -> str:
+    assert isinstance(instruction, CopyLocalGlobal)
+    return f"{instruction.local_marker} {instruction.global_marker} {instruction.width}"
+
+
+def _format_copy_global_global(instruction: Instruction) -> str:
+    assert isinstance(instruction, CopyGlobalGlobal)
+    return f"{instruction.src_marker} {instruction.dst_marker} {instruction.width}"
+
+
+def _format_copy_head_symbol_to(instruction: Instruction) -> str:
+    assert isinstance(instruction, CopyHeadSymbolTo)
+    return f"{instruction.global_marker} {instruction.width}"
+
+
+def _format_copy_global_to_head_symbol(instruction: Instruction) -> str:
+    assert isinstance(instruction, CopyGlobalToHeadSymbol)
+    return f"{instruction.global_marker} {instruction.width}"
+
+
+def _format_write_global(instruction: Instruction) -> str:
+    assert isinstance(instruction, WriteGlobal)
+    return f"{instruction.global_marker} {_join_bits(instruction.literal_bits)}"
+
+
+def _format_branch_at(instruction: Instruction) -> str:
+    assert isinstance(instruction, BranchAt)
+    return f"{instruction.marker} {instruction.label_true} {instruction.label_false}"
+
+
+INSTRUCTION_FORMATS: dict[type[Instruction], InstructionFormatSpec] = {
+    Goto: InstructionFormatSpec("GOTO", lambda instruction: instruction.label),
+    Halt: InstructionFormatSpec("HALT"),
+    Seek: InstructionFormatSpec("SEEK", lambda instruction: f"{instruction.marker} {instruction.direction}"),
+    SeekOneOf: InstructionFormatSpec("SEEK_ONE_OF", _format_seek_one_of),
+    FindFirstRule: InstructionFormatSpec("FIND_FIRST_RULE"),
+    FindNextRule: InstructionFormatSpec("FIND_NEXT_RULE"),
+    FindHeadCell: InstructionFormatSpec("FIND_HEAD_CELL"),
+    CompareGlobalLocal: InstructionFormatSpec("COMPARE_GLOBAL_LOCAL", _format_compare_global_local),
+    CompareGlobalLiteral: InstructionFormatSpec("COMPARE_GLOBAL_LITERAL", _format_compare_global_literal),
+    BranchCmp: InstructionFormatSpec("BRANCH_CMP", _format_branch_cmp),
+    CopyLocalGlobal: InstructionFormatSpec("COPY_LOCAL_GLOBAL", _format_copy_local_global),
+    CopyGlobalGlobal: InstructionFormatSpec("COPY_GLOBAL_GLOBAL", _format_copy_global_global),
+    CopyHeadSymbolTo: InstructionFormatSpec("COPY_HEAD_SYMBOL_TO", _format_copy_head_symbol_to),
+    CopyGlobalToHeadSymbol: InstructionFormatSpec("COPY_GLOBAL_TO_HEAD_SYMBOL", _format_copy_global_to_head_symbol),
+    WriteGlobal: InstructionFormatSpec("WRITE_GLOBAL", _format_write_global),
+    MoveSimHeadLeft: InstructionFormatSpec("MOVE_SIM_HEAD_LEFT"),
+    MoveSimHeadRight: InstructionFormatSpec("MOVE_SIM_HEAD_RIGHT"),
+    BranchAt: InstructionFormatSpec("BRANCH_AT", _format_branch_at),
+    Unimplemented: InstructionFormatSpec("UNIMPLEMENTED", lambda instruction: instruction.note),
+}
+
+
 def format_instruction(instruction: Instruction) -> str:
-    match instruction:
-        case Goto(label):
-            return f"GOTO {label}"
-        case Halt():
-            return "HALT"
-        case Seek(marker, direction):
-            return f"SEEK {marker} {direction}"
-        case SeekOneOf(markers, direction):
-            return f"SEEK_ONE_OF [{', '.join(markers)}] {direction}"
-        case FindFirstRule():
-            return "FIND_FIRST_RULE"
-        case FindNextRule():
-            return "FIND_NEXT_RULE"
-        case FindHeadCell():
-            return "FIND_HEAD_CELL"
-        case CompareGlobalLocal(global_marker, local_marker, width):
-            return f"COMPARE_GLOBAL_LOCAL {global_marker} {local_marker} {width}"
-        case CompareGlobalLiteral(global_marker, literal_bits):
-            return f"COMPARE_GLOBAL_LITERAL {global_marker} {''.join(literal_bits)}"
-        case BranchCmp(label_equal, label_not_equal):
-            return f"BRANCH_CMP {label_equal} {label_not_equal}"
-        case CopyLocalGlobal(local_marker, global_marker, width):
-            return f"COPY_LOCAL_GLOBAL {local_marker} {global_marker} {width}"
-        case CopyGlobalGlobal(src_marker, dst_marker, width):
-            return f"COPY_GLOBAL_GLOBAL {src_marker} {dst_marker} {width}"
-        case CopyHeadSymbolTo(global_marker, width):
-            return f"COPY_HEAD_SYMBOL_TO {global_marker} {width}"
-        case CopyGlobalToHeadSymbol(global_marker, width):
-            return f"COPY_GLOBAL_TO_HEAD_SYMBOL {global_marker} {width}"
-        case WriteGlobal(global_marker, literal_bits):
-            return f"WRITE_GLOBAL {global_marker} {''.join(literal_bits)}"
-        case MoveSimHeadLeft():
-            return "MOVE_SIM_HEAD_LEFT"
-        case MoveSimHeadRight():
-            return "MOVE_SIM_HEAD_RIGHT"
-        case BranchAt(marker, label_true, label_false):
-            return f"BRANCH_AT {marker} {label_true} {label_false}"
-        case Unimplemented(note):
-            return f"UNIMPLEMENTED {note}"
+    spec = INSTRUCTION_FORMATS.get(type(instruction))
+    if spec is None:
+        raise TypeError(f"unsupported Meta-ASM instruction: {instruction!r}")
+    operands = spec.format_operands(instruction)
+    return spec.opcode if not operands else f"{spec.opcode} {operands}"
 
 
 def format_program(program: Program) -> str:
