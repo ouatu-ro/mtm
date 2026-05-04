@@ -48,6 +48,8 @@ def load_python_tm_instance(path: str | Path) -> TMInstance:
     return TMInstance(
         program=fixture.tm_program,
         band=TMBand(cells=cells, head=fixture.blanks_left, blank=fixture.blank),
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
     )
 
 

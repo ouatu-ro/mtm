@@ -13,6 +13,7 @@ from .compiled_band import (
     split_raw_tape,
     split_runtime_tape,
 )
+from .compiler import Compiler
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
 from .lowering import lower_instruction, lower_instruction_sequence, lower_program, lower_program_to_raw_tm
 from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, format_program
@@ -101,6 +102,7 @@ __all__ = [
     "compile_tm_to_encoded_band",
     "compile_tm_to_runtime_tape",
     "compile_tm_to_universal_tape",
+    "Compiler",
     "format_meta_trace",
     "format_program",
     "get_fixture",

@@ -53,6 +53,8 @@ def test_load_python_tm_instance(tmp_path: Path) -> None:
     instance = load_python_tm_instance(tm_path)
 
     assert instance.program[("qFindMargin", "0")] == ("qFindMargin", "0", R)
+    assert instance.initial_state == "qFindMargin"
+    assert instance.halt_state == "qDone"
     assert instance.band.blank == "_"
     assert instance.band.head == 0
     assert instance.band.cells[:4] == tuple("1011")

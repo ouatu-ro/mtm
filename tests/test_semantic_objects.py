@@ -3,12 +3,14 @@ from mtm import (
     build_encoded_band,
     build_outer_tape,
     build_runtime_tape,
+    Compiler,
     compile_tm_to_encoded_band,
     compile_tm_to_universal_tape,
     compile_tm_to_runtime_tape,
     infer_minimal_abi,
     TMAbi,
     TMBand,
+    TMInstance,
     decoded_view_from_encoded_band,
     encoded_band_from_utm_artifact,
     load_fixture,
@@ -66,6 +68,18 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     assert round_tripped_band.minimal_abi == minimal_abi
     assert round_tripped_band.target_abi == artifact.target_abi
     assert isinstance(artifact, UTMBandArtifact)
+
+
+def test_utm_encoded_emission_methods() -> None:
+    band = load_fixture("incrementer").build_band()
+    encoded = utm_encoded_from_band(band)
+
+    artifact = encoded.to_band_artifact()
+    view = encoded.decoded_view()
+
+    assert artifact == utm_artifact_from_band(band)
+    assert artifact.to_encoded_band() == band
+    assert view == decoded_view_from_encoded_band(band)
 
 
 def test_utm_artifact_round_trip(tmp_path) -> None:
@@ -148,6 +162,48 @@ def test_minimal_abi_inference_and_explicit_target_abi() -> None:
     assert band.encoding.state_width == 3
     assert band.encoding.symbol_width == 4
     assert band.encoding.direction_width == 2
+
+
+def test_compiler_infers_abi_and_compiles_to_utm_encoded() -> None:
+    fixture = load_fixture("incrementer")
+    instance = TMInstance(
+        program=fixture.tm_program,
+        band=TMBand(
+            cells=tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
+            head=fixture.blanks_left,
+            blank=fixture.blank,
+        ),
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+    compiler = Compiler()
+
+    inferred = compiler.infer_abi(instance)
+    encoded = compiler.compile(instance)
+
+    assert inferred == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
+    assert encoded == utm_encoded_from_band(fixture.build_band())
+    assert encoded.to_band_artifact() == utm_artifact_from_band(fixture.build_band())
+
+
+def test_compiler_uses_selected_target_abi() -> None:
+    fixture = load_fixture("incrementer")
+    target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
+    instance = TMInstance(
+        program=fixture.tm_program,
+        band=TMBand(
+            cells=tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
+            head=fixture.blanks_left,
+            blank=fixture.blank,
+        ),
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+
+    encoded = Compiler(target_abi=target).compile(instance)
+
+    assert encoded.target_abi == target
+    assert encoded.to_band_artifact().target_abi == target
 
 
 def test_compile_rejects_too_small_abi() -> None:

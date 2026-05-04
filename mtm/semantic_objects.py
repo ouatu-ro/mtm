@@ -4,10 +4,46 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import EncodedBand
+from .compiled_band import (
+    CELL,
+    CMP_FLAG,
+    CUR_STATE,
+    CUR_SYMBOL,
+    END_CELL,
+    END_REGS,
+    END_RULE,
+    END_RULES,
+    HEAD,
+    MOVE,
+    MOVE_DIR,
+    NEXT,
+    NEXT_STATE,
+    NO_HEAD,
+    READ,
+    REGS,
+    RULE,
+    RULES,
+    STATE,
+    TAPE,
+    TMP,
+    WRITE,
+    WRITE_SYMBOL,
+    END_TAPE,
+    EncodedBand,
+    wrap_field,
+)
 from .pretty import parse_registers, parse_rules, parse_tape
 from .raw_tm import TMTransitionProgram
-from .tape_encoding import AbiRequirement, Encoding, TMAbi, TMProgram, infer_minimal_abi as infer_minimal_encoding_abi
+from .tape_encoding import (
+    AbiRequirement,
+    Encoding,
+    TMAbi,
+    TMProgram,
+    encode_direction,
+    encode_state,
+    encode_symbol,
+    infer_minimal_abi as infer_minimal_encoding_abi,
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +61,8 @@ class TMInstance:
 
     program: TMProgram
     band: TMBand
+    initial_state: str | None = None
+    halt_state: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +114,29 @@ class UTMEncoded:
 
     @property
     def current_state(self) -> str: return self.registers.cur_state
+
+    def to_encoded_band(self) -> EncodedBand:
+        left_band = _register_band_from_semantics(self.encoding, self.registers)
+        left_band += _rule_band_from_semantics(self.encoding, self.rules)
+        right_band = _tape_band_from_semantics(self.encoding, self.simulated_tape)
+        return EncodedBand(
+            self.encoding,
+            left_band,
+            right_band,
+            minimal_abi=self.minimal_abi,
+            target_abi=self.target_abi,
+        )
+
+    def to_band_artifact(self) -> "UTMBandArtifact":
+        return utm_artifact_from_band(self.to_encoded_band(), minimal_abi=self.minimal_abi)
+
+    def decoded_view(self) -> "DecodedBandView":
+        return DecodedBandView(
+            registers=self.registers,
+            rules=self.rules,
+            simulated_tape=self.simulated_tape,
+            encoding=self.encoding,
+        )
 
 
 @dataclass(frozen=True)
@@ -150,6 +211,42 @@ def abi_from_encoding(encoding: Encoding) -> TMAbi:
 
 def source_band_from_simulated_tape(cells: tuple[str, ...], head: int, *, blank: str) -> TMBand:
     return TMBand(cells=cells, head=head, blank=blank)
+
+
+def _register_band_from_semantics(encoding: Encoding, registers: UTMRegisters) -> list[str]:
+    return [
+        REGS,
+        *wrap_field(CUR_STATE, encode_state(encoding, registers.cur_state)),
+        *wrap_field(CUR_SYMBOL, encode_symbol(encoding, registers.cur_symbol)),
+        *wrap_field(WRITE_SYMBOL, encode_symbol(encoding, registers.write_symbol)),
+        *wrap_field(NEXT_STATE, encode_state(encoding, registers.next_state)),
+        *wrap_field(MOVE_DIR, encode_direction(encoding, registers.move_dir)),
+        *wrap_field(CMP_FLAG, (registers.cmp_flag,)),
+        *wrap_field(TMP, registers.tmp_bits),
+        END_REGS,
+    ]
+
+
+def _rule_band_from_semantics(encoding: Encoding, rules: tuple[UTMEncodedRule, ...]) -> list[str]:
+    band = [RULES]
+    for rule in rules:
+        band.extend([
+            RULE,
+            *wrap_field(STATE, encode_state(encoding, rule.state)),
+            *wrap_field(READ, encode_symbol(encoding, rule.read_symbol)),
+            *wrap_field(WRITE, encode_symbol(encoding, rule.write_symbol)),
+            *wrap_field(NEXT, encode_state(encoding, rule.next_state)),
+            *wrap_field(MOVE, encode_direction(encoding, rule.move_dir)),
+            END_RULE,
+        ])
+    return band + [END_RULES]
+
+
+def _tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> list[str]:
+    band = [TAPE]
+    for index, symbol in enumerate(tape.cells):
+        band.extend([CELL, HEAD if index == tape.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+    return band + [END_TAPE]
 
 
 def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_state: str, halt_state: str) -> TMAbi:
