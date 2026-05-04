@@ -6,7 +6,8 @@ from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, f
 from .meta_interpreter import MetaInterpreterRules, build_meta_interpreter_rules, format_meta_trace, run_meta_asm_block, run_meta_asm_host
 from .outer_tape import EncodedBand, Encoding, build_outer_tape, compile_tm_to_universal_tape
 from .pretty import pretty_band, pretty_fixture
-from .raw_tm import RawTM, TMBuilder, run_raw_tm
+from .program_input import load_python_tm
+from .raw_tm import RawTM, TMBuilder, format_raw_tm, run_raw_tm
 
 __all__ = [
     "EncodedBand",
@@ -31,8 +32,10 @@ __all__ = [
     "lower_program",
     "lower_program_to_raw_tm",
     "load_fixture",
+    "load_python_tm",
     "pretty_band",
     "pretty_fixture",
+    "format_raw_tm",
     "run_meta_asm_block",
     "run_raw_tm",
     "run_meta_asm_host",

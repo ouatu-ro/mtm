@@ -63,4 +63,18 @@ def run_raw_tm(tm: RawTM, tape: dict[int, str], *, head: int = 0, state: str | N
     return {"status": "halted" if state == tm.halt_state else "fuel_exhausted", "state": state, "head": head, "tape": tape, "steps": steps}
 
 
-__all__ = ["L", "R", "S", "RawTM", "TMBuilder", "run_raw_tm"]
+def format_raw_tm(tm: RawTM) -> str:
+    rows = []
+    for (state, read), (next_state, write, move) in sorted(tm.prog.items()):
+        rows.append(f"    ({state!r}, {read!r}): ({next_state!r}, {write!r}, {move}),")
+    return "\n".join([
+        "raw_tm = {",
+        *rows,
+        "}",
+        f"start_state = {tm.start_state!r}",
+        f"halt_state = {tm.halt_state!r}",
+        f"blank = {tm.blank!r}",
+    ])
+
+
+__all__ = ["L", "R", "S", "RawTM", "TMBuilder", "format_raw_tm", "run_raw_tm"]
