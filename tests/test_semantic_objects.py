@@ -32,7 +32,7 @@ from mtm import (
     UniversalInterpreter,
     write_utm_artifact,
 )
-from mtm.raw_tm import TMBuilder, TMTransitionProgram
+from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact
 
 

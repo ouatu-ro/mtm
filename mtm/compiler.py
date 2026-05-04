@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import compile_tm_to_universal_tape
+from .utm_band_layout import compile_tm_to_universal_tape
 from .semantic_objects import TMAbi, TMInstance, UTMEncoded, infer_minimal_abi, utm_encoded_from_band
 
 

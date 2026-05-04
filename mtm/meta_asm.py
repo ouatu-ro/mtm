@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, TypeAlias
 
-from .compiled_band import CUR_STATE, CUR_SYMBOL, END_RULES, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL
-from .tape_encoding import Encoding, L, R, encode_direction, encode_state
+from .utm_band_layout import CUR_STATE, CUR_SYMBOL, END_RULES, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL
+from .source_encoding import Encoding, L, R, encode_direction, encode_state
 
 LabelName: TypeAlias = str
 Marker: TypeAlias = str

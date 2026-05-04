@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .lowering import ACTIVE_RULE
 from .meta_asm import Program, build_universal_meta_asm
 from .semantic_objects import UTMEncoded, UTMBandArtifact, UTMProgramArtifact
-from .tape_encoding import Encoding
+from .source_encoding import Encoding
 
 
 @dataclass(frozen=True)

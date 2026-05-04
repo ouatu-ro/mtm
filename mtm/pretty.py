@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from .compiled_band import (
+from .utm_band_layout import (
     CELL,
     CMP_FLAG,
     CUR_STATE,
@@ -35,7 +35,7 @@ from .compiled_band import (
     WRITE_SYMBOL,
     EncodedBand,
 )
-from .tape_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
+from .source_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
 

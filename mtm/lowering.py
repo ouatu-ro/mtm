@@ -25,8 +25,8 @@ from .meta_asm import (
     SeekOneOf,
     WriteGlobal,
 )
-from .compiled_band import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TMP, WRITE_SYMBOL
-from .raw_tm import L, R, RawTM, S, TMBuilder
+from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TMP, WRITE_SYMBOL
+from .raw_transition_tm import L, R, RawTM, S, TMBuilder
 
 GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
 ACTIVE_RULE = "#ACTIVE_RULE"

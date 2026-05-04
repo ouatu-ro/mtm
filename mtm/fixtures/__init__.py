@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from importlib import import_module
 from pkgutil import iter_modules
 
-from ..compiled_band import EncodedBand, compile_tm_to_universal_tape
-from ..tape_encoding import TMAbi, TMProgram
+from ..utm_band_layout import EncodedBand, compile_tm_to_universal_tape
+from ..source_encoding import TMAbi, TMProgram
 
 @dataclass(frozen=True)
 class TMFixture:

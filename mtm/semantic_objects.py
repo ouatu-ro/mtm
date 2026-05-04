@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import (
+from .utm_band_layout import (
     CELL,
     CMP_FLAG,
     CUR_STATE,
@@ -33,8 +33,8 @@ from .compiled_band import (
     wrap_field,
 )
 from .pretty import parse_registers, parse_rules, parse_tape
-from .raw_tm import TMTransitionProgram, run_raw_tm
-from .tape_encoding import (
+from .raw_transition_tm import TMTransitionProgram, run_raw_tm
+from .source_encoding import (
     AbiRequirement,
     Encoding,
     TMAbi,

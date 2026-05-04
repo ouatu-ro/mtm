@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from runpy import run_path
 
-from .compiled_band import EncodedBand
-from .raw_tm import TMTransitionProgram
+from .utm_band_layout import EncodedBand
+from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import TMAbi, UTMBandArtifact, encoded_band_from_utm_artifact, start_head_from_encoded_band, utm_artifact_from_band
-from .tape_encoding import Encoding
+from .source_encoding import Encoding
 
 
 def _literal(value) -> str:

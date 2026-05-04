@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Iterable
 
-from .tape_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
+from .source_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
 
 if TYPE_CHECKING:
     from .semantic_objects import TMBand

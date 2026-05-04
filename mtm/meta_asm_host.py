@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
+from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import (
     BranchAt,
     BranchCmp,
@@ -33,7 +33,7 @@ from .meta_asm import (
     format_instruction,
 )
 from .pretty import table
-from .tape_encoding import TMProgram, encode_symbol
+from .source_encoding import TMProgram, encode_symbol
 
 
 @dataclass(frozen=True)

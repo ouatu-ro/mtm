@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from .fixtures import TMFixture
-from .lowering import ACTIVE_RULE, lower_instruction
-from .meta_asm import (
+from ..mtm.fixtures import TMFixture
+from ..mtm.lowering import ACTIVE_RULE, lower_instruction
+from ..mtm.meta_asm import (
     BranchAt,
     BranchCmp,
     CompareGlobalLiteral,
@@ -25,8 +25,8 @@ from .meta_asm import (
     WriteGlobal,
     bits,
 )
-from .compiled_band import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, materialize_runtime_tape, split_runtime_tape
-from .raw_tm import TMBuilder, run_raw_tm
+from ..mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, materialize_runtime_tape, split_runtime_tape
+from ..mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
 def set_global_bits(band, marker: str, value: str):

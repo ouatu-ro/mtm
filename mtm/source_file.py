@@ -7,7 +7,7 @@ from runpy import run_path
 
 from .fixtures import TMFixture
 from .semantic_objects import TMBand, TMInstance
-from .tape_encoding import L, R, TMProgram
+from .source_encoding import L, R, TMProgram
 
 
 def _read_required(namespace: dict[str, object], name: str):

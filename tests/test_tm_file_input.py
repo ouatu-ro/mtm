@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 
 from mtm.cli import main as cli_main
-from mtm.demo import main
+from examples.demo import main
 from mtm.artifacts import read_tm, read_utm, read_utm_artifact, write_utm
 from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
-from mtm.program_input import load_python_tm, load_python_tm_instance
-from mtm.raw_tm import TMTransitionProgram
+from mtm.source_file import load_python_tm, load_python_tm_instance
+from mtm.raw_transition_tm import TMTransitionProgram
 from mtm.semantic_objects import UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
-from mtm.tape_encoding import R, TMProgram
+from mtm.source_encoding import R, TMProgram
 
 
 INCREMENTER_FILE = """\

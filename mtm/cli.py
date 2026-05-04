@@ -6,13 +6,13 @@ import argparse
 from pathlib import Path
 
 from .compiler import Compiler
-from .compiled_band import EncodedBand, split_runtime_tape
+from .utm_band_layout import EncodedBand, split_runtime_tape
 from .meta_asm import format_program
 from .pretty import pretty_registers, pretty_tape
-from .program_input import load_python_tm_instance
-from .raw_tm import TMTransitionProgram, run_raw_tm
+from .source_file import load_python_tm_instance
+from .raw_transition_tm import TMTransitionProgram, run_raw_tm
 from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact
-from .tape_encoding import TMAbi
+from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
 
 

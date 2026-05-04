@@ -2,7 +2,7 @@
 
 from .artifacts import read_tm, read_utm, read_utm_artifact, write_tm, write_utm, write_utm_artifact
 from .cli import main as cli_main
-from .compiled_band import (
+from .utm_band_layout import (
     EncodedBand,
     build_encoded_band,
     build_outer_tape,
@@ -27,8 +27,8 @@ from .meta_asm_host import (
     run_meta_asm_runtime,
 )
 from .pretty import pretty_band, pretty_fixture, pretty_outer_tape, pretty_runtime_tape
-from .program_input import load_python_tm, load_python_tm_instance
-from .raw_tm import RawTM, TMBuilder, TMTransitionProgram, format_raw_tm, run_raw_tm
+from .source_file import load_python_tm, load_python_tm_instance
+from .raw_transition_tm import RawTM, TMBuilder, TMTransitionProgram, format_raw_tm, run_raw_tm
 from .semantic_objects import (
     AbiRequirement,
     DecodedBandView,
@@ -53,7 +53,7 @@ from .semantic_objects import (
     utm_artifact_from_band,
     utm_encoded_from_band,
 )
-from .tape_encoding import Encoding, L, R, TMProgram
+from .source_encoding import Encoding, L, R, TMProgram
 from .universal import UniversalInterpreter
 
 def build_utm_encoded(*args, **kwargs):

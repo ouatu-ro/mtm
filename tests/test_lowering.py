@@ -9,9 +9,9 @@ from mtm import (
 from mtm.lowering import ACTIVE_RULE
 from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
-from mtm.lowering_checks import lowering_smoke_rows
-from mtm.compiled_band import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_runtime_tape, split_runtime_tape
-from mtm.raw_tm import TMBuilder
+from tests.lowering_checks import lowering_smoke_rows
+from mtm.utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_runtime_tape, split_runtime_tape
+from mtm.raw_transition_tm import TMBuilder
 
 
 def _set_global_bits(band, marker: str, bits: str):

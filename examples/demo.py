@@ -5,17 +5,17 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from .fixtures import list_fixtures, load_fixture
-from .compiler import Compiler
-from .compiled_band import EncodedBand, split_runtime_tape
-from .lowering_checks import lowering_smoke_rows
-from .meta_asm import format_program
-from .meta_asm_host import format_meta_trace, run_meta_asm_runtime
-from .pretty import pretty_fixture, pretty_registers, pretty_tape, table
-from .program_input import load_python_tm
-from .raw_tm import format_raw_tm, run_raw_tm
-from .semantic_objects import TMBand, TMInstance
-from .universal import UniversalInterpreter
+from ..mtm.fixtures import list_fixtures, load_fixture
+from ..mtm.compiler import Compiler
+from ..mtm.utm_band_layout import EncodedBand, split_runtime_tape
+from ..tests.lowering_checks import lowering_smoke_rows
+from ..mtm.meta_asm import format_program
+from ..mtm.meta_asm_host import format_meta_trace, run_meta_asm_runtime
+from ..mtm.pretty import pretty_fixture, pretty_registers, pretty_tape, table
+from ..mtm.source_file import load_python_tm
+from ..mtm.raw_transition_tm import format_raw_tm, run_raw_tm
+from ..mtm.semantic_objects import TMBand, TMInstance
+from ..mtm.universal import UniversalInterpreter
 
 
 def _instance_from_fixture(fixture: Any) -> TMInstance:
