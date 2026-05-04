@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 from .fixtures import list_fixtures, load_fixture
+from .compiler import Compiler
+from .compiled_band import EncodedBand, split_runtime_tape
 from .lowering_checks import lowering_smoke_rows
-from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
-from .meta_asm import build_universal_meta_asm, format_program
+from .meta_asm import format_program
 from .meta_asm_host import format_meta_trace, run_meta_asm_runtime
-from .compiled_band import CUR_STATE, EncodedBand, split_runtime_tape
 from .pretty import pretty_fixture, pretty_registers, pretty_tape, table
 from .program_input import load_python_tm
 from .raw_tm import format_raw_tm, run_raw_tm
+from .semantic_objects import TMBand, TMInstance
+from .universal import UniversalInterpreter
+
+
+def _instance_from_fixture(fixture: Any) -> TMInstance:
+    cells = tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right)
+    return TMInstance(
+        program=fixture.tm_program,
+        band=TMBand(cells=cells, head=fixture.blanks_left, blank=fixture.blank),
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded runtime band.")
@@ -35,11 +49,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     fixture = load_python_tm(args.tm_file) if args.tm_file else load_fixture(args.fixture)
-    band = fixture.build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    left_addresses = list(range(-len(band.left_band), 0))
-    start_head = left_addresses[band.left_band.index(CUR_STATE)]
+    instance = _instance_from_fixture(fixture)
+    encoded = Compiler().compile(instance)
+    band_artifact = encoded.to_band_artifact()
+    band = band_artifact.to_encoded_band()
+    interpreter = UniversalInterpreter.for_encoded(encoded)
+    program = interpreter.to_meta_asm()
+    program_artifact = interpreter.lower_for_band(band_artifact)
+    raw_tm = program_artifact.program
 
     print(pretty_fixture(fixture, show_runtime=args.show_runtime or args.show_outer))
     if args.asm or args.run_asm:
@@ -72,8 +89,6 @@ def main(argv: list[str] | None = None) -> int:
         print("FINAL TAPE")
         print()
         print(pretty_tape(final_band.encoding, final_band.right_band))
-    if args.emit_raw_tm or args.run_utm:
-        raw_tm = lower_program_to_raw_tm(program, alphabet)
     if args.emit_raw_tm:
         print()
         print("=" * 88)
@@ -82,7 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_raw_tm(raw_tm))
     if args.run_utm:
-        result = run_raw_tm(raw_tm, band.runtime_tape, head=start_head, max_steps=args.max_raw_steps)
+        config = band_artifact.to_run_config(program_artifact)
+        result = run_raw_tm(raw_tm, config.tape, head=config.head, state=config.state, max_steps=args.max_raw_steps)
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
         final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
         print()

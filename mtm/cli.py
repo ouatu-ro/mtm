@@ -5,15 +5,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .artifacts import read_tm, read_utm_artifact, write_tm, write_utm_artifact
-from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
-from .meta_asm import build_universal_meta_asm, format_program
-from .compiled_band import CUR_STATE, EncodedBand, split_runtime_tape
+from .compiler import Compiler
+from .compiled_band import EncodedBand, split_runtime_tape
+from .meta_asm import format_program
 from .pretty import pretty_registers, pretty_tape
-from .program_input import load_python_tm
-from .raw_tm import run_raw_tm
-from .semantic_objects import utm_artifact_from_band
+from .program_input import load_python_tm_instance
+from .raw_tm import TMTransitionProgram, run_raw_tm
+from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact
 from .tape_encoding import TMAbi
+from .universal import UniversalInterpreter
 
 
 def _target_abi_from_args(args) -> TMAbi | None:
@@ -30,13 +30,13 @@ def _target_abi_from_args(args) -> TMAbi | None:
     )
 
 
-def _compile_from_py(path: str | Path, *, abi: TMAbi | None = None):
-    fixture = load_python_tm(path)
-    band = fixture.build_band(abi=abi)
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    raw_tm = lower_program_to_raw_tm(program, alphabet)
-    return fixture, band, program, raw_tm
+def _compile_from_py(path: str | Path, *, abi: TMAbi | None = None) -> tuple[UTMEncoded, UTMBandArtifact, UniversalInterpreter, UTMProgramArtifact]:
+    instance = load_python_tm_instance(path)
+    encoded = Compiler(target_abi=abi).compile(instance)
+    band_artifact = encoded.to_band_artifact()
+    interpreter = UniversalInterpreter.for_encoded(encoded)
+    program_artifact = interpreter.lower_for_band(band_artifact)
+    return encoded, band_artifact, interpreter, program_artifact
 
 
 def _add_abi_args(parser: argparse.ArgumentParser) -> None:
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compile and run MTM artifacts.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    compile_parser = sub.add_parser("compile", help="Compile a Python TM file into a runtime-band .utm artifact.")
+    compile_parser = sub.add_parser("compile", help="Compile a Python TM file into a .utm.band artifact.")
     compile_parser.add_argument("input")
     compile_parser.add_argument("-o", "--output", required=True)
     compile_parser.add_argument("--asm-out")
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     tm_parser.add_argument("-o", "--output", required=True)
     _add_abi_args(tm_parser)
 
-    run_parser = sub.add_parser("run", help="Run a raw .tm program on a .utm artifact or a plain string tape.")
+    run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact or a plain string tape.")
     run_parser.add_argument("tm_file")
     run_parser.add_argument("input", nargs="?")
     run_parser.add_argument("--input-string")
@@ -82,25 +82,25 @@ def main(argv: list[str] | None = None) -> int:
     abi = _target_abi_from_args(args)
 
     if args.command == "compile":
-        _fixture, band, program, raw_tm = _compile_from_py(args.input, abi=abi)
-        write_utm_artifact(args.output, utm_artifact_from_band(band))
+        _encoded, band_artifact, interpreter, program_artifact = _compile_from_py(args.input, abi=abi)
+        band_artifact.write(args.output)
         if args.asm_out:
-            _write_text(args.asm_out, format_program(program))
+            _write_text(args.asm_out, format_program(interpreter.to_meta_asm()))
         if args.tm_out:
-            write_tm(args.tm_out, raw_tm)
+            program_artifact.write(args.tm_out)
         return 0
 
     if args.command == "emit-asm":
-        _fixture, _band, program, _raw_tm = _compile_from_py(args.input, abi=abi)
-        _write_text(args.output, format_program(program))
+        _encoded, _band_artifact, interpreter, _program_artifact = _compile_from_py(args.input, abi=abi)
+        _write_text(args.output, format_program(interpreter.to_meta_asm()))
         return 0
 
     if args.command == "emit-tm":
-        _fixture, _band, _program, raw_tm = _compile_from_py(args.input, abi=abi)
-        write_tm(args.output, raw_tm)
+        _encoded, _band_artifact, _interpreter, program_artifact = _compile_from_py(args.input, abi=abi)
+        program_artifact.write(args.output)
         return 0
 
-    tm = read_tm(args.tm_file)
+    tm = TMTransitionProgram.read(args.tm_file)
     if args.input_string is not None:
         tape = dict(enumerate(args.input_string))
         result = run_raw_tm(tm, tape, head=args.head, max_steps=args.max_steps)
@@ -113,12 +113,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.input is None:
-        raise SystemExit("run requires either INPUT.utm or --input-string")
-    artifact = read_utm_artifact(args.input)
+        raise SystemExit("run requires either INPUT.utm.band or --input-string")
+    artifact = UTMBandArtifact.read(args.input)
     band = artifact.to_encoded_band()
-    start_head = artifact.start_head
-    runtime_tape = band.runtime_tape
-    result = run_raw_tm(tm, runtime_tape, head=start_head, max_steps=args.max_steps)
+    program_artifact = UTMProgramArtifact(program=tm, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
+    config = artifact.to_run_config(program_artifact)
+    runtime_tape = dict(config.tape)
+    result = program_artifact.run(artifact, fuel=args.max_steps)
     final_left_band, final_right_band = band.left_band, band.right_band
     if result["tape"] != runtime_tape:
         final_left_band, final_right_band = split_runtime_tape(result["tape"])

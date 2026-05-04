@@ -88,7 +88,7 @@ def test_utm_encoded_emission_methods() -> None:
 def test_utm_artifact_round_trip(tmp_path) -> None:
     band = load_fixture("incrementer").build_band()
     artifact = utm_artifact_from_band(band)
-    path = tmp_path / "incrementer.utm"
+    path = tmp_path / "incrementer.utm.band"
 
     write_utm_artifact(path, artifact)
 
@@ -105,7 +105,7 @@ def test_utm_artifact_round_trip(tmp_path) -> None:
 def test_primary_artifact_class_methods_round_trip(tmp_path) -> None:
     band = load_fixture("incrementer").build_band()
     artifact = utm_artifact_from_band(band)
-    path = tmp_path / "incrementer.utm"
+    path = tmp_path / "incrementer.utm.band"
 
     artifact.write(path)
     loaded = UTMBandArtifact.read(path)

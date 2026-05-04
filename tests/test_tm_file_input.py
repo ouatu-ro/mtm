@@ -7,7 +7,7 @@ from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.program_input import load_python_tm, load_python_tm_instance
 from mtm.raw_tm import TMTransitionProgram
-from mtm.semantic_objects import UTMBandArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.semantic_objects import UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
 from mtm.tape_encoding import R
 
 
@@ -75,19 +75,21 @@ def test_demo_tm_file_emit_and_run(tmp_path: Path, capsys) -> None:
 
 def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
     tm_path = _write_tm_file(tmp_path)
-    utm_path = tmp_path / "incrementer.utm"
+    utm_path = tmp_path / "incrementer.utm.band"
     asm_path = tmp_path / "utm.asm"
     raw_tm_path = tmp_path / "utm.tm"
 
     assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--asm-out", str(asm_path), "--tm-out", str(raw_tm_path)]) == 0
+    artifact = read_utm_artifact(utm_path)
     band, start_head = read_utm(utm_path)
-    tm = read_tm(raw_tm_path)
+    tm = UTMProgramArtifact.read(raw_tm_path, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
 
     assert utm_path.exists()
     assert asm_path.exists()
     assert raw_tm_path.exists()
+    assert artifact.to_encoded_band() == band
     assert start_head < 0
-    assert tm.start_state == "START_STEP"
+    assert tm.program.start_state == "START_STEP"
     assert "LABEL START_STEP" in asm_path.read_text()
 
     assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
@@ -98,7 +100,7 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
 
 def test_cli_compile_with_explicit_target_abi(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
-    utm_path = tmp_path / "incrementer.utm"
+    utm_path = tmp_path / "incrementer.utm.band"
 
     assert cli_main([
         "compile",
@@ -133,7 +135,7 @@ def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
     band = fixture.build_band()
-    utm_path = tmp_path / "incrementer.utm"
+    utm_path = tmp_path / "incrementer.utm.band"
 
     write_utm(utm_path, utm_artifact_from_band(band))
     artifact = read_utm_artifact(utm_path)
@@ -152,7 +154,7 @@ def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
     band = fixture.build_band()
-    utm_path = tmp_path / "incrementer.utm"
+    utm_path = tmp_path / "incrementer.utm.band"
     raw_tm_path = tmp_path / "utm.tm"
 
     utm_artifact_from_band(band).write(utm_path)
@@ -165,3 +167,22 @@ def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
 
     assert artifact.to_encoded_band() == band
     assert tm.start_state == "START_STEP"
+
+
+def test_primary_program_and_band_artifact_work_together(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
+
+    band_artifact = UTMBandArtifact.read(utm_path)
+    program_artifact = UTMProgramArtifact.read(
+        raw_tm_path,
+        target_abi=band_artifact.target_abi,
+        minimal_abi=band_artifact.minimal_abi,
+    )
+    result = program_artifact.run(band_artifact, fuel=200_000)
+
+    assert result["status"] == "halted"
+    assert result["state"] == "U_HALT"
