@@ -149,6 +149,9 @@ class Program:
         )
 
 
+MetaASMProgram = Program
+
+
 def bits(value: str) -> BitString: return tuple(value)
 
 
@@ -287,6 +290,7 @@ __all__ = [
     "Instruction",
     "LabelName",
     "Marker",
+    "MetaASMProgram",
     "MoveSimHeadLeft",
     "MoveSimHeadRight",
     "Program",

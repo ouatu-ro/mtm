@@ -303,33 +303,52 @@ def test_public_compatibility_boundary_is_explicit() -> None:
     public = set(mtm.__all__)
 
     primary_names = {
-        "build_encoded_band",
-        "compile_tm_to_universal_tape",
-        "materialize_runtime_tape",
-        "split_runtime_tape",
-        "pretty_runtime_tape",
-        "run_meta_asm_runtime",
-        "run_meta_asm_block_runtime",
-        "utm_encoded_from_band",
-        "utm_artifact_from_band",
-        "decoded_view_from_encoded_band",
+        "L",
+        "R",
+        "TMProgram",
+        "TMBand",
+        "TMInstance",
+        "TMAbi",
+        "Encoding",
+        "Compiler",
+        "UTMEncoded",
+        "UTMBandArtifact",
+        "MetaASMProgram",
+        "UTMProgramArtifact",
+        "TMTransitionProgram",
+        "TMRunConfig",
+        "DecodedBandView",
+        "UniversalInterpreter",
     }
     alias_names = {
+        "build_encoded_band",
         "build_runtime_tape",
         "build_outer_tape",
+        "compile_tm_to_universal_tape",
         "compile_tm_to_runtime_tape",
         "compile_tm_to_encoded_band",
+        "materialize_runtime_tape",
         "materialize_raw_tape",
+        "split_runtime_tape",
         "split_raw_tape",
         "split_outer_tape",
+        "pretty_runtime_tape",
         "pretty_outer_tape",
+        "run_meta_asm_runtime",
+        "run_meta_asm_block_runtime",
         "run_meta_asm_host",
         "run_meta_asm_block",
         "build_utm_encoded",
         "build_utm_encoding_artifact",
+        "utm_encoded_from_band",
+        "utm_artifact_from_band",
+        "decoded_view_from_encoded_band",
+        "encoded_band_from_utm_artifact",
     }
 
     assert primary_names <= public
     assert alias_names <= public
+    assert "lower_instruction" not in public
+    assert "TMBuilder" not in public
     assert mtm.build_utm_encoded(band) == mtm.utm_encoded_from_band(band)
     assert mtm.build_utm_encoding_artifact(band) == mtm.utm_artifact_from_band(band)
