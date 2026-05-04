@@ -1,216 +1,128 @@
 # Meta-TM Compiler Spec
 
-## 0. Goal
+## 1. Goal
 
-Build a staged system where an object-level Turing machine program is encoded as data on a runtime raw tape view, and a meta-level universal interpreter can execute it.
+Build a staged system where a source-level Turing machine is compiled into an
+encoded UTM input band, and a generated universal interpreter executes that band
+on an ordinary TM runner.
 
-There are two separate compilers:
+The two emitted runtime artifacts are:
+
+```text
+utm.tm              lowered universal-machine transition program
+object.utm.band     encoded object program plus simulated object tape
+```
+
+Execution pairs them as:
+
+```text
+ordinary TM runner
+  program: utm.tm
+  input:   object.utm.band
+```
+
+There are two compilation pipelines:
 
 ```text
 Object compiler:
-  source TM program + source tape/configuration
-    -> semantic UTM-encoded object
-    -> serialized UTM artifact
+  TMInstance
+  -> UTMEncoded
+  -> UTMBandArtifact
 
-Meta compiler:
-  Meta-ASM universal interpreter
-    -> ordinary raw TM transition table
+Universal interpreter compiler:
+  TMAbi
+  -> MetaASMProgram
+  -> TMTransitionProgram
+  -> UTMProgramArtifact
 ```
 
-The final execution target is:
+## 2. Public Interface
 
-```text
-raw ordinary TM runner
-  program:  lowered Meta-ASM transition table
-  tape:     serialized UTM artifact plus runtime raw tape view
-```
-
-The immediate implementation target is the object compiler plus a Meta-ASM spec.
-
----
-
-# 0.1 Object Model
-
-The system should keep the following concepts distinct:
-
-```text
-TMProgram
-  pure source-level TM semantics
-
-TMBand
-  source-level tape/configuration
-
-TMAbi
-  target encoding family / machine family
-
-Encoding
-  dense concrete assignment of IDs and bit widths under a chosen ABI
-
-UTMEncoded
-  semantic compiled object for the universal machine
-
-UTMEncodingArtifact
-  serialized `.utm`-style artifact for the universal machine
-
-MetaASMProgram
-  semantic universal interpreter in Meta-ASM form
-
-RawTMProgram
-  lowered ordinary TM transition table
-
-RawTMConfig
-  runner-facing execution state
-
-DecodedBandView
-  semantic interpretation of UTM execution state
-```
-
-Important design rule:
-
-```text
-raw tape view / `outer_tape` is a runtime/serialization representation,
-not the primary semantic IR
-```
-
-The central semantic compiled object is `UTMEncoded`, not the raw tape view.
-
-Public naming boundary:
-
-| Primary names | Compatibility aliases |
-| --- | --- |
-| `build_encoded_band` | `build_runtime_tape`, `build_outer_tape` |
-| `compile_tm_to_universal_tape` | `compile_tm_to_runtime_tape`, `compile_tm_to_encoded_band` |
-| `materialize_runtime_tape`, `split_runtime_tape` | `materialize_raw_tape`, `split_raw_tape`, `split_outer_tape` |
-| `pretty_runtime_tape` | `pretty_outer_tape` |
-| `run_meta_asm_runtime`, `run_meta_asm_block_runtime` | `run_meta_asm_host`, `run_meta_asm_block` |
-| `utm_encoded_from_band`, `utm_artifact_from_band` | `build_utm_encoded`, `build_utm_encoding_artifact` |
-
-These aliases stay until downstream callers have moved to the primary names; after that, the shim layer can be removed mechanically.
-
----
-
-# 0.2 Compatibility Boundary
-
-During the migration, the codebase keeps two naming layers:
-
-Primary names:
-
-- `build_encoded_band`
-- `compile_tm_to_encoded_band`
-- `runtime_tape`
-- `materialize_runtime_tape`
-- `split_runtime_tape`
-- `run_meta_asm_runtime`
-- `run_meta_asm_block_runtime`
-- `pretty_runtime_tape`
-
-Compatibility aliases:
-
-- `build_outer_tape`
-- `compile_tm_to_universal_tape`
-- `outer_tape`
-- `materialize_raw_tape`
-- `split_raw_tape`
-- `split_outer_tape`
-- `run_meta_asm_host`
-- `run_meta_asm_block`
-- `pretty_raw_tape`
-- `pretty_outer_tape`
-
-Rule:
-
-```text
-new docs and new code should prefer the primary names;
-compatibility aliases remain only to avoid breaking existing callers.
-```
-
----
-
-# 1. Object Compiler API
+The intended top-level workflow is:
 
 ```python
-def infer_minimal_abi(tm_prog, source_band) -> TMAbi:
-    ...
+instance = TMInstance(program, band)
 
-def compile_tm_to_encoded_band(
-    tm_prog,
-    source_band,
-    *,
-    abi,
-    blanks_left=0,
-    blanks_right=8,
-):
-    ...
+compiler = Compiler(target_abi=abi)
+encoded = compiler.compile(instance)
 
-def build_utm_encoded(encoded_band, *, minimal_abi=None) -> UTMEncoded:
-    ...
+band_artifact = encoded.to_band_artifact()
+band_artifact.write("object.utm.band")
 
-def build_utm_encoding_artifact(encoded_band, *, minimal_abi=None) -> UTMEncodingArtifact:
-    ...
+interpreter = UniversalInterpreter.for_abi(encoded.target_abi)
+asm = interpreter.to_meta_asm()
+program_artifact = asm.lower().to_artifact()
+program_artifact.write("utm.tm")
+
+result = program_artifact.run(band_artifact, fuel=100_000)
+view = result.decode(encoded.encoding)
 ```
 
-Source TM format:
+Primary objects:
+
+- `TMProgram`
+- `TMBand`
+- `TMInstance`
+- `TMAbi`
+- `Encoding`
+- `Compiler`
+- `UTMEncoded`
+- `UTMBandArtifact`
+- `UniversalInterpreter`
+- `MetaASMProgram`
+- `TMTransitionProgram`
+- `UTMProgramArtifact`
+- `TMRunConfig`
+- `DecodedBandView`
+
+## 3. Source Program and Band
+
+Source transition shape:
 
 ```python
-tm_prog = {
-    (state, read_symbol): (next_state, write_symbol, move_dir),
-}
+(state, read_symbol) -> (next_state, write_symbol, move_direction)
 ```
 
-Where:
+Directions:
 
 ```python
 L = -1
 R = 1
 ```
 
-Source tape/configuration format:
+Source band:
 
 ```python
 TMBand(
-    cells=...,
-    head=...,
+    cells=("1", "0", "1", "1"),
+    head=0,
     blank="_",
 )
 ```
 
-The object compiler should support two explicit modes:
-
-```text
-1. infer minimal ABI requirement
-2. compile under a selected target ABI
-```
-
-Compatibility helpers may still accept bare `input_symbols` and infer a minimal ABI automatically, but the main semantic pipeline should make both `source_band` and `abi` explicit.
-
-The semantic compiler returns a semantic UTM object:
+Source instance:
 
 ```python
-UTMEncoded(
-    encoding=...,
-    registers=...,
-    rules=...,
-    simulated_tape=...,
-    simulated_head=...,
-    minimal_abi=...,
-    target_abi=...,
+TMInstance(
+    program=program,
+    band=band,
 )
 ```
 
-Serialization of that semantic object yields an artifact form:
+The source band is a finite demonstrational tape/configuration. The UTM band
+artifact may include explicit blank padding on either side of the provided
+source cells.
+
+## 4. ABI and Encoding
+
+The object compiler supports two ABI operations:
 
 ```python
-UTMEncodingArtifact(
-    encoding=...,
-    left_band=...,
-    right_band=...,
-    start_head=...,
-    target_abi=...,
-    minimal_abi=...,
-)
+Compiler.infer_abi(instance) -> TMAbi
+Compiler(target_abi=abi).compile(instance) -> UTMEncoded
 ```
 
-The compiler is allowed to reject a source TM if the selected widths are too small:
+The compiler accepts a selected ABI when:
 
 ```text
 number_of_states  <= 2^state_width
@@ -218,27 +130,13 @@ number_of_symbols <= 2^symbol_width
 number_of_dirs    <= 2^dir_width
 ```
 
-Equivalently:
-
-```text
-required_abi <= selected_abi
-```
-
-The object compiler does **not** emit behavior. It emits a semantic compiled object plus a serialized artifact consumed by the universal interpreter.
-
----
-
-# 2. Encoding Map
-
-The compiler assigns dense numeric IDs to source-level states and symbols.
-
-Example:
+Encoding assigns dense IDs:
 
 ```text
 states:
-  qAdd        -> 00000000
-  qDone       -> 00000001
-  qFindMargin -> 00000010
+  qAdd         -> 00000000
+  qDone        -> 00000001
+  qFindMargin  -> 00000010
 
 symbols:
   "0" -> 00000000
@@ -256,30 +154,78 @@ Required property:
 decode(encode(x)) = x
 ```
 
-No hashing unless collisions are impossible by construction. Dense interning is preferred.
+## 5. Semantic UTM Object
 
----
+The object compiler produces:
 
-# 3. Serialized UTM Artifact Layout
-
-The serialized UTM artifact is split conceptually:
-
-```text
-negative addresses: meta side
-nonnegative addresses: object tape side
+```python
+UTMEncoded(
+    encoding=...,
+    registers=...,
+    rules=...,
+    simulated_tape=...,
+    minimal_abi=...,
+    target_abi=...,
+)
 ```
 
-The split is a serialization/runtime convention, not the primary semantic IR.
+Registers:
 
-```text
-... #REGS ... #RULES ... #END_RULES | #TAPE #CELL ... #END_TAPE ...
-                                      ^
-                                      address 0
+| Register | Meaning |
+| --- | --- |
+| `cur_state` | Current simulated source state. |
+| `cur_symbol` | Symbol copied from the simulated head cell. |
+| `write_symbol` | Symbol selected by the matched transition rule. |
+| `next_state` | Next state selected by the matched transition rule. |
+| `move_dir` | Direction selected by the matched transition rule. |
+| `cmp_flag` | Boolean comparison flag represented as a bit. |
+| `tmp_bits` | Scratch bits used by copy/compare routines. |
+
+Rules:
+
+```python
+UTMEncodedRule(
+    state=...,
+    read_symbol=...,
+    next_state=...,
+    write_symbol=...,
+    move_dir=...,
+)
 ```
 
-## 3.1 Meta Side
+Simulated tape:
 
-The left/meta side contains registers and transition registry.
+```python
+UTMSimulatedTape(
+    cells=...,
+    head=...,
+    blank=...,
+)
+```
+
+## 6. `.utm.band` Artifact Layout
+
+`UTMBandArtifact` serializes the semantic UTM object into a split band:
+
+```text
+left band:   registers + transition rules
+right band:  simulated object tape
+```
+
+Runtime materialization:
+
+```text
+... left_band[-3] left_band[-2] left_band[-1] | right_band[0] right_band[1] right_band[2] ...
+                                               ^
+                                               split point between -1 and 0
+```
+
+The left band is placed at negative addresses. The right band starts at address
+`0`.
+
+### 6.1 Left Band
+
+The left band contains registers and transition rules:
 
 ```text
 #REGS
@@ -305,39 +251,15 @@ The left/meta side contains registers and transition registry.
 #END_RULES
 ```
 
-Registers:
-
-| Register        | Meaning                                                              |
-| --------------- | -------------------------------------------------------------------- |
-| `#CUR_STATE`    | Current simulated TM state.                                          |
-| `#CUR_SYMBOL`   | Symbol copied from the simulated head cell.                          |
-| `#WRITE_SYMBOL` | Symbol selected by matched transition rule.                          |
-| `#NEXT_STATE`   | Next state selected by matched transition rule.                      |
-| `#MOVE_DIR`     | Movement direction selected by matched transition rule.              |
-| `#CMP_FLAG`     | Comparison result flag, usually `1` for equal and `0` for not equal. |
-| `#TMP`          | Scratch space for compare/copy routines.                             |
-
-Transition record:
+Transition record semantics:
 
 ```text
-#RULE
-  #STATE q
-  #READ  a
-  #WRITE b
-  #NEXT  q'
-  #MOVE  d
-#END_RULE
+(#STATE, #READ) -> (#NEXT, #WRITE, #MOVE)
 ```
 
-Semantics:
+### 6.2 Right Band
 
-```text
-(q, a) -> (q', b, d)
-```
-
-## 3.2 Object Tape Side
-
-The right/object side contains the simulated TM tape.
+The right band contains the simulated source tape:
 
 ```text
 #TAPE
@@ -348,65 +270,36 @@ The right/object side contains the simulated TM tape.
 #END_TAPE
 ```
 
-Each encoded cell has:
-
-| Field                | Meaning                                           |
-| -------------------- | ------------------------------------------------- |
-| `#CELL`              | Cell delimiter.                                   |
-| `#HEAD` / `#NO_HEAD` | Whether this cell is the simulated head position. |
-| `<symbol_bits>`      | Encoded simulated tape symbol.                    |
-| `#END_CELL`          | Cell terminator.                                  |
-
 Invariant:
 
 ```text
-Exactly one encoded object-tape cell has #HEAD.
+Exactly one encoded tape cell carries #HEAD.
 ```
 
----
+### 6.3 Field Widths
 
-# 4. Field Width Policy
-
-Initial implementation uses fixed-width fields:
+Initial fixed-width fields:
 
 ```text
 state field width  = state_width
 symbol field width = symbol_width
-direction width    = 1
+direction width    = dir_width
 ```
 
-But fields also carry terminators:
+Fields also carry terminators:
 
 ```text
 #STATE 00000010 #END_FIELD
 #CELL #HEAD 00000001 #END_CELL
 ```
 
-This redundancy is intentional.
+The fixed width lets the interpreter count bits. The terminators make layout
+validation and variable-width routines straightforward.
 
-Fixed-width routines can count bits:
+## 7. Meta-ASM
 
-```text
-compare exactly W bits, then check #END_FIELD
-```
-
-Variable-width routines can later ignore `W` and scan until terminators:
-
-```text
-compare until #END_FIELD
-```
-
-This gives a path from a width-specialized universal family to a width-independent universal machine.
-
----
-
-# 5. Meta-ASM
-
-Meta-ASM is a macro language for expressing the universal interpreter over the encoded tape.
-
-It is not Python. It is also not yet raw TM transitions. It is an intermediate language whose instructions must each have a finite raw-TM lowering.
-
-## 5.1 Program Structure
+Meta-ASM is the semantic instruction language for the generated universal
+interpreter. A `MetaASMProgram` contains labeled blocks:
 
 ```text
 LABEL name
@@ -415,26 +308,24 @@ LABEL name
   ...
 ```
 
-Control-flow instructions:
+Control flow:
 
 ```text
 GOTO label
 HALT
 ```
 
-Labels are resolved by the Meta-ASM compiler.
+Labels resolve during lowering.
 
----
+## 8. Meta-ASM Instruction Set
 
-# 6. Meta-ASM Instruction Set
-
-## 6.1 Movement / Search
+### 8.1 Movement and Search
 
 ```text
 SEEK marker dir
 ```
 
-Move outer TM head in direction `dir` until `marker` is found.
+Move the runtime head in `dir` until `marker` is found.
 
 ```text
 SEEK_ONE_OF [marker1, marker2, ...] dir
@@ -446,33 +337,32 @@ Move until one of the listed markers is found.
 FIND_FIRST_RULE
 ```
 
-Move to the first `#RULE` after `#RULES`, or to `#END_RULES` if no rule exists.
+Move to the first `#RULE` after `#RULES`, or to `#END_RULES` when the rule
+registry is empty.
 
 ```text
 FIND_NEXT_RULE
 ```
 
-Precondition: outer head is at current `#RULE`.
+Precondition: head is at the current `#RULE`.
 
-Postcondition: outer head is at next `#RULE` or `#END_RULES`.
+Postcondition: head is at the next `#RULE` or `#END_RULES`.
 
 ```text
 FIND_HEAD_CELL
 ```
 
-Find the encoded object-tape cell whose head flag is `#HEAD`.
+Find the simulated object-tape cell carrying `#HEAD`.
 
-Postcondition: outer head is at that cell’s `#CELL` marker.
+Postcondition: head is at that cell's `#CELL` marker.
 
----
-
-## 6.2 Comparison
+### 8.2 Comparison
 
 ```text
 COMPARE_GLOBAL_LOCAL global_marker local_marker width
 ```
 
-Compare a unique global register field with a local field inside the current rule.
+Compare a global register field with a field inside the current rule.
 
 Example:
 
@@ -480,25 +370,13 @@ Example:
 COMPARE_GLOBAL_LOCAL #CUR_STATE #STATE state_width
 ```
 
-Precondition:
-
-```text
-outer head is at current #RULE
-```
-
-Meaning:
-
-```text
-compare bits after global #CUR_STATE
-against bits after local #STATE in current rule
-```
-
 Postcondition:
 
 ```text
-outer head returns to current #RULE
-#CMP_FLAG = 1 if equal, else 0
-all temporary marks are cleaned
+head returns to the current #RULE
+#CMP_FLAG = 1 when equal
+#CMP_FLAG = 0 when different
+temporary marks are cleaned
 ```
 
 ```text
@@ -507,27 +385,13 @@ COMPARE_GLOBAL_LITERAL global_marker literal_bits
 
 Compare a global register field against a literal bitstring.
 
-Example:
-
-```text
-COMPARE_GLOBAL_LITERAL #MOVE_DIR 0
-```
-
-Postcondition:
-
-```text
-#CMP_FLAG = 1 if equal, else 0
-```
-
 ```text
 BRANCH_CMP label_equal label_not_equal
 ```
 
 Branch based on `#CMP_FLAG`.
 
----
-
-## 6.3 Copying
+### 8.3 Copying
 
 ```text
 COPY_LOCAL_GLOBAL local_marker global_marker width
@@ -535,36 +399,11 @@ COPY_LOCAL_GLOBAL local_marker global_marker width
 
 Copy a local field from the current rule into a global register.
 
-Example:
-
-```text
-COPY_LOCAL_GLOBAL #WRITE #WRITE_SYMBOL symbol_width
-```
-
-Precondition:
-
-```text
-outer head is at current #RULE
-```
-
-Postcondition:
-
-```text
-outer head returns to current #RULE
-target global register overwritten
-```
-
 ```text
 COPY_GLOBAL_GLOBAL src_marker dst_marker width
 ```
 
-Copy one global register field into another.
-
-Example:
-
-```text
-COPY_GLOBAL_GLOBAL #NEXT_STATE #CUR_STATE state_width
-```
+Copy one global register into another global register.
 
 ```text
 COPY_HEAD_SYMBOL_TO global_marker width
@@ -572,68 +411,37 @@ COPY_HEAD_SYMBOL_TO global_marker width
 
 Copy symbol bits from the current simulated head cell into a global register.
 
-Precondition:
-
-```text
-outer head is at #CELL of the head cell
-```
-
-Example:
-
-```text
-COPY_HEAD_SYMBOL_TO #CUR_SYMBOL symbol_width
-```
+Precondition: head is at the simulated head cell's `#CELL`.
 
 ```text
 COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width
 ```
 
-Copy a global register field into the symbol field of the current simulated head cell.
+Copy a global register into the symbol field of the current simulated head cell.
 
-Precondition:
+Precondition: head is at the simulated head cell's `#CELL`.
 
-```text
-outer head is at #CELL of the head cell
-```
-
-Example:
-
-```text
-COPY_GLOBAL_TO_HEAD_SYMBOL #WRITE_SYMBOL symbol_width
-```
-
----
-
-## 6.4 Writing
+### 8.4 Writing
 
 ```text
 WRITE_GLOBAL global_marker literal_bits
 ```
 
-Overwrite a global register with literal bits.
+Overwrite a global register with a literal bitstring.
 
-Example:
-
-```text
-WRITE_GLOBAL #CMP_FLAG 0
-```
-
-This is mostly useful for initialization, cleanup, and debugging.
-
----
-
-## 6.5 Simulated Head Movement
+### 8.5 Simulated Head Movement
 
 ```text
 MOVE_SIM_HEAD_LEFT
 ```
 
-Move the `#HEAD` flag from the current simulated cell to the previous encoded cell.
+Move the `#HEAD` flag from the current simulated cell to the previous encoded
+cell.
 
 Precondition:
 
 ```text
-outer head is at current simulated #CELL
+head is at the current simulated #CELL
 ```
 
 Postcondition:
@@ -641,17 +449,8 @@ Postcondition:
 ```text
 old cell has #NO_HEAD
 left neighbor has #HEAD
-outer head is at new head cell's #CELL
+head is at the new head cell's #CELL
 ```
-
-If no left neighbor exists, first implementation may either:
-
-```text
-1. enter STUCK, or
-2. extend the encoded tape with a blank cell on the left
-```
-
-For simplicity, initial bounded implementation may choose `STUCK`.
 
 ```text
 MOVE_SIM_HEAD_RIGHT
@@ -659,55 +458,45 @@ MOVE_SIM_HEAD_RIGHT
 
 Move the `#HEAD` flag from the current simulated cell to the next encoded cell.
 
-If the next marker is `#END_TAPE`, implementation may either:
+Precondition:
 
 ```text
-1. enter STUCK, or
-2. insert/expose a new blank cell before #END_TAPE
+head is at the current simulated #CELL
 ```
 
-For simplicity, initial bounded implementation may choose `STUCK`; dynamic extension can be added later.
+Postcondition:
 
----
+```text
+old cell has #NO_HEAD
+right neighbor has #HEAD
+head is at the new head cell's #CELL
+```
 
-## 6.6 Branching on Current Marker
+The bounded demonstrational implementation may enter `STUCK` when movement
+would leave the encoded tape window.
+
+### 8.6 Branching on Current Marker
 
 ```text
 BRANCH_AT marker label_true label_false
 ```
 
-If the outer head is currently on `marker`, branch to `label_true`; otherwise branch to `label_false`.
+Branch according to the marker currently under the runtime head.
 
-Useful after:
+## 9. Universal Interpreter Program
 
-```text
-FIND_FIRST_RULE
-FIND_NEXT_RULE
-SEEK_ONE_OF
-```
-
-Example:
-
-```text
-BRANCH_AT #END_RULES STUCK CHECK_STATE
-```
-
----
-
-# 7. Universal Interpreter in Meta-ASM
-
-For fixed widths:
+For a selected ABI:
 
 ```text
 state_width  = Wq
 symbol_width = Ws
-dir_width    = 1
+dir_width    = Wd
 L_BITS        = encoding of L
 R_BITS        = encoding of R
 HALT_BITS     = encoding of halt_state
 ```
 
-Meta-ASM program:
+Generated Meta-ASM:
 
 ```text
 LABEL START_STEP
@@ -738,7 +527,7 @@ LABEL NEXT_RULE
 LABEL MATCHED_RULE
   COPY_LOCAL_GLOBAL #WRITE #WRITE_SYMBOL Ws
   COPY_LOCAL_GLOBAL #NEXT  #NEXT_STATE Wq
-  COPY_LOCAL_GLOBAL #MOVE  #MOVE_DIR 1
+  COPY_LOCAL_GLOBAL #MOVE  #MOVE_DIR Wd
 
   FIND_HEAD_CELL
   COPY_GLOBAL_TO_HEAD_SYMBOL #WRITE_SYMBOL Ws
@@ -773,30 +562,22 @@ LABEL STUCK
   HALT
 ```
 
-This program is the universal interpreter at the Meta-ASM level.
+One pass through `START_STEP` implements one simulated source-TM step, unless
+the source state is already halting or the encoded machine becomes stuck.
 
----
+## 10. Lowering to `.tm`
 
-# 8. Lowering Strategy
+Each Meta-ASM instruction lowers to a finite fragment of ordinary TM transition
+states.
 
-Each Meta-ASM instruction lowers to a finite fragment of raw TM transition states.
-
-Raw TM transition shape:
-
-```python
-meta_tm_prog = {
-    (state, read_symbol): (next_state, write_symbol, move_dir),
-}
-```
-
-A lowering function has the shape:
+Lowerer shape:
 
 ```python
-def lower_instruction(builder, instr, continuation_label):
+def lower_instruction(builder, instruction, continuation_label):
     ...
 ```
 
-The builder emits raw transitions and generates fresh raw states:
+Builder interface:
 
 ```python
 class TMBuilder:
@@ -805,29 +586,40 @@ class TMBuilder:
     def label_state(self, label): ...
 ```
 
-## 8.1 Lowering Obligations
+Every lowering rule defines:
 
-Every Meta-ASM instruction must specify:
+- expected head position before the instruction
+- head position after the instruction
+- fields and markers it may mutate
+- temporary markers it must clean
+- continuation behavior
 
-```text
-Precondition:
-  where the raw TM head is expected to be
+The output is:
 
-Postcondition:
-  where the raw TM head is left
-  which tape fields may be mutated
-  which markers/temporary symbols are cleaned
+```python
+TMTransitionProgram(
+    transitions=...,
+    start_state=...,
+    halt_state=...,
+    alphabet=...,
+    blank=...,
+)
 ```
 
-This is mandatory. Without pre/post head-position contracts, macro expansion becomes unmanageable.
+Wrapping that program with ABI metadata yields:
 
----
+```python
+UTMProgramArtifact(
+    program=transition_program,
+    abi=abi,
+)
+```
 
-# 9. Example Lowering Descriptions
+## 11. Lowering Sketches
 
-## 9.1 `SEEK marker dir`
+### 11.1 `SEEK marker dir`
 
-High-level behavior:
+Behavior:
 
 ```text
 while scanned symbol != marker:
@@ -835,426 +627,213 @@ while scanned symbol != marker:
 continue
 ```
 
-Raw lowering:
+Lowering:
 
 ```text
 state seek_marker:
-  on marker: goto continuation, keep marker, stay or normalize
+  on marker: goto continuation
   on any other symbol: keep symbol, move dir, stay in seek_marker
 ```
 
-Requires enumerating the outer alphabet.
+### 11.2 `COMPARE_GLOBAL_LITERAL marker literal_bits`
 
----
-
-## 9.2 `COMPARE_GLOBAL_LITERAL marker literal_bits`
-
-High-level behavior:
+Behavior:
 
 ```text
 seek marker
 for each bit in literal_bits:
-    move to next unprocessed bit
-    compare with expected literal bit
-    if mismatch: write #CMP_FLAG = 0
-if all match: write #CMP_FLAG = 1
+    move to the bit position
+    compare with the expected bit
+write #CMP_FLAG
 cleanup
 ```
 
-Lowering idea:
+The first implementation counts fixed-width bit positions in control states.
+
+### 11.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
+
+Behavior:
 
 ```text
-For each bit position i:
-  emit control states:
-    compare_i_expect_0
-    compare_i_expect_1
-
-Mismatch jumps to write_cmp_false.
-Success after all bits jumps to write_cmp_true.
-```
-
-This can be implemented either by counting fixed width in control states or by marking consumed bits.
-
-For first implementation, fixed-width counting is simpler.
-
----
-
-## 9.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
-
-High-level behavior:
-
-```text
-save current #RULE anchor
-compare width bits after global_marker
-with width bits after local_marker in current rule
-set #CMP_FLAG
-return to #RULE
-```
-
-Lowering idea:
-
-```text
+mark current #RULE as #RULE_ACTIVE
 for i in 0..width-1:
-  go to global_marker
-  move i+1 cells to bit i
-  branch on bit 0/1 into control state
-  return to current #RULE
-  scan right to local_marker
-  move i+1 cells to local bit i
-  compare bit
-  if mismatch: set #CMP_FLAG=0 and return to #RULE
-after all bits:
-  set #CMP_FLAG=1 and return to #RULE
-```
-
-Requires either:
-
-```text
-1. preserving current #RULE by returning to it via local scans, or
-2. marking the active #RULE temporarily.
-```
-
-Prefer marking the active rule:
-
-```text
-#RULE -> #RULE_ACTIVE
-```
-
-Then local scans can reliably return to `#RULE_ACTIVE`.
-
-Cleanup:
-
-```text
-#RULE_ACTIVE -> #RULE
-```
-
----
-
-## 9.4 `COPY_LOCAL_GLOBAL local_marker global_marker width`
-
-High-level behavior:
-
-```text
-mark active #RULE
-for each bit i:
-    read bit i from local field
-    write it to bit i of global field
-restore active #RULE marker
+    read global bit i
+    read local bit i in the active rule
+    compare
+write #CMP_FLAG
+restore #RULE_ACTIVE to #RULE
 return to #RULE
 ```
 
-Lowering idea:
+### 11.4 `COPY_LOCAL_GLOBAL local_marker global_marker width`
+
+Behavior:
 
 ```text
-for each bit i:
-  scan from #RULE_ACTIVE to local_marker
-  move to bit i
-  branch into saw_0 / saw_1 state
-  scan to global_marker
-  move to bit i
-  write 0 or 1
-  scan back to #RULE_ACTIVE
+mark current #RULE as #RULE_ACTIVE
+for i in 0..width-1:
+    read local bit i
+    write global bit i
+restore #RULE_ACTIVE to #RULE
+return to #RULE
 ```
 
-Again, fixed-width indexing can be encoded in control states.
+### 11.5 `FIND_HEAD_CELL`
 
----
-
-## 9.5 `FIND_HEAD_CELL`
-
-High-level behavior:
+Behavior:
 
 ```text
 seek #TAPE
 repeat:
-  seek next #CELL
-  inspect following head flag
-  if #HEAD: stop at that #CELL
-  if #NO_HEAD: continue
-  if #END_TAPE: stuck
+  seek next #CELL or #END_TAPE
+  if #CELL is followed by #HEAD: stop at #CELL
+  if #CELL is followed by #NO_HEAD: continue
+  if #END_TAPE: goto STUCK
 ```
 
-Lowering idea:
+### 11.6 `COPY_HEAD_SYMBOL_TO global_marker width`
 
-```text
-scan right to #TAPE
-scan right to #CELL or #END_TAPE
-if #END_TAPE: goto STUCK
-if #CELL:
-    move right one symbol
-    if #HEAD:
-        move left one symbol back to #CELL
-        continue
-    if #NO_HEAD:
-        continue scanning right
-```
-
-Postcondition:
-
-```text
-raw head is at the #CELL marker of the simulated head cell
-```
-
----
-
-## 9.6 `COPY_HEAD_SYMBOL_TO global_marker width`
-
-Precondition:
-
-```text
-raw head at current simulated #CELL
-```
-
-High-level behavior:
-
-```text
-for i in 0..width-1:
-    read symbol bit i from cell
-    write it into global register bit i
-return to #CELL
-```
-
-Lowering idea:
+Behavior:
 
 ```text
 mark current #CELL as #CELL_ACTIVE
-for each i:
-  move to cell symbol bit i
-  branch saw_0/saw_1
-  seek global_marker
-  move to bit i
-  write bit
-  seek #CELL_ACTIVE
+for i in 0..width-1:
+    read cell symbol bit i
+    write global bit i
 restore #CELL_ACTIVE to #CELL
+return to #CELL
 ```
 
----
+### 11.7 `COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width`
 
-## 9.7 `COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width`
-
-Same as above, but direction reversed:
+Behavior:
 
 ```text
+mark current #CELL as #CELL_ACTIVE
 for i in 0..width-1:
     read global bit i
-    write symbol bit i into active head cell
+    write cell symbol bit i
+restore #CELL_ACTIVE to #CELL
+return to #CELL
 ```
 
----
+### 11.8 `MOVE_SIM_HEAD_RIGHT`
 
-## 9.8 `MOVE_SIM_HEAD_RIGHT`
-
-Precondition:
+Behavior:
 
 ```text
-raw head at current simulated #CELL
-```
-
-High-level behavior:
-
-```text
-set current head flag to #NO_HEAD
-find next #CELL
-set its head flag to #HEAD
-return to new #CELL
-```
-
-Lowering idea:
-
-```text
-at #CELL:
-  move right to head flag
+at current #CELL:
+  move to head flag
   write #NO_HEAD
   scan right to next #CELL or #END_TAPE
-  if #END_TAPE: STUCK or extension routine
-  if #CELL:
-      move right to head flag
-      write #HEAD
-      move left to #CELL
+  if #END_TAPE: goto STUCK
+  write #HEAD on the next cell
+  return to the new #CELL
 ```
 
----
+### 11.9 `MOVE_SIM_HEAD_LEFT`
 
-## 9.9 `MOVE_SIM_HEAD_LEFT`
-
-Precondition:
+Behavior:
 
 ```text
-raw head at current simulated #CELL
+at current #CELL:
+  move to head flag
+  write #NO_HEAD
+  scan left to previous #CELL or #TAPE
+  if #TAPE: goto STUCK
+  write #HEAD on the previous cell
+  return to the new #CELL
 ```
 
-High-level behavior:
+## 12. Runtime Alphabet
+
+The runtime alphabet contains:
+
+- layout markers
+- field markers
+- tape-cell markers
+- bits `0` and `1`
+- active marker variants such as `#RULE_ACTIVE` and `#CELL_ACTIVE`
+- marked bit variants when required by a lowering routine
+- the outer blank symbol
+
+Cycle-boundary invariants:
 
 ```text
-set current head flag to #NO_HEAD
-scan left to previous #CELL
-set its head flag to #HEAD
-return to previous #CELL
+no active markers remain
+no marked bits remain
+exactly one #HEAD exists in the right band
 ```
 
-Lowering issue:
+## 13. Correctness Targets
+
+### 13.1 Object Compiler
+
+For a source instance `I`:
 
 ```text
-Because #CELL appears at the beginning of each cell, scanning left from current #CELL to previous #CELL is straightforward if cell terminators are present but not strictly required.
+decode(Compiler.compile(I).to_band_artifact()) = initial semantic UTM state for I
 ```
 
-Bounded first version:
+### 13.2 Meta-ASM Interpreter
+
+For a non-halting source configuration with a matching rule:
 
 ```text
-if previous marker is #TAPE: STUCK
+one Meta-ASM interpreter cycle = one source TM step
 ```
 
-Dynamic-extension version can be added later.
-
----
-
-# 10. Active Marker Alphabet
-
-Some lowering routines need temporary active markers.
-
-Suggested marker variants:
-
-```text
-#RULE        -> #RULE_ACTIVE
-#CELL        -> #CELL_ACTIVE
-0            -> 0^
-1            -> 1^
-```
-
-The raw TM alphabet must include:
-
-```text
-base markers
-base bits
-active marker variants
-marked bit variants
-outer blank
-```
-
-Invariant at interpreter-cycle boundaries:
-
-```text
-No active markers remain.
-No marked bits remain.
-Exactly one #HEAD exists on the object tape.
-```
-
----
-
-# 11. Correctness Targets
-
-## 11.1 Object Compiler Correctness
-
-For source TM `M` and input `x`:
-
-```text
-decode_utm_encoding_artifact(compile_tm_to_encoded_band(M, x))
-=
-initial configuration of M on x
-```
-
-## 11.2 Meta-ASM Reference Correctness
-
-One Meta-ASM interpreter cycle corresponds to one object TM step:
-
-```text
-decode(band_after_one_meta_cycle)
-=
-step_M(decode(band_before_one_meta_cycle))
-```
-
-for non-halting configurations with a matching rule.
-
-## 11.3 Lowering Correctness
+### 13.3 Lowering
 
 For each Meta-ASM instruction:
 
 ```text
-raw TM fragment implements the instruction's pre/post contract
+lowered transition fragment implements the instruction contract
 ```
 
-For the whole lowered universal interpreter:
+For the full interpreter:
 
 ```text
-At Meta-ASM label boundaries,
-raw TM tape decodes to the same semantic state as the Meta-ASM execution.
+MetaASMProgram.lower() preserves Meta-ASM behavior at label boundaries
 ```
 
-## 11.4 End-to-End Correctness
+### 13.4 End-to-End
 
-If object TM `M` reaches configuration `C'` from `C` in one step, then the lowered meta-TM reaches the encoded `C'` after finitely many raw TM steps:
+For source machine `M` and configuration `C`:
 
 ```text
-Encode(C) --META_TM_PROG*--> Encode(C')
+Encode(C) --utm.tm*--> Encode(step_M(C))
 ```
 
-A full run simulates the object TM until halt, stuck, or fuel exhaustion.
+The run continues until halt, stuck, or fuel exhaustion.
 
----
+## 14. Initial Milestone
 
-# 12. Implementation Order
-
-Recommended order:
-
-```text
-1. Update current encoder to accept explicit widths.
-2. Add #END_FIELD, #END_REGS, #END_RULE, #END_CELL markers.
-3. Update parsers and pretty printers.
-4. Define Meta-ASM instruction dataclasses.
-5. Generate the universal Meta-ASM program from Encoding widths and marker family.
-6. Write a Python interpreter for Meta-ASM over the semantic UTM object / serialized artifact.
-7. Lower the simplest instructions first:
-     SEEK
-     GOTO
-     HALT
-     FIND_HEAD_CELL
-8. Then lower fixed-width copy/compare instructions.
-9. Finally lower MOVE_SIM_HEAD_LEFT/RIGHT.
-```
-
-Do not lower everything before the Meta-ASM interpreter works. The Meta-ASM interpreter is the executable spec for the lowering.
-
----
-
-# 13. Minimal Immediate Milestone
-
-The next concrete milestone should be:
+The first complete target:
 
 ```python
-abi = infer_minimal_abi(tm_prog, source_band)
+abi = Compiler.infer_abi(instance)
+encoded = Compiler(target_abi=abi).compile(instance)
 
-encoded = compile_tm_to_encoded_band(
-    tm_prog,
-    source_band,
-    abi=abi,
-)
+band_artifact = encoded.to_band_artifact()
+interpreter = UniversalInterpreter.for_abi(encoded.target_abi)
+asm = interpreter.to_meta_asm()
 
-artifact = serialize_utm(encoded)
-asm = build_universal_meta_asm(encoded.encoding)
-
-status, final_runtime_tape, trace, reason = run_meta_asm_runtime(asm, encoded.encoding, encoded.runtime_tape)
+status, final_band, trace, reason = asm.run_host(band_artifact, fuel=...)
 ```
 
-Expected decoded result:
+Expected demonstration:
 
 ```text
 1011₂ + 1 = 1100₂
 ```
 
-At this stage, no raw TM transition table is required yet. The next milestone after that is:
+The next target emits and runs the lowered program:
 
 ```python
-meta_tm_prog = lower_meta_asm_to_tm(
-    asm,
-    abi=encoded.target_abi,
-    alphabet=chosen_outer_alphabet,
-)
+program_artifact = asm.lower().to_artifact()
+result = program_artifact.run(band_artifact, fuel=...)
 ```
 
-Then:
-
-```python
-run_tm(meta_tm_prog, artifact, initial_state="U_START")
-```
-
-should match the host Meta-ASM run at label/interpreter-cycle boundaries.
+The lowered run should match the host Meta-ASM run at interpreter-cycle
+boundaries.

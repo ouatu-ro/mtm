@@ -1,27 +1,21 @@
 # Object Model
 
-This document describes the intended conceptual object model for the Meta Turing Machine project.
+This document defines the semantic and artifact objects for the Meta Turing
+Machine project.
 
-The main goal is to separate:
+The project has two products:
 
-1. source-level TM semantics
-2. semantic UTM-side encoded objects
-3. serialized artifacts
-4. runtime execution state
-5. decoded semantic views
+- a universal-machine program emitted as `utm.tm`
+- an encoded input band emitted as `*.utm.band`
 
-The important correction is this:
+The emitted `utm.tm` program runs over the emitted `.utm.band` input. Together
+they let an ordinary TM runner simulate a source-level object TM.
 
-- the raw tape view is not the center of the model
-- the raw tape view is an execution/serialization representation
-- the semantic compiled object should be modeled separately
-
-
-## 1. Source Layer
+## 1. Source Objects
 
 ### `TMProgram`
 
-Pure source-level Turing machine semantics.
+Source-level Turing machine program.
 
 Fields:
 
@@ -30,23 +24,29 @@ Fields:
 - `halt_state`
 - `blank`
 
-Shape:
+Transition shape:
 
 ```python
 (state, read_symbol) -> (next_state, write_symbol, move_direction)
 ```
 
-Notes:
+Directions:
 
-- `TMProgram` should not carry ABI or encoding concerns.
-- It is the source program, not a compiled artifact.
+```python
+L = -1
+R = 1
+```
 
+Responsibilities:
+
+- expose the source states and symbols
+- validate transition directions
+- provide source-level transition lookup
+- report the ABI required by a paired source band
 
 ### `TMBand`
 
-Generic source-level tape/configuration.
-
-This replaces the weaker idea of raw `input_symbols`.
+Source-level demonstrational tape/configuration.
 
 Fields:
 
@@ -54,33 +54,35 @@ Fields:
 - `head`
 - `blank`
 
-Notes:
+Meaning:
 
-- `TMBand` is not UTM-specific.
-- It is the natural tape/configuration object paired with a `TMProgram`.
+- `cells` is the finite tape window supplied as input
+- `head` is the simulated object-machine head position in that window
+- `blank` is the source machine's blank symbol
 
+The represented source machine may be bounded for demonstration purposes. The
+UTM input artifact supplies explicit blank padding when a larger simulated
+window is needed.
 
 ### `TMInstance`
 
-Optional source-level aggregate.
+Source program plus source band.
 
 Fields:
 
 - `program: TMProgram`
 - `band: TMBand`
 
-Meaning:
+Responsibilities:
 
-```text
-TMInstance = TMProgram + TMBand
-```
+- infer the minimal ABI requirement for this exact program and band
+- provide the input to the object compiler
 
-
-## 2. ABI Layer
+## 2. ABI and Encoding
 
 ### `TMAbi`
 
-Target encoding family / machine family.
+Target universal-machine family.
 
 Fields:
 
@@ -88,29 +90,36 @@ Fields:
 - `symbol_width`
 - `dir_width`
 - `grammar_version`
-- optional reserved temporary symbols
-- optional family label, for example `U[Wq=8,Ws=8,Wd=1]`
+- `family_label`
 
 Meaning:
 
-- this is the family against which a UTM-side encoding or UTM program is built
-
+- `state_width` is the bit width for encoded source states
+- `symbol_width` is the bit width for encoded source symbols
+- `dir_width` is the bit width for encoded movement directions
+- `grammar_version` identifies the marker/layout grammar
+- `family_label` is a readable label such as `U[Wq=8,Ws=8,Wd=1]`
 
 ### `AbiRequirement`
 
-Minimum ABI required by a source program/configuration.
+Minimum ABI required by a source instance.
 
-This may use the same concrete type as `TMAbi`, but conceptually it means:
+Fields are the same as `TMAbi`. Conceptually, an `AbiRequirement` describes
+what the source instance needs, while a `TMAbi` describes what the selected UTM
+family provides.
 
-- what is minimally needed
-- not necessarily what was actually chosen for encoding
+Compatibility condition:
 
-
-## 3. Encoding Layer
+```text
+selected_abi.state_width >= required.state_width
+selected_abi.symbol_width >= required.symbol_width
+selected_abi.dir_width >= required.dir_width
+selected_abi.grammar_version == required.grammar_version
+```
 
 ### `Encoding`
 
-Concrete dense assignment of IDs and bit widths under a chosen ABI.
+Dense concrete assignment from source names to bitstrings under a selected ABI.
 
 Fields:
 
@@ -124,51 +133,90 @@ Fields:
 - `initial_state`
 - `halt_state`
 
+Responsibilities:
+
+- encode and decode source states
+- encode and decode source symbols
+- encode and decode directions
+- preserve the property `decode(encode(x)) == x`
+
+Dense interning is the default assignment strategy.
+
+## 3. Semantic UTM Object
+
+### `UTMRegisters`
+
+Semantic register block used by the universal interpreter.
+
+Fields:
+
+- `cur_state`
+- `cur_symbol`
+- `write_symbol`
+- `next_state`
+- `move_dir`
+- `cmp_flag`
+- `tmp_bits`
+
+### `UTMEncodedRule`
+
+One encoded object-program transition rule.
+
+Fields:
+
+- `state`
+- `read_symbol`
+- `next_state`
+- `write_symbol`
+- `move_dir`
+
 Meaning:
 
-- this is where source-level names become concrete bitstrings
-- this is derived from source objects plus a chosen target ABI
+```text
+(state, read_symbol) -> (next_state, write_symbol, move_dir)
+```
 
+### `UTMSimulatedTape`
 
-## 4. Semantic UTM Input Layer
+Semantic simulated object tape inside the UTM input.
+
+Fields:
+
+- `cells`
+- `head`
+- `blank`
 
 ### `UTMEncoded`
 
-Semantic compiled object for the universal machine.
-
-This is the important UTM-facing semantic object.
-
-It should be modeled in terms of meaning, not in terms of a raw tape view first.
+Semantic compiled object consumed by the universal-machine family.
 
 Fields:
 
 - `encoding: Encoding`
-- `registers`
-- `rules`
-- `simulated_tape`
-- `simulated_head`
-- `minimal_abi`
-- `target_abi`
-- optional grammar/version metadata
+- `registers: UTMRegisters`
+- `rules: tuple[UTMEncodedRule, ...]`
+- `simulated_tape: UTMSimulatedTape`
+- `minimal_abi: TMAbi`
+- `target_abi: TMAbi`
 
-Meaning:
+Responsibilities:
 
-- `registers` are the semantic global memory of the universal interpreter
-- `rules` are the encoded object-program transition registry
-- `simulated_tape` is the semantic object-tape image being interpreted
-- `simulated_head` is the source-level object-head position inside that semantic tape
+- expose the UTM-side semantic state
+- emit a concrete `UTMBandArtifact`
+- expose a decoded semantic view for debugging
 
-Notes:
+Expected methods:
 
-- `UTMEncoded` is the semantic compiled object
-- it is not yet the final serialized artifact
+```python
+encoded.to_band_artifact() -> UTMBandArtifact
+encoded.decoded_view() -> DecodedBandView
+```
 
+## 4. Artifact Objects
 
-## 5. Serialized Artifact Layer
+### `UTMBandArtifact`
 
-### `UTMEncodingArtifact`
-
-Serialized artifact form of `UTMEncoded`.
+Concrete encoded UTM input band emitted as `*.utm.band`.
 
 Fields:
 
@@ -178,85 +226,76 @@ Fields:
 - `start_head`
 - `target_abi`
 - `minimal_abi`
-- optional artifact version
+- `artifact_version`
 
-Meaning:
-
-- this is the concrete `.utm`-style object image
-- `left_band` / `right_band` belong here as serialization layout
-- `start_head` is launch metadata for the raw UTM runner
-- they are not the primary semantic object
-
-Notes:
-
-- you should be able to decode:
+Layout:
 
 ```text
-UTMEncodingArtifact -> UTMEncoded
+negative addresses:  left band  = registers + transition rules
+nonnegative addresses: right band = simulated object tape
 ```
 
-- and also re-encode:
+The split point is between address `-1` and address `0`. The right band starts
+at address `0`. The left band is materialized toward negative addresses.
 
-```text
-UTMEncoded -> UTMEncodingArtifact
+Responsibilities:
+
+- serialize and deserialize the `.utm.band` file
+- materialize the runner-facing runtime tape
+- create a run configuration when paired with a UTM program artifact
+- decode back into `UTMEncoded` when semantic inspection is needed
+
+Expected methods:
+
+```python
+artifact.to_runtime_tape() -> dict[int, str]
+artifact.to_run_config(program: UTMProgramArtifact) -> TMRunConfig
+artifact.write(path) -> None
+UTMBandArtifact.read(path) -> UTMBandArtifact
 ```
-
 
 ### `ASMArtifact`
 
-Serialized artifact form of the Meta-ASM universal interpreter.
+Text artifact for the generated Meta-ASM universal interpreter.
 
 Fields:
 
-- textual ASM
-- optional ABI metadata
-- optional comments / annotations
-
-Meaning:
-
-- this corresponds to a `.asm` output
-
-
-### `TMArtifact`
-
-Serialized artifact form of a lowered raw TM program.
-
-Fields:
-
-- transitions
-- start state
-- halt state
-- alphabet
-- ABI metadata
-- optional debug / lowering metadata
-
-Meaning:
-
-- this corresponds to a `.tm` output
-
-
-## 6. Universal Interpreter Program Layer
-
-### `MetaASMProgram`
-
-Width-specialized universal interpreter in Meta-ASM form.
-
-Fields:
-
+- `text`
 - `abi`
-- `blocks`
-- `entry_label`
-- optional comments / source annotations
+- optional comments or source annotations
 
-Meaning:
+Typical extension:
 
-- this is the semantic universal interpreter program
-- it is still not raw TM
+```text
+.asm
+```
 
+### `UTMProgramArtifact`
 
-### `RawTMProgram`
+Lowered universal-machine program emitted as `utm.tm`.
 
-Lowered ordinary TM transition program.
+Fields:
+
+- `program: TMTransitionProgram`
+- `abi`
+- optional lowering/debug metadata
+
+Responsibilities:
+
+- serialize and deserialize the `.tm` file
+- run against a compatible `UTMBandArtifact`
+
+Expected methods:
+
+```python
+program_artifact.write(path) -> None
+UTMProgramArtifact.read(path) -> UTMProgramArtifact
+program_artifact.run(band_artifact, fuel=...) -> RunResult
+```
+
+### `TMTransitionProgram`
+
+Generic flat ordinary TM transition table.
 
 Fields:
 
@@ -264,204 +303,163 @@ Fields:
 - `start_state`
 - `halt_state`
 - `alphabet`
-- `abi`
-- optional lowering/debug metadata
+- `blank`
 
-Meaning:
+Transition shape:
 
-- this is the runnable UTM program
-- this is the thing emitted as `utm.tm`
+```python
+(state, read_symbol) -> (next_state, write_symbol, move_direction)
+```
 
-Notes:
+This object is generic. A `UTMProgramArtifact` is the UTM-specific artifact
+that owns one of these programs.
 
-- the concrete lowering depends on the target ABI
-- and on the chosen outer alphabet / marker set
+## 5. Runtime Objects
 
+### `TMRunConfig`
 
-## 7. Runtime Layer
-
-### `RawTMConfig`
-
-Runner-facing machine configuration.
+Runner-facing configuration for an ordinary TM transition program.
 
 Fields:
 
-- `program: RawTMProgram`
 - `tape`
 - `head`
 - `state`
 
 Meaning:
 
-- this is execution state
-- runner-level things like concrete tape maps belong here
+- `tape` maps integer addresses to symbols
+- `head` is the raw runner head address
+- `state` is the raw runner control state
 
-This is where a representation like the raw tape view belongs if it is used by the raw TM runner.
+### `RunResult`
 
-That is why the raw tape view should not be the conceptual center of the artifact model.
-
-
-## 8. Decoded Semantic View Layer
-
-### `DecodedBandView`
-
-Human-meaningful interpretation of UTM execution state.
+Result of running a `TMTransitionProgram`.
 
 Fields:
 
-- decoded registers
-- decoded rule registry
-- decoded simulated tape
-- `simulated_head` accessor
-- `current_state` accessor
+- `status`
+- `state`
+- `head`
+- `tape`
+- `steps`
 
-Meaning:
+Expected statuses:
 
-- this is how we recover the semantics we care about from raw UTM execution
-- this should be a first-class object, not just pretty-printer logic
+- `halted`
+- `stuck`
+- `fuel_exhausted`
 
+### `DecodedBandView`
 
-## 9. Compatibility Rules
+Human-readable semantic view recovered from a UTM runtime tape or band artifact.
 
-There are two different notions of compatibility.
+Fields:
 
-### Source-Level Compatibility
+- `registers`
+- `rules`
+- `simulated_tape`
+- `encoding`
 
-Question:
+Responsibilities:
 
-```text
-Could this source program/configuration fit in this UTM family?
+- report the simulated source state
+- report the simulated source head
+- expose decoded source-level tape cells and transition rules
+
+## 6. Compiler and Interpreter Objects
+
+### `Compiler`
+
+Object compiler from a source `TMInstance` to `UTMEncoded`.
+
+Expected interface:
+
+```python
+Compiler(target_abi: TMAbi | None = None)
+Compiler.infer_abi(instance: TMInstance) -> TMAbi
+compiler.compile(instance: TMInstance) -> UTMEncoded
 ```
 
-Rule:
+Compilation stages:
 
 ```text
-UTM.abi >= UTMEncoded.minimal_abi
-```
-
-This is about semantic fit.
-
-
-### Artifact-Level Compatibility
-
-Question:
-
-```text
-Can this exact serialized artifact be run by this exact UTM program?
-```
-
-Rule:
-
-```text
-UTM.abi must understand UTMEncodingArtifact.target_abi
-```
-
-In the simplest current model, this is effectively:
-
-```text
-UTM.abi == UTMEncodingArtifact.target_abi
-```
-
-because once the bits are laid out, the concrete field widths are fixed.
-
-
-### Public API Boundary
-
-Primary names:
-
-- `build_encoded_band`
-- `compile_tm_to_universal_tape`
-- `materialize_runtime_tape`
-- `split_runtime_tape`
-- `pretty_runtime_tape`
-- `run_meta_asm_runtime`
-- `run_meta_asm_block_runtime`
-- `utm_encoded_from_band`
-- `utm_artifact_from_band`
-- `decoded_view_from_encoded_band`
-
-Compatibility aliases kept for now:
-
-- `build_runtime_tape`
-- `build_outer_tape`
-- `compile_tm_to_runtime_tape`
-- `compile_tm_to_encoded_band`
-- `materialize_raw_tape`
-- `split_raw_tape`
-- `split_outer_tape`
-- `pretty_outer_tape`
-- `run_meta_asm_host`
-- `run_meta_asm_block`
-- `build_utm_encoded`
-- `build_utm_encoding_artifact`
-- `EncodedBand.to_raw_tape`
-- `EncodedBand.outer_tape`
-- `EncodedBand.from_raw_tape`
-- `EncodedBand.from_outer_tape`
-
-Removal note:
-
-- These aliases can be removed once downstream callers are using the primary names and the compatibility tests no longer need them.
-
-
-## 10. Pipeline
-
-The intended conceptual pipeline is:
-
-```text
-TMProgram + TMBand
--> infer minimal ABI
-
-TMProgram + TMBand + target ABI
+TMInstance
+-> AbiRequirement
 -> Encoding
 -> UTMEncoded
--> UTMEncodingArtifact
-
-target ABI + outer alphabet / marker set
--> MetaASMProgram
--> RawTMProgram
--> TMArtifact
-
-TMArtifact + UTMEncodingArtifact
--> RawTMConfig
--> execution
--> DecodedBandView
+-> UTMBandArtifact
 ```
 
+### `UniversalInterpreter`
 
-## 11. Intuition
+Factory for the UTM interpreter for a selected ABI.
+
+Expected interface:
+
+```python
+UniversalInterpreter.for_abi(abi: TMAbi) -> UniversalInterpreter
+interpreter.to_meta_asm() -> MetaASMProgram
+interpreter.to_program_artifact() -> UTMProgramArtifact
+```
+
+### `MetaASMProgram`
+
+Semantic universal interpreter program in Meta-ASM form.
+
+Fields:
+
+- `abi`
+- `blocks`
+- `entry_label`
+
+Responsibilities:
+
+- format as `.asm`
+- execute in the host Meta-ASM interpreter for reference runs
+- lower to a `TMTransitionProgram`
+
+Expected methods:
+
+```python
+asm.format() -> str
+asm.run_host(band_artifact, fuel=...) -> RunResult
+asm.lower() -> TMTransitionProgram
+```
+
+## 7. Primary Workflow
+
+```python
+instance = TMInstance(program, band)
+
+compiler = Compiler(target_abi=abi)
+encoded = compiler.compile(instance)
+
+band_artifact = encoded.to_band_artifact()
+band_artifact.write("incrementer.utm.band")
+
+interpreter = UniversalInterpreter.for_abi(encoded.target_abi)
+asm = interpreter.to_meta_asm()
+program_artifact = asm.lower().to_artifact()
+program_artifact.write("utm.tm")
+
+result = program_artifact.run(band_artifact, fuel=100_000)
+view = result.decode(encoded.encoding)
+```
+
+## 8. Object Responsibilities
 
 Short mapping:
 
-- `TMProgram` = source semantics
-- `TMBand` = source-level tape/configuration
-- `TMAbi` = target family
-- `Encoding` = concrete bit-level naming
-- `UTMEncoded` = semantic compiled object for the UTM
-- `UTMEncodingArtifact` = serialized `.utm`
-- `MetaASMProgram` = semantic universal interpreter
-- `RawTMProgram` = runnable UTM
-- `TMArtifact` = serialized `.tm`
-- `RawTMConfig` = runtime execution state
-- `DecodedBandView` = semantic debugger / decoder
-
-
-## 12. Design Principles
-
-1. Keep `TMProgram` pure.
-   ABI and encoding belong to compilation, not source semantics.
-
-2. Prefer explicit ABI objects over hidden width inference in the main pipeline.
-   Width inference should exist, but as a helper step.
-
-3. Treat `UTMEncoded` as the primary semantic UTM-side object.
-   Treat `UTMEncodingArtifact` as serialization.
-
-4. Keep artifact objects and runtime objects separate.
-   A serialized image is not the same thing as a runner configuration.
-
-5. Make decoding explicit.
-   Recovering semantic meaning from UTM execution should be modeled directly.
-
-6. Keep source compatibility and artifact compatibility separate.
-   They are related, but not identical.
+- `TMProgram` = source transition semantics
+- `TMBand` = source input tape/configuration
+- `TMInstance` = source program plus source input
+- `TMAbi` = selected universal-machine family
+- `Encoding` = dense source-name-to-bitstring assignment
+- `UTMEncoded` = semantic UTM input object
+- `UTMBandArtifact` = emitted `.utm.band` input
+- `MetaASMProgram` = semantic universal interpreter in Meta-ASM
+- `UTMProgramArtifact` = emitted `utm.tm`
+- `TMTransitionProgram` = generic ordinary transition table
+- `TMRunConfig` = runner-facing tape/head/state
+- `DecodedBandView` = semantic inspection view
