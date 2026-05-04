@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from .meta_asm import (
+    Block,
+    BranchAt,
     BranchCmp,
     CompareGlobalLiteral,
     CompareGlobalLocal,
@@ -16,14 +18,18 @@ from .meta_asm import (
     Goto,
     Halt,
     Instruction,
+    MoveSimHeadLeft,
+    MoveSimHeadRight,
+    Program,
     Seek,
     SeekOneOf,
     WriteGlobal,
 )
-from .outer_tape import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, MOVE_DIR, NEXT_STATE, RULE, RULES, TMP, WRITE_SYMBOL
-from .raw_tm import L, R, S, TMBuilder
+from .outer_tape import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TMP, WRITE_SYMBOL
+from .raw_tm import L, R, RawTM, S, TMBuilder
 
 GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
+ACTIVE_RULE = "#ACTIVE_RULE"
 
 
 def lower_seek(builder: TMBuilder, state: str, *, markers: set[str], direction: str, continuation_label: str) -> None:
@@ -69,9 +75,51 @@ def write_cmp_flag(builder: TMBuilder, state: str, *, bit: str, continuation_lab
     write_current_bit(builder, write_state, bit=bit, continuation_label=continuation_label, move=L)
 
 
+def lower_move_sim_head_right(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
+    clear_flag = builder.fresh("move_head_right_clear_flag")
+    scan_next = builder.fresh("move_head_right_scan_next")
+    mark_head = builder.fresh("move_head_right_mark_head")
+    builder.emit(state, CELL, clear_flag, CELL, R)
+    builder.emit(clear_flag, HEAD, scan_next, NO_HEAD, R)
+    builder.emit(clear_flag, NO_HEAD, scan_next, NO_HEAD, R)
+    for symbol in builder.alphabet:
+        if symbol == CELL:
+            builder.emit(scan_next, symbol, mark_head, symbol, R)
+        else:
+            builder.emit(scan_next, symbol, scan_next, symbol, R)
+    builder.emit(mark_head, HEAD, builder.label_state(continuation_label), HEAD, L)
+    builder.emit(mark_head, NO_HEAD, builder.label_state(continuation_label), HEAD, L)
+
+
+def lower_move_sim_head_left(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
+    clear_flag = builder.fresh("move_head_left_clear_flag")
+    leave_current = builder.fresh("move_head_left_leave_current")
+    scan_prev = builder.fresh("move_head_left_scan_prev")
+    mark_head = builder.fresh("move_head_left_mark_head")
+    builder.emit(state, CELL, clear_flag, CELL, R)
+    builder.emit(clear_flag, HEAD, leave_current, NO_HEAD, L)
+    builder.emit(clear_flag, NO_HEAD, leave_current, NO_HEAD, L)
+    builder.emit(leave_current, CELL, scan_prev, CELL, L)
+    for symbol in builder.alphabet:
+        if symbol == CELL:
+            builder.emit(scan_prev, symbol, mark_head, symbol, R)
+        else:
+            builder.emit(scan_prev, symbol, scan_prev, symbol, L)
+    builder.emit(mark_head, HEAD, builder.label_state(continuation_label), HEAD, L)
+    builder.emit(mark_head, NO_HEAD, builder.label_state(continuation_label), HEAD, L)
+
+
+def lower_deactivate_active_rule(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
+    builder.emit(state, ACTIVE_RULE, builder.label_state(continuation_label), RULE, S)
+    builder.emit(state, RULE, builder.label_state(continuation_label), RULE, S)
+
+
 def lower_copy_global_global(builder: TMBuilder, state: str, *, src_marker: str, dst_marker: str, width: int, continuation_label: str) -> None:
     to_dst, to_src = global_direction(src_marker, dst_marker), global_direction(dst_marker, src_marker)
-    current = state
+    current = builder.fresh("copy_gg_seek_src")
+    seek_regs = builder.fresh("copy_gg_seek_regs")
+    lower_seek(builder, state, markers={REGS}, direction="L", continuation_label=seek_regs)
+    lower_seek(builder, seek_regs, markers={src_marker}, direction="R", continuation_label=current)
     for index in range(width):
         src_read = builder.fresh(f"copy_gg_src_{index}")
         move_steps(builder, current, steps=index + 1, direction="R", continuation_label=src_read)
@@ -94,7 +142,10 @@ def lower_copy_global_global(builder: TMBuilder, state: str, *, src_marker: str,
 
 
 def lower_copy_local_global(builder: TMBuilder, state: str, *, local_marker: str, global_marker: str, width: int, continuation_label: str) -> None:
-    current = state
+    activate_rule = builder.fresh("copy_lg_activate_rule")
+    current = activate_rule
+    builder.emit(state, RULE, activate_rule, ACTIVE_RULE, S)
+    builder.emit(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S)
     for index in range(width):
         local_marker_state = builder.fresh(f"copy_lg_local_marker_{index}")
         lower_seek(builder, current, markers={local_marker}, direction="R", continuation_label=local_marker_state)
@@ -108,12 +159,15 @@ def lower_copy_local_global(builder: TMBuilder, state: str, *, local_marker: str
             lower_seek(builder, bit_state, markers={global_marker}, direction="L", continuation_label=global_marker_state)
             global_write = builder.fresh(f"copy_lg_global_write_{bit}_{index}")
             move_steps(builder, global_marker_state, steps=index + 1, direction="R", continuation_label=global_write)
-            if index + 1 == width:
-                write_current_bit(builder, global_write, bit=bit, continuation_label=continuation_label, move=S)
-            else:
-                back_to_rule = builder.fresh(f"copy_lg_back_to_rule_{bit}_{index}")
-                write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_rule, move=R)
-                lower_seek(builder, back_to_rule, markers={RULE}, direction="R", continuation_label=next_iter)
+            back_to_rule = builder.fresh(f"copy_lg_back_to_rule_{bit}_{index}")
+            write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_rule, move=S)
+            lower_seek(
+                builder,
+                back_to_rule,
+                markers={ACTIVE_RULE},
+                direction="R",
+                continuation_label=continuation_label if index + 1 == width else next_iter,
+            )
         if next_iter is not None:
             current = next_iter
 
@@ -134,9 +188,11 @@ def lower_copy_head_symbol_to(builder: TMBuilder, state: str, *, global_marker: 
             if index + 1 == width:
                 write_current_bit(builder, global_write, bit=bit, continuation_label=continuation_label, move=S)
             else:
+                back_to_head = builder.fresh(f"copy_hg_back_to_head_{bit}_{index}")
                 back_to_cell = builder.fresh(f"copy_hg_back_to_cell_{bit}_{index}")
-                write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_cell, move=R)
-                lower_seek(builder, back_to_cell, markers={CELL}, direction="R", continuation_label=next_iter)
+                write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_head, move=S)
+                lower_seek(builder, back_to_head, markers={HEAD}, direction="R", continuation_label=back_to_cell)
+                builder.emit(back_to_cell, HEAD, next_iter, HEAD, L)
         if next_iter is not None:
             current = next_iter
 
@@ -152,8 +208,10 @@ def lower_copy_global_to_head_symbol(builder: TMBuilder, state: str, *, global_m
         branch_on_bit(builder, global_read, zero_label=bit0, one_label=bit1, move=R)
         next_iter = builder.fresh(f"copy_gh_next_{index}") if index + 1 < width else None
         for bit_state, bit in ((bit0, "0"), (bit1, "1")):
+            head_flag_state = builder.fresh(f"copy_gh_head_flag_{bit}_{index}")
             cell_state = builder.fresh(f"copy_gh_cell_state_{bit}_{index}")
-            lower_seek(builder, bit_state, markers={CELL}, direction="R", continuation_label=cell_state)
+            lower_seek(builder, bit_state, markers={HEAD}, direction="R", continuation_label=head_flag_state)
+            builder.emit(head_flag_state, HEAD, cell_state, HEAD, L)
             head_write = builder.fresh(f"copy_gh_head_write_{bit}_{index}")
             move_steps(builder, cell_state, steps=index + 2, direction="R", continuation_label=head_write)
             if index + 1 == width:
@@ -168,8 +226,12 @@ def lower_copy_global_to_head_symbol(builder: TMBuilder, state: str, *, global_m
 
 def lower_compare_global_literal(builder: TMBuilder, state: str, *, global_marker: str, literal_bits: tuple[str, ...], continuation_label: str) -> None:
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
+    seek_regs = builder.fresh("cmp_glob_seek_regs")
+    marker_state = builder.fresh("cmp_glob_marker")
     current = builder.fresh("cmp_glob_read_0")
-    builder.emit(state, global_marker, current, global_marker, R)
+    lower_seek(builder, state, markers={REGS}, direction="L", continuation_label=seek_regs)
+    lower_seek(builder, seek_regs, markers={global_marker}, direction="R", continuation_label=marker_state)
+    builder.emit(marker_state, global_marker, current, global_marker, R)
     for index, expected in enumerate(literal_bits):
         next_read = builder.fresh(f"cmp_glob_read_{index + 1}") if index + 1 < len(literal_bits) else None
         seek_true = builder.fresh(f"cmp_glob_seek_true_{index}")
@@ -191,7 +253,10 @@ def lower_compare_global_literal(builder: TMBuilder, state: str, *, global_marke
 
 def lower_compare_global_local(builder: TMBuilder, state: str, *, global_marker: str, local_marker: str, width: int, continuation_label: str) -> None:
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
-    current = state
+    activate_rule = builder.fresh("cmp_gl_activate_rule")
+    current = activate_rule
+    builder.emit(state, RULE, activate_rule, ACTIVE_RULE, S)
+    builder.emit(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S)
     for index in range(width):
         local_marker_state = builder.fresh(f"cmp_gl_local_marker_{index}")
         lower_seek(builder, current, markers={local_marker}, direction="R", continuation_label=local_marker_state)
@@ -208,18 +273,22 @@ def lower_compare_global_local(builder: TMBuilder, state: str, *, global_marker:
             mismatch_seek = builder.fresh(f"cmp_gl_mismatch_seek_{local_bit}_{index}")
             if next_iter is not None:
                 back_to_rule = builder.fresh(f"cmp_gl_back_to_rule_{local_bit}_{index}")
-                builder.emit(global_read, local_bit, back_to_rule, local_bit, R)
-                lower_seek(builder, back_to_rule, markers={RULE}, direction="R", continuation_label=next_iter)
+                builder.emit(global_read, local_bit, back_to_rule, local_bit, S)
+                lower_seek(builder, back_to_rule, markers={ACTIVE_RULE}, direction="R", continuation_label=next_iter)
             else:
                 match_seek = builder.fresh(f"cmp_gl_match_seek_{local_bit}_{index}")
                 cmp_true_state = builder.fresh(f"cmp_gl_true_cmp_{local_bit}_{index}")
-                builder.emit(global_read, local_bit, match_seek, local_bit, R if dir_to_cmp == "R" else L)
+                after_true = builder.fresh(f"cmp_gl_after_true_{local_bit}_{index}")
+                builder.emit(global_read, local_bit, match_seek, local_bit, S)
                 lower_seek(builder, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_true_state)
-                write_cmp_flag(builder, cmp_true_state, bit="1", continuation_label=continuation_label)
-            builder.emit(global_read, "1" if local_bit == "0" else "0", mismatch_seek, "1" if local_bit == "0" else "0", R if dir_to_cmp == "R" else L)
+                write_cmp_flag(builder, cmp_true_state, bit="1", continuation_label=after_true)
+                lower_seek(builder, after_true, markers={ACTIVE_RULE}, direction="R", continuation_label=continuation_label)
+            builder.emit(global_read, "1" if local_bit == "0" else "0", mismatch_seek, "1" if local_bit == "0" else "0", S)
             cmp_false_state = builder.fresh(f"cmp_gl_false_cmp_{local_bit}_{index}")
+            after_false = builder.fresh(f"cmp_gl_after_false_{local_bit}_{index}")
             lower_seek(builder, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_false_state)
-            write_cmp_flag(builder, cmp_false_state, bit="0", continuation_label=continuation_label)
+            write_cmp_flag(builder, cmp_false_state, bit="0", continuation_label=after_false)
+            lower_seek(builder, after_false, markers={ACTIVE_RULE}, direction="R", continuation_label=continuation_label)
         if next_iter is not None:
             current = next_iter
 
@@ -248,15 +317,24 @@ def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: st
         case SeekOneOf(markers, direction):
             lower_seek(builder, state, markers=set(markers), direction=direction, continuation_label=continuation_label)
         case FindFirstRule():
+            seek_regs = builder.fresh("find_first_rule_seek_regs")
             seek_rules = builder.fresh("find_first_rule_seek_rules")
             seek_rule = builder.fresh("find_first_rule_seek_rule")
-            lower_seek(builder, seek_rules, markers={RULES}, direction="L", continuation_label=seek_rule)
-            lower_seek(builder, seek_rule, markers={RULE, END_RULES}, direction="R", continuation_label=continuation_label)
-            builder.emit_all(state, seek_rules, move=S)
+            mark_rule = builder.fresh("find_first_rule_mark_rule")
+            lower_seek(builder, seek_regs, markers={REGS}, direction="L", continuation_label=seek_rules)
+            lower_seek(builder, seek_rules, markers={RULES}, direction="R", continuation_label=seek_rule)
+            lower_seek(builder, seek_rule, markers={RULE, END_RULES}, direction="R", continuation_label=mark_rule)
+            builder.emit(mark_rule, RULE, builder.label_state(continuation_label), ACTIVE_RULE, S)
+            builder.emit(mark_rule, END_RULES, builder.label_state(continuation_label), END_RULES, S)
+            builder.emit_all(state, seek_regs, move=S)
         case FindNextRule():
             seek_next = builder.fresh("find_next_rule_seek_next")
+            mark_rule = builder.fresh("find_next_rule_mark_rule")
+            builder.emit(state, ACTIVE_RULE, seek_next, RULE, R)
             builder.emit(state, RULE, seek_next, RULE, R)
-            lower_seek(builder, seek_next, markers={RULE, END_RULES}, direction="R", continuation_label=continuation_label)
+            lower_seek(builder, seek_next, markers={RULE, END_RULES}, direction="R", continuation_label=mark_rule)
+            builder.emit(mark_rule, RULE, builder.label_state(continuation_label), ACTIVE_RULE, S)
+            builder.emit(mark_rule, END_RULES, builder.label_state(continuation_label), END_RULES, S)
         case FindHeadCell():
             scan_cell = builder.fresh("find_head_cell_scan")
             inspect_flag = builder.fresh("find_head_cell_flag")
@@ -272,7 +350,22 @@ def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: st
                 if symbol != HEAD:
                     builder.emit(inspect_flag, symbol, scan_cell, symbol, R)
             builder.emit(return_cell, CELL, builder.label_state(continuation_label), CELL, S)
+        case BranchAt(marker, label_true, label_false):
+            for symbol in builder.alphabet:
+                builder.emit(state, symbol, builder.label_state(label_true if symbol == marker else label_false), symbol, S)
         case BranchCmp(label_equal, label_not_equal):
+            active_seek_cmp = builder.fresh("branch_cmp_active_seek_cmp")
+            active_read_cmp = builder.fresh("branch_cmp_active_read_cmp")
+            active_bit = builder.fresh("branch_cmp_active_bit")
+            active_seek_eq = builder.fresh("branch_cmp_active_seek_eq")
+            active_seek_neq = builder.fresh("branch_cmp_active_seek_neq")
+            builder.emit(state, ACTIVE_RULE, active_seek_cmp, ACTIVE_RULE, L)
+            lower_seek(builder, active_seek_cmp, markers={CMP_FLAG}, direction="L", continuation_label=active_read_cmp)
+            builder.emit(active_read_cmp, CMP_FLAG, active_bit, CMP_FLAG, R)
+            builder.emit(active_bit, "1", active_seek_eq, "1", L)
+            builder.emit(active_bit, "0", active_seek_neq, "0", L)
+            lower_seek(builder, active_seek_eq, markers={ACTIVE_RULE}, direction="R", continuation_label=label_equal)
+            lower_seek(builder, active_seek_neq, markers={ACTIVE_RULE}, direction="R", continuation_label=label_not_equal)
             read_cmp = builder.fresh("branch_cmp_read")
             builder.emit(state, CMP_FLAG, read_cmp, CMP_FLAG, R)
             builder.emit(read_cmp, "1", builder.label_state(label_equal), "1", S)
@@ -296,6 +389,10 @@ def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: st
                 next_state = bit_states[index + 1] if index + 1 < len(bit_states) else builder.label_state(continuation_label)
                 for read_bit in ("0", "1"):
                     builder.emit(bit_states[index], read_bit, next_state, bit, R if index + 1 < len(bit_states) else S)
+        case MoveSimHeadLeft():
+            lower_move_sim_head_left(builder, state, continuation_label=continuation_label)
+        case MoveSimHeadRight():
+            lower_move_sim_head_right(builder, state, continuation_label=continuation_label)
         case _:
             raise NotImplementedError(f"lowering not implemented for {instruction!r}")
 
@@ -321,4 +418,50 @@ def lower_instruction_sequence(
         current_state = continuation_label
 
 
-__all__ = ["lower_instruction", "lower_instruction_sequence"]
+def block_entry_setup(block: Block) -> Instruction | None:
+    if block.label == "START_STEP":
+        return Seek(CUR_STATE, "L")
+    if block.label == "LOOKUP_RULE":
+        return SeekOneOf((ACTIVE_RULE, END_RULES), "R")
+    if block.label in {"CHECK_STATE", "CHECK_READ", "NEXT_RULE", "MATCHED_RULE"}:
+        return Seek(ACTIVE_RULE, "R")
+    if block.label in {"DISPATCH_MOVE", "CHECK_RIGHT"}:
+        return Seek(MOVE_DIR, "L")
+    return None
+
+
+def lower_block(builder: TMBuilder, block: Block) -> None:
+    start_state = builder.label_state(block.label)
+    setup = block_entry_setup(block)
+    body_start = start_state
+    if setup is not None:
+        body_start = builder.fresh(f"{block.label}_body")
+        lower_instruction(builder, setup, state=start_state, continuation_label=body_start)
+    if block.label != "MATCHED_RULE":
+        lower_instruction_sequence(builder, block.instructions, start_state=body_start, exit_label=builder.fresh(f"{block.label}_exit"))
+        return
+    copied_fields = builder.fresh("matched_rule_copied_fields")
+    resume = builder.fresh("matched_rule_resume")
+    lower_instruction_sequence(builder, block.instructions[:3], start_state=body_start, exit_label=copied_fields)
+    lower_deactivate_active_rule(builder, copied_fields, continuation_label=resume)
+    lower_instruction_sequence(builder, block.instructions[3:], start_state=resume, exit_label=builder.fresh("MATCHED_RULE_exit"))
+
+
+def lower_program(builder: TMBuilder, program: Program) -> None:
+    for block in program.blocks:
+        lower_block(builder, block)
+
+
+def lower_program_to_raw_tm(
+    program: Program,
+    alphabet: list[str] | tuple[str, ...],
+    *,
+    halt_state: str = "U_HALT",
+    blank: str = "_OUTER_BLANK",
+) -> RawTM:
+    builder = TMBuilder([*alphabet, ACTIVE_RULE], halt_state=halt_state, blank=blank)
+    lower_program(builder, program)
+    return builder.build(program.entry_label)
+
+
+__all__ = ["lower_block", "lower_instruction", "lower_instruction_sequence", "lower_program", "lower_program_to_raw_tm"]

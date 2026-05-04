@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from .fixtures import TMFixture
-from .lowering import lower_instruction
+from .lowering import ACTIVE_RULE, lower_instruction
 from .meta_asm import (
+    BranchAt,
     BranchCmp,
     CompareGlobalLiteral,
     CompareGlobalLocal,
@@ -17,12 +18,14 @@ from .meta_asm import (
     FindNextRule,
     Goto,
     Halt,
+    MoveSimHeadLeft,
+    MoveSimHeadRight,
     Seek,
     SeekOneOf,
     WriteGlobal,
     bits,
 )
-from .outer_tape import CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
+from .outer_tape import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
 from .raw_tm import TMBuilder, run_raw_tm
 
 
@@ -36,12 +39,25 @@ def set_global_bits(band, marker: str, value: str):
     return outer_tape
 
 
+def set_head_cell(band, cell_index: int):
+    span = 3 + band.encoding.symbol_width
+    right_band = list(band.right_band)
+    for index, token in enumerate(right_band):
+        if token in {HEAD, NO_HEAD}:
+            right_band[index] = NO_HEAD
+    right_band[1 + cell_index * span + 1] = HEAD
+    outer_tape = {}
+    outer_tape.update(place_on_negative_side(band.left_band, start=-1))
+    outer_tape.update(place_on_positive_side(right_band, start=0))
+    return outer_tape
+
+
 def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     band = fixture.build_band()
     left_band = band.left_band
     left_addresses = list(range(-len(left_band), 0))
     address_of = lambda marker: left_addresses[left_band.index(marker)]
-    alphabet = sorted(set(band.linear()) | {"0", "1"})
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     rows: list[list[object]] = []
 
     builder = TMBuilder(alphabet)
@@ -58,6 +74,11 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     lower_instruction(builder, BranchCmp("EQ", "NEQ"), state="start", continuation_label="NEXT")
     result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(CMP_FLAG), max_steps=5)
     rows.append(["BRANCH_CMP", result["status"], result["state"], result["head"], "cmp=0 -> NEQ"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, BranchAt(RULE, "YES", "NO"), state="start", continuation_label="NEXT")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(RULE), max_steps=5)
+    rows.append(["BRANCH_AT", result["status"], result["state"], result["head"], f"{RULE} -> YES"])
 
     builder = TMBuilder(alphabet)
     lower_instruction(builder, WriteGlobal(CUR_SYMBOL, bits("01")), state="start", continuation_label="DONE")
@@ -96,6 +117,16 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     lower_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=0, max_steps=300)
     rows.append(["FIND_HEAD_CELL", result["status"], result["state"], result["head"], "at head #CELL"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, MoveSimHeadRight(), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=1, max_steps=200)
+    rows.append(["MOVE_SIM_HEAD_RIGHT", result["status"], result["state"], result["head"], "head moved to next cell"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, MoveSimHeadLeft(), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), set_head_cell(band, 1), head=1 + (3 + band.encoding.symbol_width), max_steps=200)
+    rows.append(["MOVE_SIM_HEAD_LEFT", result["status"], result["state"], result["head"], "head moved to previous cell"])
 
     builder = TMBuilder(alphabet)
     lower_instruction(builder, CopyLocalGlobal(WRITE, WRITE_SYMBOL, 2), state="start", continuation_label="DONE")

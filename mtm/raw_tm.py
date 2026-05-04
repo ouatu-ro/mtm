@@ -21,7 +21,7 @@ class RawTM:
 
 class TMBuilder:
     def __init__(self, alphabet: list[str] | tuple[str, ...], *, halt_state: str = "U_HALT", blank: str = "_OUTER_BLANK"):
-        self.alphabet = tuple(dict.fromkeys(alphabet))
+        self.alphabet = tuple(dict.fromkeys([blank, *alphabet]))
         self.halt_state = halt_state
         self.blank = blank
         self.prog: dict[TransitionKey, Transition] = {}
