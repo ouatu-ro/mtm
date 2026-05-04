@@ -3,8 +3,11 @@ from pathlib import Path
 from mtm.cli import main as cli_main
 from mtm.demo import main
 from mtm.artifacts import read_tm, read_utm, read_utm_artifact, write_utm
+from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
+from mtm.meta_asm import build_universal_meta_asm
 from mtm.program_input import load_python_tm, load_python_tm_instance
-from mtm.semantic_objects import encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.raw_tm import TMTransitionProgram
+from mtm.semantic_objects import UTMBandArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
 from mtm.tape_encoding import R
 
 
@@ -141,3 +144,22 @@ def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
     assert compatibility_band.left_band == band.left_band
     assert compatibility_band.right_band == band.right_band
     assert start_head == artifact.start_head
+
+
+def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    fixture = load_python_tm(tm_path)
+    band = fixture.build_band()
+    utm_path = tmp_path / "incrementer.utm"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    utm_artifact_from_band(band).write(utm_path)
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lower_program_to_raw_tm(program, alphabet).write(raw_tm_path)
+
+    artifact = UTMBandArtifact.read(utm_path)
+    tm = TMTransitionProgram.read(raw_tm_path)
+
+    assert artifact.to_encoded_band() == band
+    assert tm.start_state == "START_STEP"

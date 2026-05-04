@@ -26,6 +26,8 @@ from mtm import (
     utm_encoded_from_band,
     write_utm_artifact,
 )
+from mtm.raw_tm import TMBuilder, TMTransitionProgram
+from mtm.semantic_objects import TMRunConfig, UTMBandArtifact
 
 
 def test_semantic_view_from_encoded_band() -> None:
@@ -63,6 +65,7 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     assert round_tripped_band.right_band == band.right_band
     assert round_tripped_band.minimal_abi == minimal_abi
     assert round_tripped_band.target_abi == artifact.target_abi
+    assert isinstance(artifact, UTMBandArtifact)
 
 
 def test_utm_artifact_round_trip(tmp_path) -> None:
@@ -77,8 +80,38 @@ def test_utm_artifact_round_trip(tmp_path) -> None:
 
     assert loaded == artifact
     assert loaded.to_encoded_band() == band
+    assert loaded.to_runtime_tape() == band.runtime_tape
     assert legacy_band == band
     assert start_head == artifact.start_head
+
+
+def test_primary_artifact_class_methods_round_trip(tmp_path) -> None:
+    band = load_fixture("incrementer").build_band()
+    artifact = utm_artifact_from_band(band)
+    path = tmp_path / "incrementer.utm"
+
+    artifact.write(path)
+    loaded = UTMBandArtifact.read(path)
+
+    assert loaded == artifact
+    assert loaded.to_encoded_band() == band
+    assert loaded.to_runtime_tape() == band.runtime_tape
+
+
+def test_primary_tm_program_names_and_io(tmp_path) -> None:
+    builder = TMBuilder(["0"])
+    builder.emit("start", "0", builder.halt_state, "0", 0)
+    raw_tm = builder.build("start")
+    path = tmp_path / "utm.tm"
+
+    assert isinstance(raw_tm, TMTransitionProgram)
+    raw_tm.write(path)
+    loaded = TMTransitionProgram.read(path)
+    config = TMRunConfig(program=loaded, tape={0: "_OUTER_BLANK"}, head=0, state=loaded.start_state)
+
+    assert loaded == raw_tm
+    assert config.program == raw_tm
+    assert config.state == raw_tm.start_state
 
 
 def test_source_band_helper() -> None:

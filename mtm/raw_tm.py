@@ -11,12 +11,26 @@ Transition = tuple[str, str, int]
 
 
 @dataclass(frozen=True)
-class RawTM:
+class TMTransitionProgram:
     prog: dict[TransitionKey, Transition]
     start_state: str
     halt_state: str
     alphabet: tuple[str, ...]
     blank: str = "_OUTER_BLANK"
+
+    def write(self, path: str | "Path") -> None:
+        from .artifacts import write_tm
+
+        write_tm(path, self)
+
+    @classmethod
+    def read(cls, path: str | "Path") -> "TMTransitionProgram":
+        from .artifacts import read_tm
+
+        return read_tm(path)
+
+
+RawTM = TMTransitionProgram
 
 
 class TMBuilder:
@@ -46,11 +60,11 @@ class TMBuilder:
         for symbol in self.alphabet:
             self.emit(state, symbol, next_state, symbol, move)
 
-    def build(self, start_state: str) -> RawTM:
-        return RawTM(self.prog, start_state=start_state, halt_state=self.halt_state, alphabet=self.alphabet, blank=self.blank)
+    def build(self, start_state: str) -> TMTransitionProgram:
+        return TMTransitionProgram(self.prog, start_state=start_state, halt_state=self.halt_state, alphabet=self.alphabet, blank=self.blank)
 
 
-def run_raw_tm(tm: RawTM, tape: dict[int, str], *, head: int = 0, state: str | None = None, max_steps: int = 100):
+def run_raw_tm(tm: TMTransitionProgram, tape: dict[int, str], *, head: int = 0, state: str | None = None, max_steps: int = 100):
     tape, state = dict(tape), (tm.start_state if state is None else state)
     steps = 0
     while state != tm.halt_state and steps < max_steps:
@@ -63,7 +77,7 @@ def run_raw_tm(tm: RawTM, tape: dict[int, str], *, head: int = 0, state: str | N
     return {"status": "halted" if state == tm.halt_state else "fuel_exhausted", "state": state, "head": head, "tape": tape, "steps": steps}
 
 
-def format_raw_tm(tm: RawTM) -> str:
+def format_raw_tm(tm: TMTransitionProgram) -> str:
     rows = []
     for (state, read), (next_state, write, move) in sorted(tm.prog.items()):
         rows.append(f"    ({state!r}, {read!r}): ({next_state!r}, {write!r}, {move}),")
@@ -77,4 +91,4 @@ def format_raw_tm(tm: RawTM) -> str:
     ])
 
 
-__all__ = ["L", "R", "S", "RawTM", "TMBuilder", "format_raw_tm", "run_raw_tm"]
+__all__ = ["L", "R", "S", "RawTM", "TMBuilder", "TMTransitionProgram", "format_raw_tm", "run_raw_tm"]

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from .compiled_band import EncodedBand
 from .pretty import parse_registers, parse_rules, parse_tape
-from .raw_tm import RawTM
+from .raw_tm import TMTransitionProgram
 from .tape_encoding import AbiRequirement, Encoding, TMAbi, TMProgram, infer_minimal_abi as infer_minimal_encoding_abi
 
 
@@ -79,7 +79,7 @@ class UTMEncoded:
 
 
 @dataclass(frozen=True)
-class UTMEncodingArtifact:
+class UTMBandArtifact:
     """Serialized artifact form of a semantic UTM-encoded object."""
 
     encoding: Encoding
@@ -92,15 +92,35 @@ class UTMEncodingArtifact:
     def to_encoded_band(self) -> EncodedBand:
         return encoded_band_from_utm_artifact(self)
 
+    def to_runtime_tape(self) -> dict[int, str]:
+        return self.to_encoded_band().to_runtime_tape()
+
+    def write(self, path: str | "Path") -> None:
+        from .artifacts import write_utm_artifact
+
+        write_utm_artifact(path, self)
+
+    @classmethod
+    def read(cls, path: str | "Path") -> "UTMBandArtifact":
+        from .artifacts import read_utm_artifact
+
+        return read_utm_artifact(path)
+
+
+UTMEncodingArtifact = UTMBandArtifact
+
 
 @dataclass(frozen=True)
-class RawTMConfig:
+class TMRunConfig:
     """Runner-facing raw TM execution state."""
 
-    program: RawTM
+    program: TMTransitionProgram
     tape: dict[int, str]
     head: int
     state: str
+
+
+RawTMConfig = TMRunConfig
 
 
 @dataclass(frozen=True)
@@ -188,9 +208,9 @@ def utm_encoded_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = None
     )
 
 
-def utm_artifact_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = None) -> UTMEncodingArtifact:
+def utm_artifact_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = None) -> UTMBandArtifact:
     target_abi = _target_abi_for_band(band)
-    return UTMEncodingArtifact(
+    return UTMBandArtifact(
         encoding=band.encoding,
         left_band=tuple(band.left_band),
         right_band=tuple(band.right_band),
@@ -200,7 +220,7 @@ def utm_artifact_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = Non
     )
 
 
-def encoded_band_from_utm_artifact(artifact: UTMEncodingArtifact) -> EncodedBand:
+def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
     return EncodedBand(
         artifact.encoding,
         list(artifact.left_band),
@@ -214,10 +234,12 @@ __all__ = [
     "AbiRequirement",
     "DecodedBandView",
     "RawTMConfig",
+    "TMRunConfig",
     "TMBand",
     "TMAbi",
     "TMInstance",
     "UTMEncoded",
+    "UTMBandArtifact",
     "UTMEncodedRule",
     "UTMEncodingArtifact",
     "UTMRegisters",

@@ -6,8 +6,8 @@ from pathlib import Path
 from runpy import run_path
 
 from .compiled_band import EncodedBand
-from .raw_tm import RawTM
-from .semantic_objects import TMAbi, UTMEncodingArtifact, encoded_band_from_utm_artifact, start_head_from_encoded_band, utm_artifact_from_band
+from .raw_tm import TMTransitionProgram
+from .semantic_objects import TMAbi, UTMBandArtifact, encoded_band_from_utm_artifact, start_head_from_encoded_band, utm_artifact_from_band
 from .tape_encoding import Encoding
 
 
@@ -43,7 +43,7 @@ def _load_abi(namespace: dict[str, object], name: str, *, fallback_encoding: Enc
     )
 
 
-def write_utm_artifact(path: str | Path, artifact: UTMEncodingArtifact) -> None:
+def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
     path = Path(path)
     encoding = {
         "state_ids": artifact.encoding.state_ids,
@@ -68,7 +68,7 @@ def write_utm_artifact(path: str | Path, artifact: UTMEncodingArtifact) -> None:
     path.write_text(text + "\n")
 
 
-def read_utm_artifact(path: str | Path) -> UTMEncodingArtifact:
+def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
     namespace = run_path(str(path))
     encoding_data = namespace["encoding"]
     encoding = Encoding(
@@ -82,7 +82,7 @@ def read_utm_artifact(path: str | Path) -> UTMEncodingArtifact:
         initial_state=encoding_data["initial_state"],
         halt_state=encoding_data["halt_state"],
     )
-    return UTMEncodingArtifact(
+    return UTMBandArtifact(
         encoding=encoding,
         left_band=tuple(namespace["left_band"]),
         right_band=tuple(namespace["right_band"]),
@@ -95,8 +95,8 @@ def read_utm_artifact(path: str | Path) -> UTMEncodingArtifact:
 def band_start_head(band: EncodedBand) -> int: return start_head_from_encoded_band(band)
 
 
-def write_utm(path: str | Path, band_or_artifact: EncodedBand | UTMEncodingArtifact) -> None:
-    artifact = band_or_artifact if isinstance(band_or_artifact, UTMEncodingArtifact) else utm_artifact_from_band(band_or_artifact)
+def write_utm(path: str | Path, band_or_artifact: EncodedBand | UTMBandArtifact) -> None:
+    artifact = band_or_artifact if isinstance(band_or_artifact, UTMBandArtifact) else utm_artifact_from_band(band_or_artifact)
     write_utm_artifact(path, artifact)
 
 
@@ -105,7 +105,7 @@ def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
     return encoded_band_from_utm_artifact(artifact), artifact.start_head
 
 
-def write_tm(path: str | Path, tm: RawTM) -> None:
+def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
     path = Path(path)
     text = "\n".join([
         "format = 'mtm-raw-tm-v1'",
@@ -118,9 +118,9 @@ def write_tm(path: str | Path, tm: RawTM) -> None:
     path.write_text(text + "\n")
 
 
-def read_tm(path: str | Path) -> RawTM:
+def read_tm(path: str | Path) -> TMTransitionProgram:
     namespace = run_path(str(path))
-    return RawTM(
+    return TMTransitionProgram(
         prog=namespace["raw_tm"],
         start_state=namespace["start_state"],
         halt_state=namespace["halt_state"],
