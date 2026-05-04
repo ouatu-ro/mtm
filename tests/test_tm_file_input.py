@@ -91,6 +91,32 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
     assert "1 1 0 0 _ _ _ _" in output
 
 
+def test_cli_compile_with_explicit_target_abi(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm"
+
+    assert cli_main([
+        "compile",
+        str(tm_path),
+        "-o",
+        str(utm_path),
+        "--state-width",
+        "3",
+        "--symbol-width",
+        "4",
+        "--dir-width",
+        "2",
+    ]) == 0
+
+    artifact = read_utm_artifact(utm_path)
+    assert artifact.minimal_abi.state_width == 2
+    assert artifact.minimal_abi.symbol_width == 2
+    assert artifact.minimal_abi.dir_width == 1
+    assert artifact.target_abi.state_width == 3
+    assert artifact.target_abi.symbol_width == 4
+    assert artifact.target_abi.dir_width == 2
+
+
 def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
     raw_tm_path = tmp_path / "utm.tm"
     assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0

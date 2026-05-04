@@ -6,6 +6,7 @@ from mtm import (
     compile_tm_to_encoded_band,
     compile_tm_to_universal_tape,
     compile_tm_to_runtime_tape,
+    infer_minimal_abi,
     TMAbi,
     TMBand,
     decoded_view_from_encoded_band,
@@ -31,6 +32,8 @@ def test_semantic_view_from_encoded_band() -> None:
     band = load_fixture("incrementer").build_band()
     view = decoded_view_from_encoded_band(band)
 
+    assert band.minimal_abi == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
+    assert band.target_abi == TMAbi(2, 2, 1, "mtm-v1", "U[Wq=2,Ws=2,Wd=1]")
     assert view.current_state == "qFindMargin"
     assert view.registers.cur_state == "qFindMargin"
     assert view.registers.cur_symbol == "_"
@@ -58,6 +61,8 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     assert artifact.start_head < 0
     assert round_tripped_band.left_band == band.left_band
     assert round_tripped_band.right_band == band.right_band
+    assert round_tripped_band.minimal_abi == minimal_abi
+    assert round_tripped_band.target_abi == artifact.target_abi
 
 
 def test_utm_artifact_round_trip(tmp_path) -> None:
@@ -79,6 +84,50 @@ def test_utm_artifact_round_trip(tmp_path) -> None:
 def test_source_band_helper() -> None:
     band = source_band_from_simulated_tape(("1", "0", "1", "1"), 0, blank="_")
     assert band == TMBand(cells=("1", "0", "1", "1"), head=0, blank="_")
+
+
+def test_minimal_abi_inference_and_explicit_target_abi() -> None:
+    fixture = load_fixture("incrementer")
+    source_band = source_band_from_simulated_tape(
+        tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
+        fixture.blanks_left,
+        blank=fixture.blank,
+    )
+    inferred = infer_minimal_abi(
+        fixture.tm_program,
+        source_band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+    target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
+    band = compile_tm_to_universal_tape(
+        fixture.tm_program,
+        source_band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+        blank=fixture.blank,
+        abi=target,
+    )
+
+    assert inferred == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
+    assert band.minimal_abi == inferred
+    assert band.target_abi == target
+    assert band.encoding.state_width == 3
+    assert band.encoding.symbol_width == 4
+    assert band.encoding.direction_width == 2
+
+
+def test_compile_rejects_too_small_abi() -> None:
+    fixture = load_fixture("incrementer")
+    too_small = TMAbi(1, 1, 1, "mtm-v1", "too-small")
+
+    try:
+        fixture.build_band(abi=too_small)
+    except ValueError as exc:
+        assert "selected ABI too small" in str(exc)
+        assert "states require" in str(exc)
+    else:
+        raise AssertionError("expected selected ABI to be rejected")
 
 
 def test_runtime_alias_exports_remain_compatible() -> None:

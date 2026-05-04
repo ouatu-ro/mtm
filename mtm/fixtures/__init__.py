@@ -7,7 +7,7 @@ from importlib import import_module
 from pkgutil import iter_modules
 
 from ..compiled_band import EncodedBand, compile_tm_to_universal_tape
-from ..tape_encoding import TMProgram
+from ..tape_encoding import TMAbi, TMProgram
 
 @dataclass(frozen=True)
 class TMFixture:
@@ -17,7 +17,7 @@ class TMFixture:
     initial_state: str; halt_state: str; blank: str = "_"
     blanks_left: int = 0; blanks_right: int = 8; note: str = ""
 
-    def build_band(self) -> EncodedBand:
+    def build_band(self, *, abi: TMAbi | None = None) -> EncodedBand:
         return compile_tm_to_universal_tape(
             self.tm_program,
             self.input_symbols,
@@ -26,6 +26,7 @@ class TMFixture:
             blank=self.blank,
             blanks_left=self.blanks_left,
             blanks_right=self.blanks_right,
+            abi=abi,
         )
 
     def describe(self) -> str:

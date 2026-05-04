@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Iterable
 
-from .tape_encoding import Encoding, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, L, R
+from .tape_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
+
+if TYPE_CHECKING:
+    from .semantic_objects import TMBand
 
 REGS, END_REGS, RULES, RULE, END_RULE, END_RULES = "#REGS", "#END_REGS", "#RULES", "#RULE", "#END_RULE", "#END_RULES"
 TAPE, END_TAPE, CELL = "#TAPE", "#END_TAPE", "#CELL"
@@ -28,6 +32,7 @@ class EncodedBand:
     """Concrete encoded band with a derived raw-tape runtime view."""
 
     encoding: Encoding; left_band: list[str]; right_band: list[str]
+    minimal_abi: TMAbi | None = None; target_abi: TMAbi | None = None
 
     def linear(self) -> list[str]: return self.left_band + self.right_band
     def view(self) -> str: return " ".join(self.left_band + ["|"] + self.right_band)
@@ -109,6 +114,13 @@ def build_tape_band(
     return band + [END_TAPE]
 
 
+def build_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
+    band = [TAPE]
+    for index, symbol in enumerate(source_band.cells):
+        band.extend([CELL, HEAD if index == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+    return band + [END_TAPE]
+
+
 def place_on_negative_side(tokens: list[str], *, start: int = -1) -> dict[int, str]: return {start - (len(tokens) - 1 - index): token for index, token in enumerate(tokens)}
 def place_on_positive_side(tokens: list[str], *, start: int = 0) -> dict[int, str]: return {start + index: token for index, token in enumerate(tokens)}
 
@@ -137,83 +149,136 @@ split_raw_tape = split_runtime_tape
 split_outer_tape = split_runtime_tape
 
 
+def _coerce_source_band(
+    source: Iterable[str] | "TMBand",
+    *,
+    blank: str,
+    blanks_left: int,
+    blanks_right: int,
+) -> "TMBand":
+    from .semantic_objects import TMBand
+
+    if isinstance(source, TMBand):
+        if blank != source.blank:
+            raise ValueError(f"blank mismatch: source band uses {source.blank!r}, compile path requested {blank!r}")
+        return source
+    return TMBand(
+        cells=tuple([blank] * blanks_left + list(source) + [blank] * blanks_right),
+        head=blanks_left,
+        blank=blank,
+    )
+
+
+def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
+    return TMAbi(
+        state_width=minimal_abi.state_width,
+        symbol_width=minimal_abi.symbol_width,
+        dir_width=minimal_abi.dir_width,
+        grammar_version=minimal_abi.grammar_version,
+        family_label=f"U[Wq={minimal_abi.state_width},Ws={minimal_abi.symbol_width},Wd={minimal_abi.dir_width}]",
+    )
+
+
 def build_encoded_band(
     tm_program: TMProgram,
-    input_symbols: Iterable[str],
+    source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
     halt_state: str,
     blank: str = "_",
     blanks_left: int = 0,
     blanks_right: int = 8,
+    abi: TMAbi | None = None,
 ) -> EncodedBand:
-    encoding = build_encoding(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
+    source_band = _coerce_source_band(source, blank=blank, blanks_left=blanks_left, blanks_right=blanks_right)
+    minimal_abi = infer_minimal_abi(
+        tm_program,
+        initial_state=initial_state,
+        halt_state=halt_state,
+        blank=source_band.blank,
+        source_symbols=source_band.cells,
+    )
+    target_abi = _target_abi_from_minimal_abi(minimal_abi) if abi is None else abi
+    encoding = build_encoding(
+        tm_program,
+        initial_state=initial_state,
+        halt_state=halt_state,
+        blank=source_band.blank,
+        source_symbols=source_band.cells,
+        abi=target_abi,
+    )
     left_band = build_register_band(encoding) + build_rule_band(encoding, tm_program)
-    right_band = build_tape_band(encoding, input_symbols, blanks_left=blanks_left, blanks_right=blanks_right)
-    return EncodedBand(encoding, left_band, right_band)
+    right_band = build_tape_band_from_source_band(encoding, source_band)
+    return EncodedBand(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
 
 
 def build_outer_tape(
     tm_program: TMProgram,
-    input_symbols: Iterable[str],
+    source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
     halt_state: str,
     blank: str = "_",
     blanks_left: int = 0,
     blanks_right: int = 8,
+    abi: TMAbi | None = None,
 ) -> EncodedBand:
     """Compatibility alias for build_encoded_band()."""
     return build_encoded_band(
         tm_program,
-        input_symbols,
+        source,
         initial_state=initial_state,
         halt_state=halt_state,
         blank=blank,
         blanks_left=blanks_left,
         blanks_right=blanks_right,
+        abi=abi,
     )
 
 
 def compile_tm_to_universal_tape(
     tm_program: TMProgram,
-    input_symbols: Iterable[str],
+    source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
     halt_state: str,
     blank: str = "_",
     blanks_left: int = 0,
     blanks_right: int = 8,
+    abi: TMAbi | None = None,
 ) -> EncodedBand:
     return build_encoded_band(
         tm_program,
-        input_symbols,
+        source,
         initial_state=initial_state,
         halt_state=halt_state,
         blank=blank,
         blanks_left=blanks_left,
         blanks_right=blanks_right,
+        abi=abi,
     )
 
 
 def compile_tm_to_encoded_band(
     tm_program: TMProgram,
-    input_symbols: Iterable[str],
+    source: Iterable[str] | "TMBand",
     *,
     initial_state: str,
     halt_state: str,
     blank: str = "_",
     blanks_left: int = 0,
     blanks_right: int = 8,
+    abi: TMAbi | None = None,
 ) -> EncodedBand:
     return compile_tm_to_universal_tape(
         tm_program,
-        input_symbols,
+        source,
         initial_state=initial_state,
         halt_state=halt_state,
         blank=blank,
         blanks_left=blanks_left,
         blanks_right=blanks_right,
+        abi=abi,
     )
 
 
@@ -250,6 +315,7 @@ __all__ = [
     "build_register_band",
     "build_rule_band",
     "build_tape_band",
+    "build_tape_band_from_source_band",
     "compile_tm_to_universal_tape",
     "compile_tm_to_encoded_band",
     "materialize_raw_tape",

@@ -13,15 +13,36 @@ from .pretty import pretty_registers, pretty_tape
 from .program_input import load_python_tm
 from .raw_tm import run_raw_tm
 from .semantic_objects import utm_artifact_from_band
+from .tape_encoding import TMAbi
 
 
-def _compile_from_py(path: str | Path):
+def _target_abi_from_args(args) -> TMAbi | None:
+    widths = [getattr(args, "state_width", None), getattr(args, "symbol_width", None), getattr(args, "dir_width", None)]
+    if all(width is None for width in widths):
+        return None
+    if any(width is None for width in widths):
+        raise SystemExit("explicit ABI requires --state-width, --symbol-width, and --dir-width together")
+    return TMAbi(
+        state_width=args.state_width,
+        symbol_width=args.symbol_width,
+        dir_width=args.dir_width,
+        family_label=f"U[Wq={args.state_width},Ws={args.symbol_width},Wd={args.dir_width}]",
+    )
+
+
+def _compile_from_py(path: str | Path, *, abi: TMAbi | None = None):
     fixture = load_python_tm(path)
-    band = fixture.build_band()
+    band = fixture.build_band(abi=abi)
     program = build_universal_meta_asm(band.encoding)
     alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     raw_tm = lower_program_to_raw_tm(program, alphabet)
     return fixture, band, program, raw_tm
+
+
+def _add_abi_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--state-width", type=int)
+    parser.add_argument("--symbol-width", type=int)
+    parser.add_argument("--dir-width", type=int)
 
 
 def _write_text(path: str | Path, text: str) -> None:
@@ -37,14 +58,17 @@ def main(argv: list[str] | None = None) -> int:
     compile_parser.add_argument("-o", "--output", required=True)
     compile_parser.add_argument("--asm-out")
     compile_parser.add_argument("--tm-out")
+    _add_abi_args(compile_parser)
 
     asm_parser = sub.add_parser("emit-asm", help="Emit width-specialized Meta-ASM for a Python TM file.")
     asm_parser.add_argument("input")
     asm_parser.add_argument("-o", "--output", required=True)
+    _add_abi_args(asm_parser)
 
     tm_parser = sub.add_parser("emit-tm", help="Emit lowered raw UTM .tm for a Python TM file.")
     tm_parser.add_argument("input")
     tm_parser.add_argument("-o", "--output", required=True)
+    _add_abi_args(tm_parser)
 
     run_parser = sub.add_parser("run", help="Run a raw .tm program on a .utm artifact or a plain string tape.")
     run_parser.add_argument("tm_file")
@@ -55,9 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--max-steps", type=int, default=200_000)
 
     args = parser.parse_args(argv)
+    abi = _target_abi_from_args(args)
 
     if args.command == "compile":
-        _fixture, band, program, raw_tm = _compile_from_py(args.input)
+        _fixture, band, program, raw_tm = _compile_from_py(args.input, abi=abi)
         write_utm_artifact(args.output, utm_artifact_from_band(band))
         if args.asm_out:
             _write_text(args.asm_out, format_program(program))
@@ -66,12 +91,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "emit-asm":
-        _fixture, _band, program, _raw_tm = _compile_from_py(args.input)
+        _fixture, _band, program, _raw_tm = _compile_from_py(args.input, abi=abi)
         _write_text(args.output, format_program(program))
         return 0
 
     if args.command == "emit-tm":
-        _fixture, _band, _program, raw_tm = _compile_from_py(args.input)
+        _fixture, _band, _program, raw_tm = _compile_from_py(args.input, abi=abi)
         write_tm(args.output, raw_tm)
         return 0
 

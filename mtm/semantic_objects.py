@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .compiled_band import EncodedBand
 from .pretty import parse_registers, parse_rules, parse_tape
 from .raw_tm import RawTM
-from .tape_encoding import Encoding, TMProgram
+from .tape_encoding import AbiRequirement, Encoding, TMAbi, TMProgram, infer_minimal_abi as infer_minimal_encoding_abi
 
 
 @dataclass(frozen=True)
@@ -25,20 +25,6 @@ class TMInstance:
 
     program: TMProgram
     band: TMBand
-
-
-@dataclass(frozen=True)
-class TMAbi:
-    """Target encoding family / machine family."""
-
-    state_width: int
-    symbol_width: int
-    dir_width: int
-    grammar_version: str = "mtm-v1"
-    family_label: str = ""
-
-
-AbiRequirement = TMAbi
 
 
 @dataclass(frozen=True)
@@ -146,6 +132,16 @@ def source_band_from_simulated_tape(cells: tuple[str, ...], head: int, *, blank:
     return TMBand(cells=cells, head=head, blank=blank)
 
 
+def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_state: str, halt_state: str) -> TMAbi:
+    return infer_minimal_encoding_abi(
+        tm_program,
+        initial_state=initial_state,
+        halt_state=halt_state,
+        blank=source_band.blank,
+        source_symbols=source_band.cells,
+    )
+
+
 def start_head_from_encoded_band(band: EncodedBand) -> int:
     left_addresses = list(range(-len(band.left_band), 0))
     return left_addresses[band.left_band.index("#CUR_STATE")]
@@ -171,33 +167,47 @@ def decoded_view_from_encoded_band(band: EncodedBand) -> DecodedBandView:
     )
 
 
+def _target_abi_for_band(band: EncodedBand) -> TMAbi:
+    return band.target_abi or abi_from_encoding(band.encoding)
+
+
+def _minimal_abi_for_band(band: EncodedBand) -> TMAbi:
+    return band.minimal_abi or _target_abi_for_band(band)
+
+
 def utm_encoded_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = None) -> UTMEncoded:
     view = decoded_view_from_encoded_band(band)
-    target_abi = abi_from_encoding(band.encoding)
+    target_abi = _target_abi_for_band(band)
     return UTMEncoded(
         encoding=band.encoding,
         registers=view.registers,
         rules=view.rules,
         simulated_tape=view.simulated_tape,
-        minimal_abi=target_abi if minimal_abi is None else minimal_abi,
+        minimal_abi=_minimal_abi_for_band(band) if minimal_abi is None else minimal_abi,
         target_abi=target_abi,
     )
 
 
 def utm_artifact_from_band(band: EncodedBand, *, minimal_abi: TMAbi | None = None) -> UTMEncodingArtifact:
-    target_abi = abi_from_encoding(band.encoding)
+    target_abi = _target_abi_for_band(band)
     return UTMEncodingArtifact(
         encoding=band.encoding,
         left_band=tuple(band.left_band),
         right_band=tuple(band.right_band),
         start_head=start_head_from_encoded_band(band),
         target_abi=target_abi,
-        minimal_abi=target_abi if minimal_abi is None else minimal_abi,
+        minimal_abi=_minimal_abi_for_band(band) if minimal_abi is None else minimal_abi,
     )
 
 
 def encoded_band_from_utm_artifact(artifact: UTMEncodingArtifact) -> EncodedBand:
-    return EncodedBand(artifact.encoding, list(artifact.left_band), list(artifact.right_band))
+    return EncodedBand(
+        artifact.encoding,
+        list(artifact.left_band),
+        list(artifact.right_band),
+        minimal_abi=artifact.minimal_abi,
+        target_abi=artifact.target_abi,
+    )
 
 
 __all__ = [
@@ -215,6 +225,7 @@ __all__ = [
     "abi_from_encoding",
     "decoded_view_from_encoded_band",
     "encoded_band_from_utm_artifact",
+    "infer_minimal_abi",
     "source_band_from_simulated_tape",
     "start_head_from_encoded_band",
     "utm_artifact_from_band",
