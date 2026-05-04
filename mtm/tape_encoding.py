@@ -11,14 +11,14 @@ L, R = -1, 1
 
 TransitionKey = tuple[str, str]
 Transition = tuple[str, str, int]
-TransitionMap = Mapping[TransitionKey, Transition]
+_TransitionMap = Mapping[TransitionKey, Transition]
 
 
 @dataclass(frozen=True)
 class TMProgram:
     """Immutable source-level Turing machine transition program."""
 
-    transitions: TransitionMap
+    transitions: _TransitionMap
     initial_state: str | None = None
     halt_state: str | None = None
     blank: str = "_"
@@ -104,10 +104,10 @@ class TMProgram:
         )
 
 
-TMProgramLike = TMProgram | TransitionMap
+_TMProgramInput = TMProgram | _TransitionMap
 
 
-def coerce_tm_program(tm_program: TMProgramLike, *, initial_state: str | None = None, halt_state: str | None = None, blank: str = "_") -> TMProgram:
+def _coerce_tm_program(tm_program: _TMProgramInput, *, initial_state: str | None = None, halt_state: str | None = None, blank: str = "_") -> TMProgram:
     if isinstance(tm_program, TMProgram):
         if initial_state is None and halt_state is None and blank == tm_program.blank:
             return tm_program
@@ -172,19 +172,19 @@ class Encoding:
 
 
 def collect_alphabet(
-    tm_program: TMProgramLike,
+    tm_program: _TMProgramInput,
     *,
     halt_state: str,
     blank: str,
     initial_state: str | None = None,
     source_symbols: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
-    program = coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
+    program = _coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
     return list(program.states(initial_state=initial_state, halt_state=halt_state)), list(program.symbols(source_symbols=source_symbols, blank=blank))
 
 
 def infer_minimal_abi(
-    tm_program: TMProgramLike,
+    tm_program: _TMProgramInput,
     *,
     initial_state: str,
     halt_state: str,
@@ -210,7 +210,7 @@ def infer_minimal_abi(
 
 
 def build_encoding(
-    tm_program: TMProgramLike,
+    tm_program: _TMProgramInput,
     *,
     initial_state: str,
     halt_state: str,
@@ -218,7 +218,7 @@ def build_encoding(
     source_symbols: Iterable[str] = (),
     abi: TMAbi | None = None,
 ) -> Encoding:
-    program = coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
+    program = _coerce_tm_program(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
     states, symbols = collect_alphabet(
         program,
         halt_state=halt_state,
@@ -278,9 +278,6 @@ __all__ = [
     "infer_minimal_abi",
     "unbits",
     "width_for",
-    "TMProgramLike",
     "Transition",
     "TransitionKey",
-    "TransitionMap",
-    "coerce_tm_program",
 ]
