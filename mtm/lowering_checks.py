@@ -4,9 +4,36 @@ from __future__ import annotations
 
 from .fixtures import TMFixture
 from .lowering import lower_instruction
-from .meta_asm import BranchCmp, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Seek, SeekOneOf, WriteGlobal, bits
-from .outer_tape import CMP_FLAG, CUR_SYMBOL, END_RULES, RULE, RULES, split_outer_tape
+from .meta_asm import (
+    BranchCmp,
+    CompareGlobalLiteral,
+    CompareGlobalLocal,
+    CopyGlobalGlobal,
+    CopyGlobalToHeadSymbol,
+    CopyHeadSymbolTo,
+    CopyLocalGlobal,
+    FindFirstRule,
+    FindHeadCell,
+    FindNextRule,
+    Goto,
+    Halt,
+    Seek,
+    SeekOneOf,
+    WriteGlobal,
+    bits,
+)
+from .outer_tape import CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
 from .raw_tm import TMBuilder, run_raw_tm
+
+
+def set_global_bits(band, marker: str, value: str):
+    left_band = list(band.left_band)
+    start = left_band.index(marker) + 1
+    left_band[start:start + len(value)] = list(value)
+    outer_tape = {}
+    outer_tape.update(place_on_negative_side(left_band, start=-1))
+    outer_tape.update(place_on_positive_side(band.right_band, start=0))
+    return outer_tape
 
 
 def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
@@ -69,6 +96,49 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     lower_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=0, max_steps=300)
     rows.append(["FIND_HEAD_CELL", result["status"], result["state"], result["head"], "at head #CELL"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CopyLocalGlobal(WRITE, WRITE_SYMBOL, 2), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(RULE), max_steps=500)
+    final_left_band, _ = split_outer_tape(result["tape"])
+    write_symbol_index = final_left_band.index(WRITE_SYMBOL)
+    rows.append(["COPY_LOCAL_GLOBAL", result["status"], result["state"], result["head"], f"{WRITE_SYMBOL}={''.join(final_left_band[write_symbol_index + 1:write_symbol_index + 3])}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CopyGlobalGlobal(WRITE_SYMBOL, CUR_SYMBOL, 2), state="start", continuation_label="DONE")
+    prepared_tape = set_global_bits(band, WRITE_SYMBOL, "01")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(WRITE_SYMBOL), max_steps=500)
+    final_left_band, _ = split_outer_tape(result["tape"])
+    cur_symbol_index = final_left_band.index(CUR_SYMBOL)
+    rows.append(["COPY_GLOBAL_GLOBAL", result["status"], result["state"], result["head"], f"{CUR_SYMBOL}={''.join(final_left_band[cur_symbol_index + 1:cur_symbol_index + 3])}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, 2), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=1, max_steps=500)
+    final_left_band, _ = split_outer_tape(result["tape"])
+    cur_symbol_index = final_left_band.index(CUR_SYMBOL)
+    rows.append(["COPY_HEAD_SYMBOL_TO", result["status"], result["state"], result["head"], f"{CUR_SYMBOL}={''.join(final_left_band[cur_symbol_index + 1:cur_symbol_index + 3])}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CopyGlobalToHeadSymbol(WRITE_SYMBOL, 2), state="start", continuation_label="DONE")
+    prepared_tape = set_global_bits(band, WRITE_SYMBOL, "00")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=1, max_steps=1500)
+    _, final_right_band = split_outer_tape(result["tape"])
+    rows.append(["COPY_GLOBAL_TO_HEAD_SYMBOL", result["status"], result["state"], result["head"], f"head_symbol={''.join(final_right_band[3:5])}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CompareGlobalLiteral(CUR_STATE, bits("10")), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(CUR_STATE), max_steps=500)
+    final_left_band, _ = split_outer_tape(result["tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+    rows.append(["COMPARE_GLOBAL_LITERAL", result["status"], result["state"], result["head"], f"{CMP_FLAG}={final_left_band[cmp_index + 1]}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, CompareGlobalLocal(CUR_STATE, STATE, 2), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(RULE), max_steps=1000)
+    final_left_band, _ = split_outer_tape(result["tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+    rows.append(["COMPARE_GLOBAL_LOCAL", result["status"], result["state"], result["head"], f"{CMP_FLAG}={final_left_band[cmp_index + 1]}"])
     return rows
 
 
