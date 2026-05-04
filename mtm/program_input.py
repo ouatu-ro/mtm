@@ -18,7 +18,7 @@ def _read_required(namespace: dict[str, object], name: str):
 
 def load_python_tm(path: str | Path) -> TMFixture:
     path = Path(path)
-    namespace = run_path(str(path), init_globals={"L": L, "R": R})
+    namespace = run_path(str(path), init_globals={"L": L, "R": R, "TMProgram": TMProgram})
     tm_program = _read_required(namespace, "tm_program")
     initial_state = _read_required(namespace, "initial_state")
     halt_state = _read_required(namespace, "halt_state")
@@ -29,10 +29,11 @@ def load_python_tm(path: str | Path) -> TMFixture:
     blanks_left = namespace.get("blanks_left", 0)
     blanks_right = namespace.get("blanks_right", 8)
     note = namespace.get("note", f"Loaded from {path.name}.")
-    program = TMProgram(tm_program, initial_state=initial_state, halt_state=halt_state, blank=blank)
+    if not isinstance(tm_program, TMProgram):
+        raise TypeError("TM input file must define `tm_program` as a TMProgram")
     return TMFixture(
         name=namespace.get("name", path.stem),
-        tm_program=program,
+        tm_program=tm_program,
         input_symbols=list(input_symbols),
         initial_state=initial_state,
         halt_state=halt_state,

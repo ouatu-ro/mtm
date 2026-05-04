@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from mtm.cli import main as cli_main
 from mtm.demo import main
 from mtm.artifacts import read_tm, read_utm, read_utm_artifact, write_utm
@@ -18,14 +20,14 @@ halt_state = "qDone"
 input_string = "1011"
 blanks_right = 4
 
-tm_program = {
+tm_program = TMProgram({
     ("qFindMargin", "0"): ("qFindMargin", "0", R),
     ("qFindMargin", "1"): ("qFindMargin", "1", R),
     ("qFindMargin", blank): ("qAdd", blank, L),
     ("qAdd", "0"): ("qDone", "1", L),
     ("qAdd", "1"): ("qAdd", "0", L),
     ("qAdd", blank): ("qDone", "1", L),
-}
+}, initial_state=initial_state, halt_state=halt_state, blank=blank)
 """
 
 
@@ -47,6 +49,18 @@ def test_load_python_tm_file(tmp_path: Path) -> None:
     assert fixture.halt_state == "qDone"
     assert len(fixture.tm_program) == 6
     assert band.encoding.halt_state == "qDone"
+
+
+def test_load_python_tm_file_requires_tm_program_object(tmp_path: Path) -> None:
+    path = tmp_path / "raw_dict_tm.py"
+    path.write_text("""\
+initial_state = "q0"
+halt_state = "qHalt"
+tm_program = {("q0", "_"): ("qHalt", "_", R)}
+""")
+
+    with pytest.raises(TypeError, match="tm_program.*TMProgram"):
+        load_python_tm(path)
 
 
 def test_load_python_tm_instance(tmp_path: Path) -> None:

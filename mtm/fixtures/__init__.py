@@ -18,16 +18,8 @@ class TMFixture:
     blanks_left: int = 0; blanks_right: int = 8; note: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "tm_program",
-            TMProgram(
-                self.tm_program,
-                initial_state=self.initial_state,
-                halt_state=self.halt_state,
-                blank=self.blank,
-            ),
-        )
+        if not isinstance(self.tm_program, TMProgram):
+            raise TypeError("TMFixture.tm_program must be a TMProgram")
 
     def build_band(self, *, abi: TMAbi | None = None) -> EncodedBand:
         return compile_tm_to_universal_tape(
