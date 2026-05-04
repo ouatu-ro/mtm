@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..outer_tape import L, R
+from ..tape_encoding import L, R
 from . import TMFixture
 
 blank = "_"

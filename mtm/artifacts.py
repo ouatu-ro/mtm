@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from runpy import run_path
 
-from .outer_tape import EncodedBand, Encoding
+from .compiled_band import EncodedBand
+from .tape_encoding import Encoding
 from .raw_tm import RawTM
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from .artifacts import read_tm, read_utm, write_tm, write_utm
 from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from .meta_asm import build_universal_meta_asm, format_program
-from .outer_tape import CUR_STATE, EncodedBand
+from .compiled_band import CUR_STATE, EncodedBand, split_outer_tape
 from .pretty import pretty_registers, pretty_tape
 from .program_input import load_python_tm
 from .raw_tm import run_raw_tm
@@ -92,8 +92,6 @@ def main(argv: list[str] | None = None) -> int:
     result = run_raw_tm(tm, band.outer_tape, head=start_head, max_steps=args.max_steps)
     final_left_band, final_right_band = band.left_band, band.right_band
     if result["tape"] != band.outer_tape:
-        from .outer_tape import split_outer_tape
-
         final_left_band, final_right_band = split_outer_tape(result["tape"])
     final_band = EncodedBand(band.encoding, result["tape"], final_left_band, final_right_band)
     print(f"FINAL STATUS: {result['status']}")

@@ -8,8 +8,8 @@ from .fixtures import list_fixtures, load_fixture
 from .lowering_checks import lowering_smoke_rows
 from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from .meta_asm import build_universal_meta_asm, format_program
-from .meta_interpreter import format_meta_trace, run_meta_asm_host
-from .outer_tape import CUR_STATE, EncodedBand, split_outer_tape
+from .meta_asm_host import format_meta_trace, run_meta_asm_host
+from .compiled_band import CUR_STATE, EncodedBand, split_outer_tape
 from .pretty import pretty_fixture, pretty_registers, pretty_tape, table
 from .program_input import load_python_tm
 from .raw_tm import format_raw_tm, run_raw_tm

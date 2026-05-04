@@ -6,7 +6,7 @@ from pathlib import Path
 from runpy import run_path
 
 from .fixtures import TMFixture
-from .outer_tape import L, R
+from .tape_encoding import L, R
 
 
 def _read_required(namespace: dict[str, object], name: str):

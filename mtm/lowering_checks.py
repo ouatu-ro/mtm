@@ -25,7 +25,7 @@ from .meta_asm import (
     WriteGlobal,
     bits,
 )
-from .outer_tape import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
+from .compiled_band import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
 from .raw_tm import TMBuilder, run_raw_tm
 
 

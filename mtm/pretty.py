@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .outer_tape import (
+from .compiled_band import (
     CELL,
     CMP_FLAG,
     CUR_STATE,
@@ -30,13 +30,8 @@ from .outer_tape import (
     WRITE,
     WRITE_SYMBOL,
     EncodedBand,
-    Encoding,
-    L,
-    R,
-    encode_direction,
-    encode_state,
-    encode_symbol,
 )
+from .tape_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
 
