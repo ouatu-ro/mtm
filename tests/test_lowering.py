@@ -4,14 +4,13 @@ from mtm import (
     lower_instruction,
     lower_instruction_sequence,
     lower_program_to_raw_tm,
-    run_meta_asm_block,
-    run_meta_asm_host,
     run_raw_tm,
 )
 from mtm.lowering import ACTIVE_RULE
 from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo
+from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from mtm.lowering_checks import lowering_smoke_rows
-from mtm.outer_tape import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_raw_tape, split_outer_tape
+from mtm.compiled_band import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_tm import TMBuilder
 
 
@@ -19,7 +18,7 @@ def _set_global_bits(band, marker: str, bits: str):
     left_band = list(band.left_band)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
-    return materialize_raw_tape(left_band, band.right_band)
+    return materialize_runtime_tape(left_band, band.right_band)
 
 
 def _set_head_cell(band, cell_index: int):
@@ -29,14 +28,14 @@ def _set_head_cell(band, cell_index: int):
         if token in {HEAD, NO_HEAD}:
             right_band[index] = NO_HEAD
     right_band[1 + cell_index * span + 1] = HEAD
-    return materialize_raw_tape(band.left_band, right_band)
+    return materialize_runtime_tape(band.left_band, right_band)
 
 
-def _set_global_bits_on_tape(band, outer_tape, marker: str, bits: str):
-    left_band, right_band = split_outer_tape(outer_tape)
+def _set_global_bits_on_runtime_tape(band, runtime_tape, marker: str, bits: str):
+    left_band, right_band = split_runtime_tape(runtime_tape)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
-    return materialize_raw_tape(left_band, right_band)
+    return materialize_runtime_tape(left_band, right_band)
 
 
 def test_first_lowered_fragments_smoke() -> None:
@@ -91,11 +90,11 @@ def test_lowered_start_step_matches_host_block() -> None:
         ("01", "HALT", "1"),
     ]:
         prepared_tape = _set_global_bits(band, CUR_STATE, cur_state_bits)
-        host = run_meta_asm_block(program, band.encoding, prepared_tape, label="START_STEP", max_steps=10)
+        host = run_meta_asm_block_runtime(program, band.encoding, prepared_tape, label="START_STEP", max_steps=10)
         builder = TMBuilder(alphabet)
         lower_instruction_sequence(builder, start_block.instructions, start_state="START_STEP", exit_label="DONE")
         result = run_raw_tm(builder.build("START_STEP"), prepared_tape, head=cur_state_head, max_steps=200)
-        final_left_band, _ = split_outer_tape(result["tape"])
+        final_left_band, _ = split_runtime_tape(result["tape"])
         cmp_index = final_left_band.index(CMP_FLAG)
 
         assert host["label"] == expected_label
@@ -111,7 +110,7 @@ def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
     prepared_tape = _set_head_cell(band, 4)
     lower_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 4 * (3 + band.encoding.symbol_width), max_steps=1000)
-    final_left_band, _ = split_outer_tape(result["tape"])
+    final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
 
     assert result["status"] == "stuck"
@@ -124,10 +123,10 @@ def test_copy_global_to_head_symbol_matches_later_cell() -> None:
     band = fixture.build_band()
     alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    prepared_tape = _set_global_bits_on_tape(band, _set_head_cell(band, 3), CUR_SYMBOL, "00")
+    prepared_tape = _set_global_bits_on_runtime_tape(band, _set_head_cell(band, 3), CUR_SYMBOL, "00")
     lower_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 3 * (3 + band.encoding.symbol_width), max_steps=1500)
-    _, final_right_band = split_outer_tape(result["tape"])
+    _, final_right_band = split_runtime_tape(result["tape"])
 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
@@ -142,11 +141,11 @@ def test_lowered_incrementer_matches_host_run() -> None:
     left_addresses = list(range(-len(band.left_band), 0))
     start_head = left_addresses[band.left_band.index(CUR_STATE)]
 
-    host_status, host_outer_tape, _host_trace, _host_reason = run_meta_asm_host(program, band.encoding, band.outer_tape, max_steps=500)
+    host_status, host_runtime_tape, _host_trace, _host_reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=500)
     raw_tm = lower_program_to_raw_tm(program, alphabet)
-    raw = run_raw_tm(raw_tm, band.outer_tape, head=start_head, max_steps=200_000)
-    raw_left_band, raw_right_band = split_outer_tape(raw["tape"])
-    host_left_band, host_right_band = split_outer_tape(host_outer_tape)
+    raw = run_raw_tm(raw_tm, band.runtime_tape, head=start_head, max_steps=200_000)
+    raw_left_band, raw_right_band = split_runtime_tape(raw["tape"])
+    host_left_band, host_right_band = split_runtime_tape(host_runtime_tape)
 
     assert host_status == "halted"
     assert raw["status"] == "halted"

@@ -8,8 +8,8 @@ from .fixtures import list_fixtures, load_fixture
 from .lowering_checks import lowering_smoke_rows
 from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from .meta_asm import build_universal_meta_asm, format_program
-from .meta_asm_host import format_meta_trace, run_meta_asm_host
-from .compiled_band import CUR_STATE, EncodedBand, split_outer_tape
+from .meta_asm_host import format_meta_trace, run_meta_asm_runtime
+from .compiled_band import CUR_STATE, EncodedBand, split_runtime_tape
 from .pretty import pretty_fixture, pretty_registers, pretty_tape, table
 from .program_input import load_python_tm
 from .raw_tm import format_raw_tm, run_raw_tm
@@ -49,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_program(program))
     if args.run_asm:
-        status, final_outer_tape, trace, reason = run_meta_asm_host(program, band.encoding, band.outer_tape, max_steps=args.max_steps)
-        final_left_band, final_right_band = split_outer_tape(final_outer_tape)
+        status, final_runtime_tape, trace, reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=args.max_steps)
+        final_left_band, final_right_band = split_runtime_tape(final_runtime_tape)
         final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)
@@ -81,8 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_raw_tm(raw_tm))
     if args.run_utm:
-        result = run_raw_tm(raw_tm, band.outer_tape, head=start_head, max_steps=args.max_raw_steps)
-        final_left_band, final_right_band = split_outer_tape(result["tape"])
+        result = run_raw_tm(raw_tm, band.runtime_tape, head=start_head, max_steps=args.max_raw_steps)
+        final_left_band, final_right_band = split_runtime_tape(result["tape"])
         final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)

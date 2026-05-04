@@ -194,7 +194,10 @@ def pretty_raw_tape(raw_tape: dict[int, str]) -> str:
     return section("RAW TAPE", table(["addr", "side", "value"], rows))
 
 
-def pretty_outer_tape(outer_tape: dict[int, str]) -> str: return pretty_raw_tape(outer_tape)
+def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str: return pretty_raw_tape(runtime_tape)
+
+
+def pretty_outer_tape(outer_tape: dict[int, str]) -> str: return pretty_runtime_tape(outer_tape)
 
 
 def pretty_band(band: EncodedBand, *, show_outer: bool = False) -> str:
@@ -205,7 +208,7 @@ def pretty_band(band: EncodedBand, *, show_outer: bool = False) -> str:
         pretty_tape(band.encoding, band.right_band),
     ]
     if show_outer:
-        parts.append(pretty_raw_tape(band.outer_tape))
+        parts.append(pretty_runtime_tape(band.runtime_tape))
     return ("\n\n" + "=" * 88 + "\n\n").join(parts)
 
 
@@ -238,6 +241,7 @@ __all__ = [
     "pretty_encoding",
     "pretty_fixture",
     "pretty_raw_tape",
+    "pretty_runtime_tape",
     "pretty_outer_tape",
     "pretty_registers",
     "pretty_rules",

@@ -27,13 +27,27 @@ class EncodedBand:
 
     def linear(self) -> list[str]: return self.left_band + self.right_band
     def view(self) -> str: return " ".join(self.left_band + ["|"] + self.right_band)
-    def to_raw_tape(self) -> dict[int, str]: return materialize_raw_tape(self.left_band, self.right_band)
+    def to_runtime_tape(self) -> dict[int, str]: return materialize_runtime_tape(self.left_band, self.right_band)
+    def to_raw_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
     @property
-    def outer_tape(self) -> dict[int, str]: return self.to_raw_tape()
+    def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
+
+    @property
+    def outer_tape(self) -> dict[int, str]: return self.runtime_tape
 
     @classmethod
-    def from_raw_tape(cls, encoding: Encoding, outer_tape: dict[int, str]) -> "EncodedBand":
+    def from_runtime_tape(cls, encoding: Encoding, runtime_tape: dict[int, str]) -> "EncodedBand":
+        left_band, right_band = split_runtime_tape(runtime_tape)
+        return cls(encoding, left_band, right_band)
+
+    @classmethod
+    def from_raw_tape(cls, encoding: Encoding, raw_tape: dict[int, str]) -> "EncodedBand":
+        left_band, right_band = split_raw_tape(raw_tape)
+        return cls(encoding, left_band, right_band)
+
+    @classmethod
+    def from_outer_tape(cls, encoding: Encoding, outer_tape: dict[int, str]) -> "EncodedBand":
         left_band, right_band = split_outer_tape(outer_tape)
         return cls(encoding, left_band, right_band)
 
@@ -93,25 +107,32 @@ def place_on_negative_side(tokens: list[str], *, start: int = -1) -> dict[int, s
 def place_on_positive_side(tokens: list[str], *, start: int = 0) -> dict[int, str]: return {start + index: token for index, token in enumerate(tokens)}
 
 
-def materialize_raw_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
+def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
     raw_tape = defaultdict(lambda: OUTER_BLANK)
     raw_tape.update(place_on_negative_side(left_band, start=-1))
     raw_tape.update(place_on_positive_side(right_band, start=0))
     return raw_tape
 
 
-def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]:
-    live_cells = [address for address, symbol in outer_tape.items() if symbol != OUTER_BLANK]
+def materialize_raw_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
+    return materialize_runtime_tape(left_band, right_band)
+
+
+def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[str]]:
+    live_cells = [address for address, symbol in runtime_tape.items() if symbol != OUTER_BLANK]
     if not live_cells:
         return [], []
     lowest, highest = min(live_cells), max(live_cells)
-    return [outer_tape[address] for address in range(lowest, 0)], [outer_tape[address] for address in range(0, highest + 1)]
+    return [runtime_tape[address] for address in range(lowest, 0)], [runtime_tape[address] for address in range(0, highest + 1)]
 
 
-def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_outer_tape(raw_tape)
+def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_runtime_tape(raw_tape)
 
 
-def build_outer_tape(
+def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_runtime_tape(outer_tape)
+
+
+def build_encoded_band(
     tm_program: TMProgram,
     input_symbols: Iterable[str],
     *,
@@ -127,6 +148,27 @@ def build_outer_tape(
     return EncodedBand(encoding, left_band, right_band)
 
 
+def build_outer_tape(
+    tm_program: TMProgram,
+    input_symbols: Iterable[str],
+    *,
+    initial_state: str,
+    halt_state: str,
+    blank: str = "_",
+    blanks_left: int = 0,
+    blanks_right: int = 8,
+) -> EncodedBand:
+    return build_encoded_band(
+        tm_program,
+        input_symbols,
+        initial_state=initial_state,
+        halt_state=halt_state,
+        blank=blank,
+        blanks_left=blanks_left,
+        blanks_right=blanks_right,
+    )
+
+
 def compile_tm_to_universal_tape(
     tm_program: TMProgram,
     input_symbols: Iterable[str],
@@ -137,7 +179,7 @@ def compile_tm_to_universal_tape(
     blanks_left: int = 0,
     blanks_right: int = 8,
 ) -> EncodedBand:
-    return build_outer_tape(
+    return build_encoded_band(
         tm_program,
         input_symbols,
         initial_state=initial_state,
@@ -197,6 +239,7 @@ __all__ = [
     "TMP",
     "WRITE",
     "WRITE_SYMBOL",
+    "build_encoded_band",
     "build_outer_tape",
     "build_register_band",
     "build_rule_band",
@@ -204,9 +247,11 @@ __all__ = [
     "compile_tm_to_universal_tape",
     "compile_tm_to_encoded_band",
     "materialize_raw_tape",
+    "materialize_runtime_tape",
     "place_on_negative_side",
     "place_on_positive_side",
     "split_raw_tape",
+    "split_runtime_tape",
     "split_outer_tape",
     "wrap_field",
 ]

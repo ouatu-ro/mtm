@@ -8,7 +8,7 @@ from pathlib import Path
 from .artifacts import read_tm, read_utm_artifact, write_tm, write_utm_artifact
 from .lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from .meta_asm import build_universal_meta_asm, format_program
-from .compiled_band import CUR_STATE, EncodedBand, split_outer_tape
+from .compiled_band import CUR_STATE, EncodedBand, split_runtime_tape
 from .pretty import pretty_registers, pretty_tape
 from .program_input import load_python_tm
 from .raw_tm import run_raw_tm
@@ -92,10 +92,11 @@ def main(argv: list[str] | None = None) -> int:
     artifact = read_utm_artifact(args.input)
     band = artifact.to_encoded_band()
     start_head = artifact.start_head
-    result = run_raw_tm(tm, band.outer_tape, head=start_head, max_steps=args.max_steps)
+    runtime_tape = band.runtime_tape
+    result = run_raw_tm(tm, runtime_tape, head=start_head, max_steps=args.max_steps)
     final_left_band, final_right_band = band.left_band, band.right_band
-    if result["tape"] != band.outer_tape:
-        final_left_band, final_right_band = split_outer_tape(result["tape"])
+    if result["tape"] != runtime_tape:
+        final_left_band, final_right_band = split_runtime_tape(result["tape"])
     final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
     print(f"FINAL STATUS: {result['status']}")
     print(f"FINAL STATE: {result['state']}")

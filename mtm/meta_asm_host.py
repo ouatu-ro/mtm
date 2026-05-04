@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_raw_tape, split_outer_tape
+from .compiled_band import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import (
     BranchAt,
     BranchCmp,
@@ -37,10 +37,6 @@ class MetaInterpreterRules:
     """Raw TM rules for the interpreter side of the system."""
 
     tm_program: TMProgram; start_state: str = "U_START"; halt_state: str = "U_HALT"
-
-
-def rebuild_outer_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
-    return materialize_raw_tape(left_band, right_band)
 
 
 def left_index(left_band: list[str], address: int) -> int:
@@ -188,17 +184,17 @@ def format_meta_trace(trace: list[dict[str, object]]) -> str:
     return table(["step", "label", "instruction", "head", "value", "outcome"], rows)
 
 
-def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int, start_label: str, stop_on_block_exit: bool):
+def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, max_steps: int, start_label: str, stop_on_block_exit: bool):
     blocks = {block.label: block for block in program.blocks}
     label, instruction_index, head_address, status, reason = start_label, 0, None, "running", None
     trace: list[dict[str, object]] = []
-    outer_tape = dict(outer_tape)
+    runtime_tape = dict(runtime_tape)
 
     for step in range(max_steps):
         if status != "running":
             break
 
-        left_band, right_band = split_outer_tape(outer_tape)
+        left_band, right_band = split_runtime_tape(runtime_tape)
         block = blocks[label]
         if instruction_index >= len(block.instructions):
             status, reason = "halted", f"fell off end of block {label}"
@@ -219,14 +215,14 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
             case CompareGlobalLiteral(global_marker, literal_bits):
                 cmp_bit = "1" if get_global_bits(left_band, global_marker) == literal_bits else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
             case CompareGlobalLocal(global_marker, local_marker, _width):
                 rule_index = current_rule_index(left_band, head_address)
                 cmp_bit = "1" if get_global_bits(left_band, global_marker) == get_local_bits(left_band, rule_index, local_marker) else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
             case BranchCmp(label_equal, label_not_equal):
@@ -248,7 +244,7 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
                     raise ValueError("COPY_HEAD_SYMBOL_TO requires the outer head to be at a simulated #CELL")
                 symbol_bits = read_head_symbol_bits(right_band, head_address, width)
                 left_band = set_global_bits(left_band, global_marker, symbol_bits)
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}={''.join(symbol_bits)}"
             case CopyGlobalToHeadSymbol(global_marker, width):
@@ -258,7 +254,7 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
                 if len(symbol_bits) != width:
                     raise ValueError(f"wrong width for {global_marker}: expected {width}, got {len(symbol_bits)}")
                 right_band = write_head_symbol_bits(right_band, head_address, symbol_bits)
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head_symbol={''.join(symbol_bits)}"
             case FindFirstRule():
@@ -274,31 +270,31 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
             case CopyLocalGlobal(local_marker, global_marker, _width):
                 rule_index = current_rule_index(left_band, head_address)
                 left_band = set_global_bits(left_band, global_marker, get_local_bits(left_band, rule_index, local_marker))
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}<-{local_marker}"
             case CopyGlobalGlobal(src_marker, dst_marker, _width):
                 left_band = set_global_bits(left_band, dst_marker, get_global_bits(left_band, src_marker))
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{dst_marker}<-{src_marker}"
             case WriteGlobal(global_marker, literal_bits):
                 left_band = set_global_bits(left_band, global_marker, literal_bits)
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}={''.join(literal_bits)}"
             case MoveSimHeadLeft():
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
                     raise ValueError("MOVE_SIM_HEAD_LEFT requires the outer head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, -1)
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case MoveSimHeadRight():
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
                     raise ValueError("MOVE_SIM_HEAD_RIGHT requires the outer head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, 1)
-                outer_tape = rebuild_outer_tape(left_band, right_band)
+                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case Goto(target):
@@ -314,7 +310,7 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
                 status, reason = "halted", f"ASM instruction not yet supported by host runner: {format_instruction(instruction)}"
                 outcome = "unsupported"
 
-        left_band, right_band = split_outer_tape(outer_tape)
+        left_band, right_band = split_runtime_tape(runtime_tape)
         trace.append({
             "step": step,
             "label": block.label,
@@ -332,7 +328,8 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
         status, reason = "halted", "fuel exhausted" if reason is None else reason
     return {
         "status": status,
-        "outer_tape": outer_tape,
+        "runtime_tape": runtime_tape,
+        "outer_tape": runtime_tape,
         "trace": trace,
         "reason": reason,
         "label": label,
@@ -341,13 +338,22 @@ def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max
     }
 
 
+def run_meta_asm_block_runtime(program: Program, encoding, runtime_tape: dict[int, str], *, label: str, max_steps: int = 100):
+    return _run_meta_asm(program, encoding, runtime_tape, max_steps=max_steps, start_label=label, stop_on_block_exit=True)
+
+
+def run_meta_asm_runtime(program: Program, encoding, runtime_tape: dict[int, str], *, max_steps: int = 100):
+    result = _run_meta_asm(program, encoding, runtime_tape, max_steps=max_steps, start_label=program.entry_label, stop_on_block_exit=False)
+    return result["status"], result["runtime_tape"], result["trace"], result["reason"]
+
+
 def run_meta_asm_block(program: Program, encoding, outer_tape: dict[int, str], *, label: str, max_steps: int = 100):
-    return _run_meta_asm(program, encoding, outer_tape, max_steps=max_steps, start_label=label, stop_on_block_exit=True)
+    return run_meta_asm_block_runtime(program, encoding, outer_tape, label=label, max_steps=max_steps)
 
 
 def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int = 100):
-    result = _run_meta_asm(program, encoding, outer_tape, max_steps=max_steps, start_label=program.entry_label, stop_on_block_exit=False)
-    return result["status"], result["outer_tape"], result["trace"], result["reason"]
+    status, runtime_tape, trace, reason = run_meta_asm_runtime(program, encoding, outer_tape, max_steps=max_steps)
+    return status, runtime_tape, trace, reason
 
 
 def build_meta_interpreter_rules(encoding) -> MetaInterpreterRules:
@@ -359,5 +365,7 @@ __all__ = [
     "build_meta_interpreter_rules",
     "format_meta_trace",
     "run_meta_asm_block",
+    "run_meta_asm_block_runtime",
     "run_meta_asm_host",
+    "run_meta_asm_runtime",
 ]
