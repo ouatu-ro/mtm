@@ -321,39 +321,6 @@ Meaning:
 - this should be a first-class object, not just pretty-printer logic
 
 
-## 9. Compatibility Boundary
-
-Primary names going forward:
-
-- `build_encoded_band`
-- `compile_tm_to_encoded_band`
-- `runtime_tape`
-- `materialize_runtime_tape`
-- `split_runtime_tape`
-- `run_meta_asm_runtime`
-- `run_meta_asm_block_runtime`
-- `pretty_runtime_tape`
-
-Compatibility aliases kept for now:
-
-- `build_outer_tape`
-- `compile_tm_to_universal_tape`
-- `outer_tape`
-- `materialize_raw_tape`
-- `split_raw_tape`
-- `split_outer_tape`
-- `run_meta_asm_host`
-- `run_meta_asm_block`
-- `pretty_raw_tape`
-- `pretty_outer_tape`
-
-Current policy:
-
-- primary names should be used by new code and docs
-- compatibility aliases remain to avoid breaking callers during the migration
-- removal, if it happens later, should only happen after the public surface and examples stop depending on the old names
-
-
 ## 9. Compatibility Rules
 
 There are two different notions of compatibility.

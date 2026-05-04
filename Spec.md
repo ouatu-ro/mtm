@@ -1232,7 +1232,7 @@ encoded = compile_tm_to_encoded_band(
 artifact = serialize_utm(encoded)
 asm = build_universal_meta_asm(encoded.encoding)
 
-status, final_encoded, trace = run_meta_asm_host(asm, encoded)
+status, final_runtime_tape, trace, reason = run_meta_asm_runtime(asm, encoded.encoding, encoded.runtime_tape)
 ```
 
 Expected decoded result:

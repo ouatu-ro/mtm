@@ -7,7 +7,10 @@ from .compiled_band import (
     build_encoded_band,
     build_outer_tape,
     compile_tm_to_universal_tape,
+    materialize_raw_tape,
     materialize_runtime_tape,
+    split_outer_tape,
+    split_raw_tape,
     split_runtime_tape,
 )
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
@@ -109,6 +112,7 @@ __all__ = [
     "load_python_tm",
     "load_python_tm_instance",
     "materialize_runtime_tape",
+    "materialize_raw_tape",
     "pretty_band",
     "pretty_fixture",
     "pretty_outer_tape",
@@ -123,6 +127,8 @@ __all__ = [
     "run_meta_asm_host",
     "run_meta_asm_runtime",
     "split_runtime_tape",
+    "split_raw_tape",
+    "split_outer_tape",
     "decoded_view_from_encoded_band",
     "encoded_band_from_utm_artifact",
     "source_band_from_simulated_tape",

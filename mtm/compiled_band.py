@@ -38,8 +38,8 @@ class EncodedBand:
     @property
     def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
-    @property
     # Compatibility alias for older callers that still use "outer_tape".
+    @property
     def outer_tape(self) -> dict[int, str]: return self.runtime_tape
 
     @classmethod
@@ -120,9 +120,7 @@ def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dic
     return raw_tape
 
 
-def materialize_raw_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
-    """Compatibility alias for materialize_runtime_tape()."""
-    return materialize_runtime_tape(left_band, right_band)
+materialize_raw_tape = materialize_runtime_tape
 
 
 def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[str]]:
@@ -133,14 +131,10 @@ def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[st
     return [runtime_tape[address] for address in range(lowest, 0)], [runtime_tape[address] for address in range(0, highest + 1)]
 
 
-def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]:
-    """Compatibility alias for split_runtime_tape()."""
-    return split_runtime_tape(raw_tape)
+split_raw_tape = split_runtime_tape
 
 
-def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]:
-    """Compatibility alias for split_runtime_tape()."""
-    return split_runtime_tape(outer_tape)
+split_outer_tape = split_runtime_tape
 
 
 def build_encoded_band(
