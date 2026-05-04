@@ -48,16 +48,21 @@ from .semantic_objects import (
 from .tape_encoding import Encoding
 
 def build_utm_encoded(*args, **kwargs):
+    """Compatibility wrapper for :func:`utm_encoded_from_band`."""
     return utm_encoded_from_band(*args, **kwargs)
 
 
 def build_utm_encoding_artifact(*args, **kwargs):
+    """Compatibility wrapper for :func:`utm_artifact_from_band`."""
     return utm_artifact_from_band(*args, **kwargs)
 
 
+# Compatibility aliases kept for downstream callers while the runtime-tape
+# and universal-tape names are the primary public surface.
 build_runtime_tape = build_outer_tape
 compile_tm_to_runtime_tape = compile_tm_to_universal_tape
 compile_tm_to_encoded_band = compile_tm_to_runtime_tape
+pretty_outer_tape = pretty_runtime_tape
 
 __all__ = [
     "EncodedBand",
