@@ -1,5 +1,7 @@
 """Readable building blocks for the Meta Turing Machine experiment."""
 
+from .artifacts import read_tm, read_utm, write_tm, write_utm
+from .cli import main as cli_main
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
 from .lowering import lower_instruction, lower_instruction_sequence, lower_program, lower_program_to_raw_tm
 from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, format_program
@@ -22,6 +24,7 @@ __all__ = [
     "build_meta_interpreter_rules",
     "build_universal_meta_asm",
     "build_outer_tape",
+    "cli_main",
     "compile_tm_to_universal_tape",
     "format_meta_trace",
     "format_program",
@@ -35,8 +38,12 @@ __all__ = [
     "load_python_tm",
     "pretty_band",
     "pretty_fixture",
+    "read_tm",
+    "read_utm",
     "format_raw_tm",
     "run_meta_asm_block",
     "run_raw_tm",
     "run_meta_asm_host",
+    "write_tm",
+    "write_utm",
 ]

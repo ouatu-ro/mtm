@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from mtm.cli import main as cli_main
 from mtm.demo import main
+from mtm.artifacts import read_tm, read_utm
 from mtm.program_input import load_python_tm
 
 
@@ -52,3 +54,33 @@ def test_demo_tm_file_emit_and_run(tmp_path: Path, capsys) -> None:
     assert "RAW UTM RESULT" in output
     assert "FINAL STATUS: halted" in output
     assert "1 1 0 0 _ _ _ _" in output
+
+
+def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm"
+    asm_path = tmp_path / "utm.asm"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--asm-out", str(asm_path), "--tm-out", str(raw_tm_path)]) == 0
+    band, start_head = read_utm(utm_path)
+    tm = read_tm(raw_tm_path)
+
+    assert utm_path.exists()
+    assert asm_path.exists()
+    assert raw_tm_path.exists()
+    assert start_head < 0
+    assert tm.start_state == "START_STEP"
+    assert "LABEL START_STEP" in asm_path.read_text()
+
+    assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
+    output = capsys.readouterr().out
+    assert "FINAL STATUS: halted" in output
+    assert "1 1 0 0 _ _ _ _" in output
+
+
+def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
+    raw_tm_path = tmp_path / "utm.tm"
+    assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
+    tm = read_tm(raw_tm_path)
+    assert tm.halt_state == "U_HALT"
