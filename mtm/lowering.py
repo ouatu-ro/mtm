@@ -300,4 +300,25 @@ def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: st
             raise NotImplementedError(f"lowering not implemented for {instruction!r}")
 
 
-__all__ = ["lower_instruction"]
+def lower_instruction_sequence(
+    builder: TMBuilder,
+    instructions: tuple[Instruction, ...] | list[Instruction],
+    *,
+    start_state: str,
+    exit_label: str,
+) -> None:
+    """Lower a small straight-line Meta-ASM instruction sequence.
+
+    This helper is for block-level composition tests. It assumes any branching
+    instruction appears as the last instruction in the sequence.
+    """
+
+    current_state = start_state
+    instructions = tuple(instructions)
+    for index, instruction in enumerate(instructions):
+        continuation_label = exit_label if index + 1 == len(instructions) else builder.fresh(f"{start_state}_cont_{index}")
+        lower_instruction(builder, instruction, state=current_state, continuation_label=continuation_label)
+        current_state = continuation_label
+
+
+__all__ = ["lower_instruction", "lower_instruction_sequence"]

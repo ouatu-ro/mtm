@@ -189,9 +189,9 @@ def format_meta_trace(trace: list[dict[str, object]]) -> str:
     return table(["step", "label", "instruction", "head", "value", "outcome"], rows)
 
 
-def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int = 100):
+def _run_meta_asm(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int, start_label: str, stop_on_block_exit: bool):
     blocks = {block.label: block for block in program.blocks}
-    label, instruction_index, head_address, status, reason = program.entry_label, 0, None, "running", None
+    label, instruction_index, head_address, status, reason = start_label, 0, None, "running", None
     trace: list[dict[str, object]] = []
     outer_tape = dict(outer_tape)
 
@@ -325,9 +325,30 @@ def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *,
             "outcome": outcome,
         })
 
+        if stop_on_block_exit and status == "running" and label != block.label:
+            reason = "block exited"
+            break
+
     if status == "running":
-        status, reason = "halted", "fuel exhausted"
-    return status, outer_tape, trace, reason
+        status, reason = "halted", "fuel exhausted" if reason is None else reason
+    return {
+        "status": status,
+        "outer_tape": outer_tape,
+        "trace": trace,
+        "reason": reason,
+        "label": label,
+        "instruction_index": instruction_index,
+        "head_address": head_address,
+    }
+
+
+def run_meta_asm_block(program: Program, encoding, outer_tape: dict[int, str], *, label: str, max_steps: int = 100):
+    return _run_meta_asm(program, encoding, outer_tape, max_steps=max_steps, start_label=label, stop_on_block_exit=True)
+
+
+def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int = 100):
+    result = _run_meta_asm(program, encoding, outer_tape, max_steps=max_steps, start_label=program.entry_label, stop_on_block_exit=False)
+    return result["status"], result["outer_tape"], result["trace"], result["reason"]
 
 
 def build_meta_interpreter_rules(encoding) -> MetaInterpreterRules:

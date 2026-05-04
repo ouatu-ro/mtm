@@ -1,9 +1,9 @@
 """Readable building blocks for the Meta Turing Machine experiment."""
 
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
-from .lowering import lower_instruction
+from .lowering import lower_instruction, lower_instruction_sequence
 from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, format_program
-from .meta_interpreter import MetaInterpreterRules, build_meta_interpreter_rules, format_meta_trace, run_meta_asm_host
+from .meta_interpreter import MetaInterpreterRules, build_meta_interpreter_rules, format_meta_trace, run_meta_asm_block, run_meta_asm_host
 from .outer_tape import EncodedBand, Encoding, build_outer_tape, compile_tm_to_universal_tape
 from .pretty import pretty_band, pretty_fixture
 from .raw_tm import RawTM, TMBuilder, run_raw_tm
@@ -27,9 +27,11 @@ __all__ = [
     "get_fixture",
     "list_fixtures",
     "lower_instruction",
+    "lower_instruction_sequence",
     "load_fixture",
     "pretty_band",
     "pretty_fixture",
+    "run_meta_asm_block",
     "run_raw_tm",
     "run_meta_asm_host",
 ]
