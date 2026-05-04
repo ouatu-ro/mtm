@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 
 from .fixtures import list_fixtures, load_fixture
+from .lowering_checks import lowering_smoke_rows
 from .meta_asm import build_universal_meta_asm, format_program
 from .meta_interpreter import format_meta_trace, run_meta_asm_host
 from .outer_tape import EncodedBand, split_outer_tape
-from .pretty import pretty_fixture, pretty_registers, pretty_tape
+from .pretty import pretty_fixture, pretty_registers, pretty_tape, table
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded band.")
@@ -16,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--list", action="store_true", help="List available fixtures.")
     parser.add_argument("--asm", action="store_true", help="Show the compiled Meta-ASM program too.")
     parser.add_argument("--run-asm", action="store_true", help="Run the Meta-ASM host interpreter and show its trace.")
+    parser.add_argument("--test-lowering", action="store_true", help="Run smoke checks for the first lowered raw-TM fragments.")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum host-interpreter steps for --run-asm.")
     parser.add_argument("--show-outer", action="store_true", help="Show concrete outer tape addresses too.")
     args = parser.parse_args(argv)
@@ -59,6 +61,13 @@ def main(argv: list[str] | None = None) -> int:
         print("FINAL TAPE")
         print()
         print(pretty_tape(final_band.encoding, final_band.right_band))
+    if args.test_lowering:
+        print()
+        print("=" * 88)
+        print()
+        print("LOWERING SMOKE TESTS")
+        print()
+        print(table(["instruction", "status", "state", "head", "note"], lowering_smoke_rows(fixture)))
     return 0
 
 
