@@ -1,11 +1,17 @@
 from mtm import (
+    build_outer_tape,
+    build_runtime_tape,
+    compile_tm_to_encoded_band,
+    compile_tm_to_runtime_tape,
     TMAbi,
     TMBand,
     decoded_view_from_encoded_band,
     encoded_band_from_utm_artifact,
+    load_fixture,
+    pretty_outer_tape,
+    pretty_runtime_tape,
     read_utm,
     read_utm_artifact,
-    load_fixture,
     source_band_from_simulated_tape,
     utm_artifact_from_band,
     utm_encoded_from_band,
@@ -65,3 +71,12 @@ def test_utm_artifact_round_trip(tmp_path) -> None:
 def test_source_band_helper() -> None:
     band = source_band_from_simulated_tape(("1", "0", "1", "1"), 0, blank="_")
     assert band == TMBand(cells=("1", "0", "1", "1"), head=0, blank="_")
+
+
+def test_runtime_alias_exports_remain_compatible() -> None:
+    band = load_fixture("incrementer").build_band()
+
+    assert build_runtime_tape is build_outer_tape
+    assert compile_tm_to_runtime_tape is compile_tm_to_encoded_band
+    assert pretty_runtime_tape is pretty_outer_tape
+    assert "RUNTIME TAPE" in pretty_runtime_tape(band.runtime_tape)

@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compile and run MTM artifacts.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    compile_parser = sub.add_parser("compile", help="Compile a Python TM file into an outer-band .utm artifact.")
+    compile_parser = sub.add_parser("compile", help="Compile a Python TM file into a runtime-band .utm artifact.")
     compile_parser.add_argument("input")
     compile_parser.add_argument("-o", "--output", required=True)
     compile_parser.add_argument("--asm-out")

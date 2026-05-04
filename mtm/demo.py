@@ -15,18 +15,19 @@ from .program_input import load_python_tm
 from .raw_tm import format_raw_tm, run_raw_tm
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded band.")
+    parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded runtime band.")
     parser.add_argument("fixture", nargs="?", default="incrementer")
     parser.add_argument("--list", action="store_true", help="List available fixtures.")
     parser.add_argument("--tm-file", help="Load a plain Python TM definition file instead of a fixture.")
     parser.add_argument("--asm", action="store_true", help="Show the compiled Meta-ASM program too.")
     parser.add_argument("--run-asm", action="store_true", help="Run the Meta-ASM host interpreter and show its trace.")
     parser.add_argument("--emit-raw-tm", action="store_true", help="Show the lowered raw TM for the universal interpreter.")
-    parser.add_argument("--run-utm", action="store_true", help="Run the lowered raw TM on the generated outer band.")
+    parser.add_argument("--run-utm", action="store_true", help="Run the lowered raw TM on the generated runtime tape.")
     parser.add_argument("--test-lowering", action="store_true", help="Run smoke checks for the first lowered raw-TM fragments.")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum host-interpreter steps for --run-asm.")
     parser.add_argument("--max-raw-steps", type=int, default=200_000, help="Maximum raw-TM steps for --run-utm.")
-    parser.add_argument("--show-outer", action="store_true", help="Show concrete outer tape addresses too.")
+    parser.add_argument("--show-runtime", action="store_true", help="Show the concrete runtime tape addresses too.")
+    parser.add_argument("--show-outer", action="store_true", help="Compatibility alias for --show-runtime.")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     left_addresses = list(range(-len(band.left_band), 0))
     start_head = left_addresses[band.left_band.index(CUR_STATE)]
 
-    print(pretty_fixture(fixture, show_outer=args.show_outer))
+    print(pretty_fixture(fixture, show_runtime=args.show_runtime or args.show_outer))
     if args.asm or args.run_asm:
         print()
         print("=" * 88)

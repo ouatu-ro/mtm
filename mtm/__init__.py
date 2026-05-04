@@ -2,12 +2,27 @@
 
 from .artifacts import read_tm, read_utm, read_utm_artifact, write_tm, write_utm, write_utm_artifact
 from .cli import main as cli_main
-from .compiled_band import EncodedBand, build_outer_tape, compile_tm_to_universal_tape
+from .compiled_band import (
+    EncodedBand,
+    build_encoded_band,
+    build_outer_tape,
+    compile_tm_to_universal_tape,
+    materialize_runtime_tape,
+    split_runtime_tape,
+)
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
 from .lowering import lower_instruction, lower_instruction_sequence, lower_program, lower_program_to_raw_tm
 from .meta_asm import Block, Program, Unimplemented, build_universal_meta_asm, format_program
-from .meta_asm_host import MetaInterpreterRules, build_meta_interpreter_rules, format_meta_trace, run_meta_asm_block, run_meta_asm_host
-from .pretty import pretty_band, pretty_fixture
+from .meta_asm_host import (
+    MetaInterpreterRules,
+    build_meta_interpreter_rules,
+    format_meta_trace,
+    run_meta_asm_block,
+    run_meta_asm_block_runtime,
+    run_meta_asm_host,
+    run_meta_asm_runtime,
+)
+from .pretty import pretty_band, pretty_fixture, pretty_outer_tape, pretty_runtime_tape
 from .program_input import load_python_tm, load_python_tm_instance
 from .raw_tm import RawTM, TMBuilder, format_raw_tm, run_raw_tm
 from .semantic_objects import (
@@ -40,8 +55,9 @@ def build_utm_encoding_artifact(*args, **kwargs):
     return utm_artifact_from_band(*args, **kwargs)
 
 
-def compile_tm_to_encoded_band(*args, **kwargs):
-    return compile_tm_to_universal_tape(*args, **kwargs)
+build_runtime_tape = build_outer_tape
+compile_tm_to_runtime_tape = compile_tm_to_universal_tape
+compile_tm_to_encoded_band = compile_tm_to_runtime_tape
 
 __all__ = [
     "EncodedBand",
@@ -68,10 +84,13 @@ __all__ = [
     "Unimplemented",
     "abi_from_encoding",
     "build_meta_interpreter_rules",
+    "build_encoded_band",
     "build_universal_meta_asm",
+    "build_runtime_tape",
     "build_outer_tape",
     "cli_main",
     "compile_tm_to_encoded_band",
+    "compile_tm_to_runtime_tape",
     "compile_tm_to_universal_tape",
     "format_meta_trace",
     "format_program",
@@ -84,15 +103,21 @@ __all__ = [
     "load_fixture",
     "load_python_tm",
     "load_python_tm_instance",
+    "materialize_runtime_tape",
     "pretty_band",
     "pretty_fixture",
+    "pretty_outer_tape",
+    "pretty_runtime_tape",
     "read_tm",
     "read_utm",
     "read_utm_artifact",
     "format_raw_tm",
     "run_meta_asm_block",
+    "run_meta_asm_block_runtime",
     "run_raw_tm",
     "run_meta_asm_host",
+    "run_meta_asm_runtime",
+    "split_runtime_tape",
     "decoded_view_from_encoded_band",
     "encoded_band_from_utm_artifact",
     "source_band_from_simulated_tape",

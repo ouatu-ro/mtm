@@ -191,7 +191,7 @@ def pretty_tape(encoding: Encoding, right_band: list[str]) -> str:
 def pretty_raw_tape(raw_tape: dict[int, str]) -> str:
     live = [address for address, value in raw_tape.items() if value != OUTER_BLANK]
     rows = [[address, "left" if address < 0 else "right", raw_tape[address]] for address in range(min(live), max(live) + 1)]
-    return section("RAW TAPE", table(["addr", "side", "value"], rows))
+    return section("RUNTIME TAPE", table(["addr", "side", "value"], rows))
 
 
 def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str: return pretty_raw_tape(runtime_tape)
@@ -200,20 +200,22 @@ def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str: return pretty_raw_
 def pretty_outer_tape(outer_tape: dict[int, str]) -> str: return pretty_runtime_tape(outer_tape)
 
 
-def pretty_band(band: EncodedBand, *, show_outer: bool = False) -> str:
+def pretty_band(band: EncodedBand, *, show_runtime: bool = False, show_outer: bool | None = None) -> str:
+    show_runtime = show_runtime or bool(show_outer)
     parts = [
         pretty_encoding(band.encoding),
         pretty_registers(band.encoding, band.left_band),
         pretty_rules(band.encoding, band.left_band),
         pretty_tape(band.encoding, band.right_band),
     ]
-    if show_outer:
+    if show_runtime:
         parts.append(pretty_runtime_tape(band.runtime_tape))
     return ("\n\n" + "=" * 88 + "\n\n").join(parts)
 
 
-def pretty_fixture(fixture, *, show_outer: bool = False) -> str:
+def pretty_fixture(fixture, *, show_runtime: bool = False, show_outer: bool | None = None) -> str:
     band = fixture.build_band()
+    show_runtime = show_runtime or bool(show_outer)
     summary = section(
         "FIXTURE",
         table(
@@ -228,7 +230,7 @@ def pretty_fixture(fixture, *, show_outer: bool = False) -> str:
             ],
         ),
     )
-    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(band, show_outer=show_outer)
+    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(band, show_runtime=show_runtime)
 
 
 __all__ = [
