@@ -12,8 +12,8 @@ The main goal is to separate:
 
 The important correction is this:
 
-- `outer_tape` is not the center of the model
-- `outer_tape` is an execution/serialization representation
+- the raw tape view is not the center of the model
+- the raw tape view is an execution/serialization representation
 - the semantic compiled object should be modeled separately
 
 
@@ -138,7 +138,7 @@ Semantic compiled object for the universal machine.
 
 This is the important UTM-facing semantic object.
 
-It should be modeled in terms of meaning, not in terms of raw `outer_tape` first.
+It should be modeled in terms of meaning, not in terms of a raw tape view first.
 
 Fields:
 
@@ -294,11 +294,11 @@ Fields:
 Meaning:
 
 - this is execution state
-- this is where runner-level things like concrete tape maps belong
+- runner-level things like concrete tape maps belong here
 
-This is where a representation like `outer_tape` belongs if it is used by the raw TM runner.
+This is where a representation like the raw tape view belongs if it is used by the raw TM runner.
 
-That is why `outer_tape` should not be the conceptual center of the artifact model.
+That is why the raw tape view should not be the conceptual center of the artifact model.
 
 
 ## 8. Decoded Semantic View Layer

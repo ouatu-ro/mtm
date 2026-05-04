@@ -108,6 +108,9 @@ def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]:
     return [outer_tape[address] for address in range(lowest, 0)], [outer_tape[address] for address in range(0, highest + 1)]
 
 
+def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_outer_tape(raw_tape)
+
+
 def build_outer_tape(
     tm_program: TMProgram,
     input_symbols: Iterable[str],
@@ -135,6 +138,27 @@ def compile_tm_to_universal_tape(
     blanks_right: int = 8,
 ) -> EncodedBand:
     return build_outer_tape(
+        tm_program,
+        input_symbols,
+        initial_state=initial_state,
+        halt_state=halt_state,
+        blank=blank,
+        blanks_left=blanks_left,
+        blanks_right=blanks_right,
+    )
+
+
+def compile_tm_to_encoded_band(
+    tm_program: TMProgram,
+    input_symbols: Iterable[str],
+    *,
+    initial_state: str,
+    halt_state: str,
+    blank: str = "_",
+    blanks_left: int = 0,
+    blanks_right: int = 8,
+) -> EncodedBand:
+    return compile_tm_to_universal_tape(
         tm_program,
         input_symbols,
         initial_state=initial_state,
@@ -178,9 +202,11 @@ __all__ = [
     "build_rule_band",
     "build_tape_band",
     "compile_tm_to_universal_tape",
+    "compile_tm_to_encoded_band",
     "materialize_raw_tape",
     "place_on_negative_side",
     "place_on_positive_side",
+    "split_raw_tape",
     "split_outer_tape",
     "wrap_field",
 ]

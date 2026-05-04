@@ -2,7 +2,7 @@
 
 ## 0. Goal
 
-Build a staged system where an object-level Turing machine program is encoded as data on an outer tape, and a meta-level universal interpreter can execute it.
+Build a staged system where an object-level Turing machine program is encoded as data on a runtime raw tape view, and a meta-level universal interpreter can execute it.
 
 There are two separate compilers:
 
@@ -22,7 +22,7 @@ The final execution target is:
 ```text
 raw ordinary TM runner
   program:  lowered Meta-ASM transition table
-  tape:     serialized UTM object artifact
+  tape:     serialized UTM artifact plus runtime raw tape view
 ```
 
 The immediate implementation target is the object compiler plus a Meta-ASM spec.
@@ -68,11 +68,11 @@ DecodedBandView
 Important design rule:
 
 ```text
-outer_tape is a runtime/serialization representation,
+raw tape view / `outer_tape` is a runtime/serialization representation,
 not the primary semantic IR
 ```
 
-The central semantic compiled object is `UTMEncoded`, not `outer_tape`.
+The central semantic compiled object is `UTMEncoded`, not the raw tape view.
 
 ---
 
@@ -82,7 +82,7 @@ The central semantic compiled object is `UTMEncoded`, not `outer_tape`.
 def infer_minimal_abi(tm_prog, source_band) -> TMAbi:
     ...
 
-def compile_tm_to_universal_tape(
+def compile_tm_to_encoded_band(
     tm_prog,
     source_band,
     *,
@@ -90,6 +90,12 @@ def compile_tm_to_universal_tape(
     blanks_left=0,
     blanks_right=8,
 ):
+    ...
+
+def build_utm_encoded(encoded_band, *, minimal_abi=None) -> UTMEncoded:
+    ...
+
+def build_utm_encoding_artifact(encoded_band, *, minimal_abi=None) -> UTMEncodingArtifact:
     ...
 ```
 
@@ -1092,7 +1098,7 @@ Exactly one #HEAD exists on the object tape.
 For source TM `M` and input `x`:
 
 ```text
-decode_object_tape(compile_tm_to_universal_tape(M, x))
+decode_utm_encoding_artifact(compile_tm_to_encoded_band(M, x))
 =
 initial configuration of M on x
 ```
@@ -1167,7 +1173,7 @@ The next concrete milestone should be:
 ```python
 abi = infer_minimal_abi(tm_prog, source_band)
 
-encoded = compile_tm_to_universal_tape(
+encoded = compile_tm_to_encoded_band(
     tm_prog,
     source_band,
     abi=abi,

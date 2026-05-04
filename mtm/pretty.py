@@ -188,10 +188,13 @@ def pretty_tape(encoding: Encoding, right_band: list[str]) -> str:
     return section("TAPE", table(["cell", "head", "symbol", "bits"], rows), visual_symbols, visual_head)
 
 
-def pretty_outer_tape(outer_tape: dict[int, str]) -> str:
-    live = [address for address, value in outer_tape.items() if value != OUTER_BLANK]
-    rows = [[address, "left" if address < 0 else "right", outer_tape[address]] for address in range(min(live), max(live) + 1)]
-    return section("OUTER TAPE", table(["addr", "side", "value"], rows))
+def pretty_raw_tape(raw_tape: dict[int, str]) -> str:
+    live = [address for address, value in raw_tape.items() if value != OUTER_BLANK]
+    rows = [[address, "left" if address < 0 else "right", raw_tape[address]] for address in range(min(live), max(live) + 1)]
+    return section("RAW TAPE", table(["addr", "side", "value"], rows))
+
+
+def pretty_outer_tape(outer_tape: dict[int, str]) -> str: return pretty_raw_tape(outer_tape)
 
 
 def pretty_band(band: EncodedBand, *, show_outer: bool = False) -> str:
@@ -202,7 +205,7 @@ def pretty_band(band: EncodedBand, *, show_outer: bool = False) -> str:
         pretty_tape(band.encoding, band.right_band),
     ]
     if show_outer:
-        parts.append(pretty_outer_tape(band.outer_tape))
+        parts.append(pretty_raw_tape(band.outer_tape))
     return ("\n\n" + "=" * 88 + "\n\n").join(parts)
 
 
@@ -234,6 +237,7 @@ __all__ = [
     "pretty_band",
     "pretty_encoding",
     "pretty_fixture",
+    "pretty_raw_tape",
     "pretty_outer_tape",
     "pretty_registers",
     "pretty_rules",

@@ -31,6 +31,17 @@ from .semantic_objects import (
 )
 from .tape_encoding import Encoding
 
+def build_utm_encoded(*args, **kwargs):
+    return utm_encoded_from_band(*args, **kwargs)
+
+
+def build_utm_encoding_artifact(*args, **kwargs):
+    return utm_artifact_from_band(*args, **kwargs)
+
+
+def compile_tm_to_encoded_band(*args, **kwargs):
+    return compile_tm_to_universal_tape(*args, **kwargs)
+
 __all__ = [
     "EncodedBand",
     "Encoding",
@@ -46,6 +57,8 @@ __all__ = [
     "TMAbi",
     "TMInstance",
     "TMBuilder",
+    "build_utm_encoded",
+    "build_utm_encoding_artifact",
     "UTMEncoded",
     "UTMEncodedRule",
     "UTMEncodingArtifact",
@@ -57,6 +70,7 @@ __all__ = [
     "build_universal_meta_asm",
     "build_outer_tape",
     "cli_main",
+    "compile_tm_to_encoded_band",
     "compile_tm_to_universal_tape",
     "format_meta_trace",
     "format_program",
