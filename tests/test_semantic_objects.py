@@ -4,17 +4,23 @@ from mtm import (
     build_outer_tape,
     build_runtime_tape,
     compile_tm_to_encoded_band,
+    compile_tm_to_universal_tape,
     compile_tm_to_runtime_tape,
     TMAbi,
     TMBand,
     decoded_view_from_encoded_band,
     encoded_band_from_utm_artifact,
     load_fixture,
+    materialize_raw_tape,
+    materialize_runtime_tape,
     pretty_outer_tape,
     pretty_runtime_tape,
     read_utm,
     read_utm_artifact,
     source_band_from_simulated_tape,
+    split_outer_tape,
+    split_raw_tape,
+    split_runtime_tape,
     utm_artifact_from_band,
     utm_encoded_from_band,
     write_utm_artifact,
@@ -80,7 +86,11 @@ def test_runtime_alias_exports_remain_compatible() -> None:
     fixture = load_fixture("incrementer")
 
     assert build_runtime_tape is build_outer_tape
+    assert compile_tm_to_runtime_tape is compile_tm_to_universal_tape
     assert compile_tm_to_runtime_tape is compile_tm_to_encoded_band
+    assert materialize_raw_tape is materialize_runtime_tape
+    assert split_raw_tape is split_runtime_tape
+    assert split_outer_tape is split_runtime_tape
     assert pretty_runtime_tape is pretty_outer_tape
     assert build_encoded_band(
         fixture.tm_program,
