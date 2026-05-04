@@ -28,19 +28,8 @@ class TMFixture:
         )
 
     def describe(self) -> str:
-        band = self.build_band()
-        return "\n".join([
-            f"fixture: {self.name}",
-            f"note: {self.note or '-'}",
-            f"input: {''.join(self.input_symbols)}",
-            f"states: {len(band.encoding.state_ids)}",
-            f"symbols: {len(band.encoding.symbol_ids)}",
-            f"rules: {len(self.tm_program)}",
-            "rules:",
-            format_tm_program(self.tm_program),
-            "band:",
-            band.view(),
-        ])
+        from ..pretty import pretty_fixture
+        return pretty_fixture(self)
 
 
 def format_tm_program(tm_program: TMProgram) -> str:

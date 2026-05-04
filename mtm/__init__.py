@@ -3,6 +3,7 @@
 from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
 from .meta_interpreter import MetaInterpreterRules, build_meta_interpreter_rules
 from .outer_tape import EncodedBand, Encoding, build_outer_tape, compile_tm_to_universal_tape
+from .pretty import pretty_band, pretty_fixture
 
 __all__ = [
     "EncodedBand",
@@ -15,4 +16,6 @@ __all__ = [
     "get_fixture",
     "list_fixtures",
     "load_fixture",
+    "pretty_band",
+    "pretty_fixture",
 ]
