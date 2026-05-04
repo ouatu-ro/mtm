@@ -74,6 +74,56 @@ not the primary semantic IR
 
 The central semantic compiled object is `UTMEncoded`, not the raw tape view.
 
+Public naming boundary:
+
+| Primary names | Compatibility aliases |
+| --- | --- |
+| `build_encoded_band` | `build_runtime_tape`, `build_outer_tape` |
+| `compile_tm_to_universal_tape` | `compile_tm_to_runtime_tape`, `compile_tm_to_encoded_band` |
+| `materialize_runtime_tape`, `split_runtime_tape` | `materialize_raw_tape`, `split_raw_tape`, `split_outer_tape` |
+| `pretty_runtime_tape` | `pretty_outer_tape` |
+| `run_meta_asm_runtime`, `run_meta_asm_block_runtime` | `run_meta_asm_host`, `run_meta_asm_block` |
+| `utm_encoded_from_band`, `utm_artifact_from_band` | `build_utm_encoded`, `build_utm_encoding_artifact` |
+
+These aliases stay until downstream callers have moved to the primary names; after that, the shim layer can be removed mechanically.
+
+---
+
+# 0.2 Compatibility Boundary
+
+During the migration, the codebase keeps two naming layers:
+
+Primary names:
+
+- `build_encoded_band`
+- `compile_tm_to_encoded_band`
+- `runtime_tape`
+- `materialize_runtime_tape`
+- `split_runtime_tape`
+- `run_meta_asm_runtime`
+- `run_meta_asm_block_runtime`
+- `pretty_runtime_tape`
+
+Compatibility aliases:
+
+- `build_outer_tape`
+- `compile_tm_to_universal_tape`
+- `outer_tape`
+- `materialize_raw_tape`
+- `split_raw_tape`
+- `split_outer_tape`
+- `run_meta_asm_host`
+- `run_meta_asm_block`
+- `pretty_raw_tape`
+- `pretty_outer_tape`
+
+Rule:
+
+```text
+new docs and new code should prefer the primary names;
+compatibility aliases remain only to avoid breaking existing callers.
+```
+
 ---
 
 # 1. Object Compiler API

@@ -1,4 +1,8 @@
-"""Host interpreter for Meta-ASM over compiled outer bands."""
+"""Host interpreter for Meta-ASM over compiled runtime bands.
+
+``run_meta_asm_runtime`` is the primary entrypoint.
+``run_meta_asm_host`` and ``run_meta_asm_block`` remain compatibility wrappers.
+"""
 
 from __future__ import annotations
 
@@ -348,10 +352,12 @@ def run_meta_asm_runtime(program: Program, encoding, runtime_tape: dict[int, str
 
 
 def run_meta_asm_block(program: Program, encoding, outer_tape: dict[int, str], *, label: str, max_steps: int = 100):
+    """Compatibility wrapper for run_meta_asm_block_runtime()."""
     return run_meta_asm_block_runtime(program, encoding, outer_tape, label=label, max_steps=max_steps)
 
 
 def run_meta_asm_host(program: Program, encoding, outer_tape: dict[int, str], *, max_steps: int = 100):
+    """Compatibility wrapper for run_meta_asm_runtime()."""
     status, runtime_tape, trace, reason = run_meta_asm_runtime(program, encoding, outer_tape, max_steps=max_steps)
     return status, runtime_tape, trace, reason
 

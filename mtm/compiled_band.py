@@ -1,4 +1,8 @@
-"""Compiled outer-band layout for encoded source Turing machines."""
+"""Compiled runtime-band layout for encoded source Turing machines.
+
+Primary public names use ``runtime_tape`` vocabulary.
+``outer_tape`` and ``raw_tape`` remain compatibility aliases for now.
+"""
 
 from __future__ import annotations
 
@@ -28,12 +32,14 @@ class EncodedBand:
     def linear(self) -> list[str]: return self.left_band + self.right_band
     def view(self) -> str: return " ".join(self.left_band + ["|"] + self.right_band)
     def to_runtime_tape(self) -> dict[int, str]: return materialize_runtime_tape(self.left_band, self.right_band)
+    # Compatibility alias for older callers that still expect "raw" tape wording.
     def to_raw_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
     @property
     def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
     @property
+    # Compatibility alias for older callers that still use "outer_tape".
     def outer_tape(self) -> dict[int, str]: return self.runtime_tape
 
     @classmethod
@@ -115,6 +121,7 @@ def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dic
 
 
 def materialize_raw_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
+    """Compatibility alias for materialize_runtime_tape()."""
     return materialize_runtime_tape(left_band, right_band)
 
 
@@ -126,10 +133,14 @@ def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[st
     return [runtime_tape[address] for address in range(lowest, 0)], [runtime_tape[address] for address in range(0, highest + 1)]
 
 
-def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_runtime_tape(raw_tape)
+def split_raw_tape(raw_tape: dict[int, str]) -> tuple[list[str], list[str]]:
+    """Compatibility alias for split_runtime_tape()."""
+    return split_runtime_tape(raw_tape)
 
 
-def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]: return split_runtime_tape(outer_tape)
+def split_outer_tape(outer_tape: dict[int, str]) -> tuple[list[str], list[str]]:
+    """Compatibility alias for split_runtime_tape()."""
+    return split_runtime_tape(outer_tape)
 
 
 def build_encoded_band(
@@ -158,6 +169,7 @@ def build_outer_tape(
     blanks_left: int = 0,
     blanks_right: int = 8,
 ) -> EncodedBand:
+    """Compatibility alias for build_encoded_band()."""
     return build_encoded_band(
         tm_program,
         input_symbols,

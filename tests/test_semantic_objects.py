@@ -1,4 +1,6 @@
+import mtm
 from mtm import (
+    build_encoded_band,
     build_outer_tape,
     build_runtime_tape,
     compile_tm_to_encoded_band,
@@ -75,8 +77,63 @@ def test_source_band_helper() -> None:
 
 def test_runtime_alias_exports_remain_compatible() -> None:
     band = load_fixture("incrementer").build_band()
+    fixture = load_fixture("incrementer")
 
     assert build_runtime_tape is build_outer_tape
     assert compile_tm_to_runtime_tape is compile_tm_to_encoded_band
     assert pretty_runtime_tape is pretty_outer_tape
+    assert build_encoded_band(
+        fixture.tm_program,
+        fixture.input_symbols,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+        blank=fixture.blank,
+        blanks_left=fixture.blanks_left,
+        blanks_right=fixture.blanks_right,
+    ) == build_outer_tape(
+        fixture.tm_program,
+        fixture.input_symbols,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+        blank=fixture.blank,
+        blanks_left=fixture.blanks_left,
+        blanks_right=fixture.blanks_right,
+    )
     assert "RUNTIME TAPE" in pretty_runtime_tape(band.runtime_tape)
+
+
+def test_public_compatibility_boundary_is_explicit() -> None:
+    band = load_fixture("incrementer").build_band()
+    public = set(mtm.__all__)
+
+    primary_names = {
+        "build_encoded_band",
+        "compile_tm_to_universal_tape",
+        "materialize_runtime_tape",
+        "split_runtime_tape",
+        "pretty_runtime_tape",
+        "run_meta_asm_runtime",
+        "run_meta_asm_block_runtime",
+        "utm_encoded_from_band",
+        "utm_artifact_from_band",
+        "decoded_view_from_encoded_band",
+    }
+    alias_names = {
+        "build_runtime_tape",
+        "build_outer_tape",
+        "compile_tm_to_runtime_tape",
+        "compile_tm_to_encoded_band",
+        "materialize_raw_tape",
+        "split_raw_tape",
+        "split_outer_tape",
+        "pretty_outer_tape",
+        "run_meta_asm_host",
+        "run_meta_asm_block",
+        "build_utm_encoded",
+        "build_utm_encoding_artifact",
+    }
+
+    assert primary_names <= public
+    assert alias_names <= public
+    assert mtm.build_utm_encoded(band) == mtm.utm_encoded_from_band(band)
+    assert mtm.build_utm_encoding_artifact(band) == mtm.utm_artifact_from_band(band)

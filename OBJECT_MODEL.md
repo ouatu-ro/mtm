@@ -321,6 +321,39 @@ Meaning:
 - this should be a first-class object, not just pretty-printer logic
 
 
+## 9. Compatibility Boundary
+
+Primary names going forward:
+
+- `build_encoded_band`
+- `compile_tm_to_encoded_band`
+- `runtime_tape`
+- `materialize_runtime_tape`
+- `split_runtime_tape`
+- `run_meta_asm_runtime`
+- `run_meta_asm_block_runtime`
+- `pretty_runtime_tape`
+
+Compatibility aliases kept for now:
+
+- `build_outer_tape`
+- `compile_tm_to_universal_tape`
+- `outer_tape`
+- `materialize_raw_tape`
+- `split_raw_tape`
+- `split_outer_tape`
+- `run_meta_asm_host`
+- `run_meta_asm_block`
+- `pretty_raw_tape`
+- `pretty_outer_tape`
+
+Current policy:
+
+- primary names should be used by new code and docs
+- compatibility aliases remain to avoid breaking callers during the migration
+- removal, if it happens later, should only happen after the public surface and examples stop depending on the old names
+
+
 ## 9. Compatibility Rules
 
 There are two different notions of compatibility.
@@ -363,6 +396,45 @@ UTM.abi == UTMEncodingArtifact.target_abi
 ```
 
 because once the bits are laid out, the concrete field widths are fixed.
+
+
+### Public API Boundary
+
+Primary names:
+
+- `build_encoded_band`
+- `compile_tm_to_universal_tape`
+- `materialize_runtime_tape`
+- `split_runtime_tape`
+- `pretty_runtime_tape`
+- `run_meta_asm_runtime`
+- `run_meta_asm_block_runtime`
+- `utm_encoded_from_band`
+- `utm_artifact_from_band`
+- `decoded_view_from_encoded_band`
+
+Compatibility aliases kept for now:
+
+- `build_runtime_tape`
+- `build_outer_tape`
+- `compile_tm_to_runtime_tape`
+- `compile_tm_to_encoded_band`
+- `materialize_raw_tape`
+- `split_raw_tape`
+- `split_outer_tape`
+- `pretty_outer_tape`
+- `run_meta_asm_host`
+- `run_meta_asm_block`
+- `build_utm_encoded`
+- `build_utm_encoding_artifact`
+- `EncodedBand.to_raw_tape`
+- `EncodedBand.outer_tape`
+- `EncodedBand.from_raw_tape`
+- `EncodedBand.from_outer_tape`
+
+Removal note:
+
+- These aliases can be removed once downstream callers are using the primary names and the compatibility tests no longer need them.
 
 
 ## 10. Pipeline

@@ -1,4 +1,8 @@
-"""Pretty-printers for MTM fixtures and encoded bands."""
+"""Pretty-printers for MTM fixtures and encoded bands.
+
+``pretty_runtime_tape`` is the primary tape printer.
+``pretty_outer_tape`` remains a compatibility alias.
+"""
 
 from __future__ import annotations
 
@@ -197,7 +201,9 @@ def pretty_raw_tape(raw_tape: dict[int, str]) -> str:
 def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str: return pretty_raw_tape(runtime_tape)
 
 
-def pretty_outer_tape(outer_tape: dict[int, str]) -> str: return pretty_runtime_tape(outer_tape)
+def pretty_outer_tape(outer_tape: dict[int, str]) -> str:
+    """Compatibility alias for pretty_runtime_tape()."""
+    return pretty_runtime_tape(outer_tape)
 
 
 def pretty_band(band: EncodedBand, *, show_runtime: bool = False, show_outer: bool | None = None) -> str:
