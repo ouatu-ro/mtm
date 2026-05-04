@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from .fixtures import TMFixture
 from .lowering import lower_instruction
-from .meta_asm import BranchCmp, Goto, Halt, WriteGlobal, bits
-from .outer_tape import CMP_FLAG, CUR_SYMBOL, split_outer_tape
+from .meta_asm import BranchCmp, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Seek, SeekOneOf, WriteGlobal, bits
+from .outer_tape import CMP_FLAG, CUR_SYMBOL, END_RULES, RULE, RULES, split_outer_tape
 from .raw_tm import TMBuilder, run_raw_tm
 
 
@@ -44,6 +44,31 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
         result["head"],
         f"{CUR_SYMBOL}={''.join(final_left_band[cur_symbol_index + 1:cur_symbol_index + 3])}",
     ])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, Seek(RULES, "L"), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=0, max_steps=300)
+    rows.append(["SEEK", result["status"], result["state"], result["head"], f"at {RULES}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, SeekOneOf((RULE, END_RULES), "R"), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(RULES), max_steps=300)
+    rows.append(["SEEK_ONE_OF", result["status"], result["state"], result["head"], f"at {RULE}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, FindFirstRule(), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=0, max_steps=300)
+    rows.append(["FIND_FIRST_RULE", result["status"], result["state"], result["head"], f"at {RULE}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, FindNextRule(), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=address_of(RULE), max_steps=300)
+    rows.append(["FIND_NEXT_RULE", result["status"], result["state"], result["head"], f"after first {RULE}"])
+
+    builder = TMBuilder(alphabet)
+    lower_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), dict(band.outer_tape), head=0, max_steps=300)
+    rows.append(["FIND_HEAD_CELL", result["status"], result["state"], result["head"], "at head #CELL"])
     return rows
 
 
