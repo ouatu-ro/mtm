@@ -57,10 +57,7 @@ def read_utm(path: str | Path) -> tuple[EncodedBand, int]:
         halt_state=encoding_data["halt_state"],
     )
     left_band, right_band = namespace["left_band"], namespace["right_band"]
-    outer_tape = {}
-    outer_tape.update({address - len(left_band): token for address, token in enumerate(left_band)})
-    outer_tape.update({address: token for address, token in enumerate(right_band)})
-    return EncodedBand(encoding, outer_tape, left_band, right_band), namespace["start_head"]
+    return EncodedBand(encoding, left_band, right_band), namespace["start_head"]
 
 
 def write_tm(path: str | Path, tm: RawTM) -> None:

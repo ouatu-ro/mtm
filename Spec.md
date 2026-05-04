@@ -8,8 +8,9 @@ There are two separate compilers:
 
 ```text
 Object compiler:
-  source TM program + input
-    -> encoded outer tape image
+  source TM program + source tape/configuration
+    -> semantic UTM-encoded object
+    -> serialized UTM artifact
 
 Meta compiler:
   Meta-ASM universal interpreter
@@ -21,33 +22,78 @@ The final execution target is:
 ```text
 raw ordinary TM runner
   program:  lowered Meta-ASM transition table
-  tape:     encoded object TM + input
+  tape:     serialized UTM object artifact
 ```
 
 The immediate implementation target is the object compiler plus a Meta-ASM spec.
 
 ---
 
+# 0.1 Object Model
+
+The system should keep the following concepts distinct:
+
+```text
+TMProgram
+  pure source-level TM semantics
+
+TMBand
+  source-level tape/configuration
+
+TMAbi
+  target encoding family / machine family
+
+Encoding
+  dense concrete assignment of IDs and bit widths under a chosen ABI
+
+UTMEncoded
+  semantic compiled object for the universal machine
+
+UTMEncodingArtifact
+  serialized `.utm`-style artifact for the universal machine
+
+MetaASMProgram
+  semantic universal interpreter in Meta-ASM form
+
+RawTMProgram
+  lowered ordinary TM transition table
+
+RawTMConfig
+  runner-facing execution state
+
+DecodedBandView
+  semantic interpretation of UTM execution state
+```
+
+Important design rule:
+
+```text
+outer_tape is a runtime/serialization representation,
+not the primary semantic IR
+```
+
+The central semantic compiled object is `UTMEncoded`, not `outer_tape`.
+
+---
+
 # 1. Object Compiler API
 
 ```python
+def infer_minimal_abi(tm_prog, source_band) -> TMAbi:
+    ...
+
 def compile_tm_to_universal_tape(
     tm_prog,
-    input_symbols,
+    source_band,
     *,
-    initial_state,
-    halt_state,
-    blank="_",
-    state_width=8,
-    symbol_width=8,
-    dir_width=1,
+    abi,
     blanks_left=0,
     blanks_right=8,
 ):
     ...
 ```
 
-Input source TM format:
+Source TM format:
 
 ```python
 tm_prog = {
@@ -62,15 +108,50 @@ L = -1
 R = 1
 ```
 
-The compiler returns:
+Source tape/configuration format:
 
 ```python
-{
-    "encoding": E,
-    "outer_tape": outer_tape,
-    "left_band": registers_and_rules,
-    "right_band": encoded_simulated_tape,
-}
+TMBand(
+    cells=...,
+    head=...,
+    blank="_",
+)
+```
+
+The object compiler should support two explicit modes:
+
+```text
+1. infer minimal ABI requirement
+2. compile under a selected target ABI
+```
+
+Compatibility helpers may still accept bare `input_symbols` and infer a minimal ABI automatically, but the main semantic pipeline should make both `source_band` and `abi` explicit.
+
+The semantic compiler returns a semantic UTM object:
+
+```python
+UTMEncoded(
+    encoding=...,
+    registers=...,
+    rules=...,
+    simulated_tape=...,
+    simulated_head=...,
+    minimal_abi=...,
+    target_abi=...,
+)
+```
+
+Serialization of that semantic object yields an artifact form:
+
+```python
+UTMEncodingArtifact(
+    encoding=...,
+    left_band=...,
+    right_band=...,
+    start_head=...,
+    target_abi=...,
+    minimal_abi=...,
+)
 ```
 
 The compiler is allowed to reject a source TM if the selected widths are too small:
@@ -81,7 +162,13 @@ number_of_symbols <= 2^symbol_width
 number_of_dirs    <= 2^dir_width
 ```
 
-The compiler does **not** emit behavior. It emits the initial data image consumed by the universal interpreter.
+Equivalently:
+
+```text
+required_abi <= selected_abi
+```
+
+The object compiler does **not** emit behavior. It emits a semantic compiled object plus a serialized artifact consumed by the universal interpreter.
 
 ---
 
@@ -117,16 +204,16 @@ No hashing unless collisions are impossible by construction. Dense interning is 
 
 ---
 
-# 3. Outer Tape Layout
+# 3. Serialized UTM Artifact Layout
 
-The outer tape is split conceptually:
+The serialized UTM artifact is split conceptually:
 
 ```text
 negative addresses: meta side
 nonnegative addresses: object tape side
 ```
 
-The split is a convention, not a mathematical necessity.
+The split is a serialization/runtime convention, not the primary semantic IR.
 
 ```text
 ... #REGS ... #RULES ... #END_RULES | #TAPE #CELL ... #END_TAPE ...
@@ -1034,7 +1121,7 @@ For the whole lowered universal interpreter:
 
 ```text
 At Meta-ASM label boundaries,
-raw TM tape decodes to the same state as the Meta-ASM execution.
+raw TM tape decodes to the same semantic state as the Meta-ASM execution.
 ```
 
 ## 11.4 End-to-End Correctness
@@ -1058,8 +1145,8 @@ Recommended order:
 2. Add #END_FIELD, #END_REGS, #END_RULE, #END_CELL markers.
 3. Update parsers and pretty printers.
 4. Define Meta-ASM instruction dataclasses.
-5. Generate the universal Meta-ASM program from Encoding widths.
-6. Write a Python interpreter for Meta-ASM over the encoded band.
+5. Generate the universal Meta-ASM program from Encoding widths and marker family.
+6. Write a Python interpreter for Meta-ASM over the semantic UTM object / serialized artifact.
 7. Lower the simplest instructions first:
      SEEK
      GOTO
@@ -1078,20 +1165,18 @@ Do not lower everything before the Meta-ASM interpreter works. The Meta-ASM inte
 The next concrete milestone should be:
 
 ```python
-compiled = compile_tm_to_universal_tape(
+abi = infer_minimal_abi(tm_prog, source_band)
+
+encoded = compile_tm_to_universal_tape(
     tm_prog,
-    list("1011"),
-    initial_state="qFindMargin",
-    halt_state="qDone",
-    blank="_",
-    state_width=8,
-    symbol_width=8,
-    dir_width=1,
+    source_band,
+    abi=abi,
 )
 
-asm = build_universal_meta_asm(compiled["encoding"])
+artifact = serialize_utm(encoded)
+asm = build_universal_meta_asm(encoded.encoding)
 
-status, final_band, trace = run_meta_asm_host(asm, compiled["outer_tape"])
+status, final_encoded, trace = run_meta_asm_host(asm, encoded)
 ```
 
 Expected decoded result:
@@ -1103,13 +1188,17 @@ Expected decoded result:
 At this stage, no raw TM transition table is required yet. The next milestone after that is:
 
 ```python
-meta_tm_prog = lower_meta_asm_to_tm(asm, alphabet=compiled["outer_alphabet"])
+meta_tm_prog = lower_meta_asm_to_tm(
+    asm,
+    abi=encoded.target_abi,
+    alphabet=chosen_outer_alphabet,
+)
 ```
 
 Then:
 
 ```python
-run_tm(meta_tm_prog, compiled["outer_tape"], initial_state="U_START")
+run_tm(meta_tm_prog, artifact, initial_state="U_START")
 ```
 
 should match the host Meta-ASM run at label/interpreter-cycle boundaries.

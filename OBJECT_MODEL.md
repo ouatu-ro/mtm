@@ -175,6 +175,7 @@ Fields:
 - `encoding`
 - `left_band`
 - `right_band`
+- `start_head`
 - `target_abi`
 - `minimal_abi`
 - optional artifact version
@@ -183,6 +184,7 @@ Meaning:
 
 - this is the concrete `.utm`-style object image
 - `left_band` / `right_band` belong here as serialization layout
+- `start_head` is launch metadata for the raw UTM runner
 - they are not the primary semantic object
 
 Notes:
@@ -310,8 +312,8 @@ Fields:
 - decoded registers
 - decoded rule registry
 - decoded simulated tape
-- simulated head position
-- decoded current source-level TM state
+- `simulated_head` accessor
+- `current_state` accessor
 
 Meaning:
 

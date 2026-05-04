@@ -11,7 +11,7 @@ from mtm import (
 from mtm.lowering import ACTIVE_RULE
 from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo
 from mtm.lowering_checks import lowering_smoke_rows
-from mtm.outer_tape import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, place_on_negative_side, place_on_positive_side, split_outer_tape
+from mtm.outer_tape import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_raw_tape, split_outer_tape
 from mtm.raw_tm import TMBuilder
 
 
@@ -19,10 +19,7 @@ def _set_global_bits(band, marker: str, bits: str):
     left_band = list(band.left_band)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
-    outer_tape = {}
-    outer_tape.update(place_on_negative_side(left_band, start=-1))
-    outer_tape.update(place_on_positive_side(band.right_band, start=0))
-    return outer_tape
+    return materialize_raw_tape(left_band, band.right_band)
 
 
 def _set_head_cell(band, cell_index: int):
@@ -32,20 +29,14 @@ def _set_head_cell(band, cell_index: int):
         if token in {HEAD, NO_HEAD}:
             right_band[index] = NO_HEAD
     right_band[1 + cell_index * span + 1] = HEAD
-    outer_tape = {}
-    outer_tape.update(place_on_negative_side(band.left_band, start=-1))
-    outer_tape.update(place_on_positive_side(right_band, start=0))
-    return outer_tape
+    return materialize_raw_tape(band.left_band, right_band)
 
 
 def _set_global_bits_on_tape(band, outer_tape, marker: str, bits: str):
     left_band, right_band = split_outer_tape(outer_tape)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
-    updated_tape = {}
-    updated_tape.update(place_on_negative_side(left_band, start=-1))
-    updated_tape.update(place_on_positive_side(right_band, start=0))
-    return updated_tape
+    return materialize_raw_tape(left_band, right_band)
 
 
 def test_first_lowered_fragments_smoke() -> None:

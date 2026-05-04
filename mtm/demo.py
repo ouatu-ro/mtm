@@ -51,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.run_asm:
         status, final_outer_tape, trace, reason = run_meta_asm_host(program, band.encoding, band.outer_tape, max_steps=args.max_steps)
         final_left_band, final_right_band = split_outer_tape(final_outer_tape)
-        final_band = EncodedBand(band.encoding, final_outer_tape, final_left_band, final_right_band)
+        final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)
         print()
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.run_utm:
         result = run_raw_tm(raw_tm, band.outer_tape, head=start_head, max_steps=args.max_raw_steps)
         final_left_band, final_right_band = split_outer_tape(result["tape"])
-        final_band = EncodedBand(band.encoding, result["tape"], final_left_band, final_right_band)
+        final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)
         print()

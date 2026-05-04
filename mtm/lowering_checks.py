@@ -25,7 +25,7 @@ from .meta_asm import (
     WriteGlobal,
     bits,
 )
-from .compiled_band import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, place_on_negative_side, place_on_positive_side, split_outer_tape
+from .compiled_band import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, materialize_raw_tape, split_outer_tape
 from .raw_tm import TMBuilder, run_raw_tm
 
 
@@ -33,10 +33,7 @@ def set_global_bits(band, marker: str, value: str):
     left_band = list(band.left_band)
     start = left_band.index(marker) + 1
     left_band[start:start + len(value)] = list(value)
-    outer_tape = {}
-    outer_tape.update(place_on_negative_side(left_band, start=-1))
-    outer_tape.update(place_on_positive_side(band.right_band, start=0))
-    return outer_tape
+    return materialize_raw_tape(left_band, band.right_band)
 
 
 def set_head_cell(band, cell_index: int):
@@ -46,10 +43,7 @@ def set_head_cell(band, cell_index: int):
         if token in {HEAD, NO_HEAD}:
             right_band[index] = NO_HEAD
     right_band[1 + cell_index * span + 1] = HEAD
-    outer_tape = {}
-    outer_tape.update(place_on_negative_side(band.left_band, start=-1))
-    outer_tape.update(place_on_positive_side(right_band, start=0))
-    return outer_tape
+    return materialize_raw_tape(band.left_band, right_band)
 
 
 def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:

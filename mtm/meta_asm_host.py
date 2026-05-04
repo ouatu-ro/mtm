@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .compiled_band import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, place_on_negative_side, place_on_positive_side, split_outer_tape
+from .compiled_band import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_raw_tape, split_outer_tape
 from .meta_asm import (
     BranchAt,
     BranchCmp,
@@ -40,10 +40,7 @@ class MetaInterpreterRules:
 
 
 def rebuild_outer_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
-    outer_tape = {}
-    outer_tape.update(place_on_negative_side(left_band, start=-1))
-    outer_tape.update(place_on_positive_side(right_band, start=0))
-    return outer_tape
+    return materialize_raw_tape(left_band, right_band)
 
 
 def left_index(left_band: list[str], address: int) -> int:

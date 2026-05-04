@@ -10,6 +10,25 @@ from .meta_asm_host import MetaInterpreterRules, build_meta_interpreter_rules, f
 from .pretty import pretty_band, pretty_fixture
 from .program_input import load_python_tm
 from .raw_tm import RawTM, TMBuilder, format_raw_tm, run_raw_tm
+from .semantic_objects import (
+    AbiRequirement,
+    DecodedBandView,
+    RawTMConfig,
+    TMBand,
+    TMAbi,
+    TMInstance,
+    UTMEncoded,
+    UTMEncodedRule,
+    UTMEncodingArtifact,
+    UTMRegisters,
+    UTMSimulatedTape,
+    abi_from_encoding,
+    decoded_view_from_encoded_band,
+    source_band_from_simulated_tape,
+    start_head_from_encoded_band,
+    utm_artifact_from_band,
+    utm_encoded_from_band,
+)
 from .tape_encoding import Encoding
 
 __all__ = [
@@ -18,10 +37,22 @@ __all__ = [
     "MetaInterpreterRules",
     "Block",
     "Program",
+    "AbiRequirement",
+    "DecodedBandView",
     "RawTM",
+    "RawTMConfig",
     "TMFixture",
+    "TMBand",
+    "TMAbi",
+    "TMInstance",
     "TMBuilder",
+    "UTMEncoded",
+    "UTMEncodedRule",
+    "UTMEncodingArtifact",
+    "UTMRegisters",
+    "UTMSimulatedTape",
     "Unimplemented",
+    "abi_from_encoding",
     "build_meta_interpreter_rules",
     "build_universal_meta_asm",
     "build_outer_tape",
@@ -45,6 +76,11 @@ __all__ = [
     "run_meta_asm_block",
     "run_raw_tm",
     "run_meta_asm_host",
+    "decoded_view_from_encoded_band",
+    "source_band_from_simulated_tape",
+    "start_head_from_encoded_band",
+    "utm_artifact_from_band",
+    "utm_encoded_from_band",
     "write_tm",
     "write_utm",
 ]

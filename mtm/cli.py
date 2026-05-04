@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     final_left_band, final_right_band = band.left_band, band.right_band
     if result["tape"] != band.outer_tape:
         final_left_band, final_right_band = split_outer_tape(result["tape"])
-    final_band = EncodedBand(band.encoding, result["tape"], final_left_band, final_right_band)
+    final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
     print(f"FINAL STATUS: {result['status']}")
     print(f"FINAL STATE: {result['state']}")
     print(f"FINAL HEAD: {result['head']}")
