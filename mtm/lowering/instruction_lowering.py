@@ -1,4 +1,10 @@
-"""Lower individual Meta-ASM instructions into routines."""
+"""Lower individual Meta-ASM instructions into Routine IR.
+
+Each function in this module corresponds to the meaning of a Meta-ASM
+instruction or a small piece of the rule-matching protocol. The functions build
+Routine objects only; they do not emit raw TM transitions and they do not touch
+TMBuilder.
+"""
 
 from __future__ import annotations
 
@@ -12,15 +18,21 @@ from .routines import Routine, RoutineDraft
 
 
 def _seek_active_rule(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Seek back to the rule currently marked as active."""
+
     seek(draft, source, markers={ACTIVE_RULE}, direction="R", target=target)
 
 
 def _activate_rule_at_head(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Mark the rule under the head as the active rule."""
+
     draft.add(EmitOp(source, RULE, target, ACTIVE_RULE, S))
     draft.add(EmitOp(source, ACTIVE_RULE, target, ACTIVE_RULE, S))
 
 
 def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Label) -> None:
+    """Write a comparison result bit into the comparison flag register."""
+
     write_state = draft.local("write_cmp_flag")
     draft.add(EmitOp(source, CMP_FLAG, write_state, CMP_FLAG, R))
     write_current_bit(draft, write_state, bit=bit, target=target, move=L)
@@ -126,6 +138,8 @@ def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
 
 
 def deactivate_active_rule_routine(state: Label, cont: Label) -> Routine:
+    """Return the active rule marker to a normal rule marker."""
+
     draft = RoutineDraft("deactivate_active_rule", entry=state, exits=(cont,), requires=HeadAtOneOf((ACTIVE_RULE, RULE)), ensures=HeadAt(RULE))
     draft.add(EmitOp(state, ACTIVE_RULE, cont, RULE, S))
     draft.add(EmitOp(state, RULE, cont, RULE, S))
@@ -326,6 +340,8 @@ def _write_global_routine(state: Label, cont: Label, global_marker: str, literal
 
 
 def lower_instruction_to_routine(instruction: Instruction, *, state: Label, cont: Label) -> Routine:
+    """Lower one Meta-ASM instruction into one Routine."""
+
     match instruction:
         case Halt():
             return _halt_routine(state, cont)

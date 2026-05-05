@@ -1,4 +1,11 @@
-"""Small Meta-ASM IR for the universal interpreter."""
+"""Meta-ASM instruction IR for the universal interpreter.
+
+Meta-ASM is the readable program that describes how the universal machine
+searches rules, compares fields, copies encoded bits, updates the simulated
+tape, and dispatches the next step. It is not the raw TM transition table; the
+lowering backend compiles these semantic instructions into routines and then
+into raw transitions.
+"""
 
 from __future__ import annotations
 
@@ -109,12 +116,16 @@ Instruction: TypeAlias = (
 
 @dataclass(frozen=True)
 class Block:
+    """A labeled straight-line sequence of Meta-ASM instructions."""
+
     label: LabelName
     instructions: tuple[Instruction, ...]
 
 
 @dataclass(frozen=True)
 class Program:
+    """A complete Meta-ASM program with an entry block label."""
+
     blocks: tuple[Block, ...]
     entry_label: LabelName
 
@@ -125,6 +136,8 @@ class Program:
         halt_state: str = "U_HALT",
         blank: str = "_RUNTIME_BLANK",
     ):
+        """Lower this Meta-ASM program into a raw transition program."""
+
         from .lowering import lower_program_to_raw_tm
 
         return lower_program_to_raw_tm(
@@ -143,6 +156,8 @@ class Program:
         target_abi=None,
         minimal_abi=None,
     ):
+        """Lower this program and wrap it as a UTM program artifact."""
+
         return self.lower(alphabet, halt_state=halt_state, blank=blank).to_artifact(
             target_abi=target_abi,
             minimal_abi=minimal_abi,

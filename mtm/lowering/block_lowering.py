@@ -1,4 +1,10 @@
-"""Lower Meta-ASM blocks into routine sequences."""
+"""Turn Meta-ASM blocks into Routine sequences.
+
+Meta-ASM blocks are still written as instruction lists with labels. This module
+adds the block-level protocol around those instructions: where each block
+expects the head to start, how instruction fallthrough labels are connected, and
+the special cleanup step after a matched rule has been copied.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,13 @@ from .routines import NameSupply, Routine
 
 
 def block_entry_setup(block: Block) -> Instruction | None:
+    """Return the synthetic seek needed before a block's real instructions.
+
+    The generated UTM program enters different blocks from different head
+    positions. These setup instructions normalize the head position so each
+    block body can be lowered with simpler assumptions.
+    """
+
     if block.label == "START_STEP":
         return Seek(CUR_STATE, "L")
     if block.label == "LOOKUP_RULE":
@@ -28,6 +41,13 @@ def instruction_sequence_to_routines(
     exit_label: Label,
     names: NameSupply,
 ) -> tuple[Routine, ...]:
+    """Lower a straight-line instruction sequence into connected routines.
+
+    Fallthrough routines receive generated continuation labels. Branching and
+    halt routines must appear at the end because they do not continue to the
+    next instruction.
+    """
+
     routines: list[Routine] = []
     current_state = start_state
     instructions = tuple(instructions)
@@ -42,6 +62,8 @@ def instruction_sequence_to_routines(
 
 
 def block_to_routines(block: Block, names: NameSupply) -> tuple[Routine, ...]:
+    """Lower one labeled Meta-ASM block into routines."""
+
     routines: list[Routine] = []
     start_state = block.label
     setup = block_entry_setup(block)
@@ -83,6 +105,8 @@ def block_to_routines(block: Block, names: NameSupply) -> tuple[Routine, ...]:
 
 
 def program_to_routines(program: Program, names: NameSupply | None = None) -> tuple[Routine, ...]:
+    """Lower every block in a Meta-ASM program into Routine IR."""
+
     names = NameSupply("program") if names is None else names
     routines: list[Routine] = []
     for block in program.blocks:

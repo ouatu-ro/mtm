@@ -1,4 +1,10 @@
-"""Shared lowering constants and symbolic names."""
+"""Names shared by the lowering backend.
+
+This module is deliberately small: it holds the symbolic state/symbol aliases,
+the movement constants from the raw transition-machine layer, and layout facts
+that are needed by more than one lowering phase. Anything that emits routine
+ops or understands a Meta-ASM instruction belongs elsewhere.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +23,8 @@ VALID_MOVES = {L, S, R}
 
 
 def move_for_direction(direction: str) -> int:
+    """Translate a textual scan direction into a raw TM movement."""
+
     if direction == "R":
         return R
     if direction == "L":
@@ -25,6 +33,8 @@ def move_for_direction(direction: str) -> int:
 
 
 def global_direction(src_marker: str, dst_marker: str) -> str:
+    """Return the scan direction between two global-register markers."""
+
     return "R" if GLOBAL_MARKERS.index(src_marker) < GLOBAL_MARKERS.index(dst_marker) else "L"
 
 

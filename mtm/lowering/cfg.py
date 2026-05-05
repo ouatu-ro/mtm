@@ -1,4 +1,10 @@
-"""Routine CFG compilation, validation, and raw TM assembly."""
+"""CFG model, compilation, validation, and assembly.
+
+This layer receives Routine IR, expands its structured ops into CFGTransition
+objects, validates the resulting graph, and finally assembles it into raw TM
+transition rows. Read sets and write actions stay structured until assembly so
+the CFG remains inspectable.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +19,16 @@ from .routines import NameSupply, Routine
 
 @dataclass(frozen=True)
 class ReadAny:
+    """A transition that applies to every symbol in the alphabet."""
+
     def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
         return alphabet
 
 
 @dataclass(frozen=True)
 class ReadSymbol:
+    """A transition that applies to exactly one symbol."""
+
     symbol: str
 
     def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
@@ -28,6 +38,8 @@ class ReadSymbol:
 
 @dataclass(frozen=True)
 class ReadSymbols:
+    """A transition that applies to a fixed set of symbols."""
+
     symbols: frozenset[str]
 
     def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
@@ -36,6 +48,8 @@ class ReadSymbols:
 
 @dataclass(frozen=True)
 class ReadAnyExcept:
+    """A transition that applies to every symbol except a fixed set."""
+
     symbols: frozenset[str]
 
     def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
@@ -47,12 +61,16 @@ ReadSet: TypeAlias = ReadAny | ReadSymbol | ReadSymbols | ReadAnyExcept
 
 @dataclass(frozen=True)
 class KeepWrite:
+    """Write action that leaves the read symbol unchanged."""
+
     def resolve(self, read: str) -> str:
         return read
 
 
 @dataclass(frozen=True)
 class WriteSymbolAction:
+    """Write action that replaces the read symbol with one fixed symbol."""
+
     symbol: str
 
     def resolve(self, read: str) -> str:
@@ -65,6 +83,12 @@ WriteAction: TypeAlias = KeepWrite | WriteSymbolAction
 
 @dataclass(frozen=True)
 class CFGTransition:
+    """One structured transition in a RoutineCFG.
+
+    ``reads`` may represent many alphabet symbols. This keeps the CFG compact
+    and inspectable until final assembly expands it.
+    """
+
     source: State
     reads: ReadSet
     target: State
@@ -74,6 +98,13 @@ class CFGTransition:
 
 @dataclass(frozen=True)
 class RoutineCFG:
+    """Concrete control-flow graph for one Routine.
+
+    Entry and exit labels have been resolved to concrete TM state names.
+    Internal states are the states owned by this routine; exits are external
+    targets such as the next block label or the halt state.
+    """
+
     entry: State
     exits: tuple[State, ...]
     internal_states: tuple[State, ...]
@@ -85,12 +116,16 @@ class RoutineCFG:
 
 
 class CFGCompiler:
+    """Lower Routine ops into structured CFG transitions."""
+
     def __init__(self, *, names: NameSupply, halt_state: str):
         self.names = names
         self.halt_state = halt_state
         self.transitions: list[CFGTransition] = []
 
     def state(self, label: Label) -> State:
+        """Resolve an external or routine-local label to a concrete state."""
+
         if label == "__HALT__":
             return self.halt_state
         if label.startswith("@"):
@@ -98,12 +133,18 @@ class CFGCompiler:
         return label
 
     def fresh(self, hint: str) -> State:
+        """Allocate a concrete internal state name."""
+
         return self.names.fresh(hint)
 
     def add(self, source: Label | State, reads: ReadSet, target: Label | State, write: WriteAction, move: int) -> None:
+        """Append one structured CFG transition."""
+
         self.transitions.append(CFGTransition(self.state(source), reads, self.state(target), write, move))
 
     def compile_op(self, op: Op) -> None:
+        """Expand one Routine op into CFG transitions."""
+
         match op:
             case EmitOp(source, read, target, write, move):
                 self.add(source, ReadSymbol(read), target, WriteSymbolAction(write), move)
@@ -138,6 +179,8 @@ class CFGCompiler:
                 self.add(source, ReadAnyExcept(frozenset({except_symbol})), target, KeepWrite(), move)
 
     def cfg(self, routine: Routine) -> RoutineCFG:
+        """Build the immutable CFG for the compiled routine."""
+
         exits = tuple(self.state(exit_label) for exit_label in routine.exits)
         exit_set = set(exits)
         internal_states = {self.state(routine.entry)}
@@ -159,6 +202,8 @@ def compile_routine(
     *,
     halt_state: str = "U_HALT",
 ) -> RoutineCFG:
+    """Compile one Routine into a structured CFG without mutating TMBuilder."""
+
     compiler = CFGCompiler(names=names, halt_state=halt_state)
     for op in routine.ops:
         compiler.compile_op(op)
@@ -166,6 +211,8 @@ def compile_routine(
 
 
 def validate_cfg(cfg: RoutineCFG, alphabet: Iterable[str]) -> None:
+    """Check CFG invariants before raw transition rows are emitted."""
+
     alphabet = tuple(alphabet)
     alphabet_set = set(alphabet)
     known_states = set(cfg.states)
@@ -254,6 +301,8 @@ def _explicit_write_symbols(write: WriteAction) -> set[str]:
 
 
 def assemble_cfg(builder: TMBuilder, cfg: RoutineCFG) -> None:
+    """Emit a validated RoutineCFG into a raw transition-machine builder."""
+
     for transition in cfg.transitions:
         for read in transition.reads.expand(builder.alphabet):
             builder.emit(

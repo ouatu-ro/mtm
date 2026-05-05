@@ -1,4 +1,9 @@
-"""Bit-level encoding for source Turing machines."""
+"""Bit-level encoding for source Turing machines.
+
+The universal machine operates over binary fields. This module assigns stable
+integer IDs to source states, source symbols, and movement directions, then
+turns those IDs into fixed-width bit strings.
+"""
 
 from __future__ import annotations
 
@@ -59,9 +64,13 @@ class TMProgram:
         return self.transitions.get(key, default)
 
     def transition_for(self, state: str, symbol: str) -> Transition | None:
+        """Return the transition for ``(state, symbol)``, if one exists."""
+
         return self.transitions.get((state, symbol))
 
     def states(self, *, initial_state: str | None = None, halt_state: str | None = None) -> tuple[str, ...]:
+        """Return every state mentioned by the program and optional endpoints."""
+
         states = set()
         if self.initial_state is not None:
             states.add(self.initial_state)
@@ -76,6 +85,8 @@ class TMProgram:
         return tuple(sorted(states))
 
     def symbols(self, *, source_symbols: Iterable[str] = (), blank: str | None = None) -> tuple[str, ...]:
+        """Return every tape symbol that must be encodable."""
+
         symbols = {self.blank if blank is None else blank}
         for (_state, read_symbol), (_next_state, write_symbol, _move_direction) in self.transitions.items():
             symbols.update((read_symbol, write_symbol))
@@ -90,6 +101,8 @@ class TMProgram:
         halt_state: str | None = None,
         blank: str | None = None,
     ) -> "TMAbi":
+        """Infer the minimal ABI needed to encode this program."""
+
         resolved_initial = initial_state if initial_state is not None else self.initial_state
         resolved_halt = halt_state if halt_state is not None else self.halt_state
         if resolved_initial is None or resolved_halt is None:
@@ -105,7 +118,7 @@ class TMProgram:
 
 @dataclass(frozen=True)
 class TMAbi:
-    """Target encoding family / machine family."""
+    """Fixed field widths for a family of encoded machines."""
 
     state_width: int
     symbol_width: int
@@ -119,12 +132,16 @@ def assign_ids(values: Iterable[str | int]) -> dict[str | int, int]: return {val
 
 
 def bits(value: int, width: int) -> tuple[str, ...]:
+    """Encode a non-negative integer as a fixed-width bit tuple."""
+
     if not 0 <= value < (1 << width):
         raise ValueError(f"value {value} does not fit in {width} bits")
     return tuple("1" if (value >> index) & 1 else "0" for index in reversed(range(width)))
 
 
 def unbits(bit_values: Iterable[str]) -> int:
+    """Decode a bit sequence into an integer."""
+
     value = 0
     for bit in bit_values:
         if bit not in {"0", "1"}:
@@ -135,7 +152,7 @@ def unbits(bit_values: Iterable[str]) -> int:
 
 @dataclass(frozen=True)
 class Encoding:
-    """Dense bit encoding for source TM states, symbols, and directions."""
+    """Concrete ID maps and widths for one encoded source machine."""
 
     state_ids: dict[str, int]; symbol_ids: dict[str, int]; direction_ids: dict[int, int]
     state_width: int; symbol_width: int; direction_width: int
@@ -159,6 +176,8 @@ def collect_alphabet(
     initial_state: str | None = None,
     source_symbols: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
+    """Collect source states and symbols that must receive binary IDs."""
+
     return list(tm_program.states(initial_state=initial_state, halt_state=halt_state)), list(tm_program.symbols(source_symbols=source_symbols, blank=blank))
 
 
@@ -170,6 +189,8 @@ def infer_minimal_abi(
     blank: str = "_",
     source_symbols: Iterable[str] = (),
 ) -> TMAbi:
+    """Compute the smallest field widths that can encode the source machine."""
+
     states, symbols = collect_alphabet(
         tm_program,
         halt_state=halt_state,
@@ -197,6 +218,8 @@ def build_encoding(
     source_symbols: Iterable[str] = (),
     abi: TMAbi | None = None,
 ) -> Encoding:
+    """Build the concrete binary encoding for a source program."""
+
     states, symbols = collect_alphabet(
         tm_program,
         halt_state=halt_state,

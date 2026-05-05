@@ -1,4 +1,9 @@
-"""Read and write plain-text artifact files for MTM pipelines."""
+"""Read and write MTM artifact files.
+
+Artifacts are plain-text files made of literal assignments. Reading an artifact
+parses those literals and validates the declared format; it does not execute
+the file as Python code.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,8 @@ def _literal(value) -> str:
 
 
 def _read_literal_assignments(path: str | Path) -> dict[str, object]:
+    """Parse a literal-assignment artifact into a namespace dictionary."""
+
     path = Path(path)
     try:
         tree = ast.parse(path.read_text(), filename=str(path))
@@ -39,6 +46,8 @@ def _read_literal_assignments(path: str | Path) -> dict[str, object]:
 
 
 def _require_format(namespace: dict[str, object], expected: str) -> None:
+    """Reject artifacts whose declared format is not the expected version."""
+
     actual = namespace.get("format")
     if actual != expected:
         raise ValueError(f"unsupported artifact format: expected {expected!r}, got {actual!r}")
@@ -73,6 +82,8 @@ def _load_abi(namespace: dict[str, object], name: str, *, fallback_encoding: Enc
 
 
 def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
+    """Write a ``.utm.band`` artifact from a UTMBandArtifact object."""
+
     path = Path(path)
     encoding = {
         "state_ids": artifact.encoding.state_ids,
@@ -98,6 +109,8 @@ def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
 
 
 def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
+    """Read a ``.utm.band`` artifact without executing it."""
+
     namespace = _read_literal_assignments(path)
     _require_format(namespace, UTM_BAND_FORMAT)
     encoding_data = namespace["encoding"]
@@ -123,6 +136,8 @@ def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
 
 
 def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
+    """Write a raw universal-machine ``.tm`` artifact."""
+
     path = Path(path)
     text = "\n".join([
         f"format = {RAW_TM_FORMAT!r}",
@@ -136,6 +151,8 @@ def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
 
 
 def read_tm(path: str | Path) -> TMTransitionProgram:
+    """Read a raw universal-machine ``.tm`` artifact without executing it."""
+
     namespace = _read_literal_assignments(path)
     _require_format(namespace, RAW_TM_FORMAT)
     return TMTransitionProgram(

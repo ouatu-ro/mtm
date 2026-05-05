@@ -1,4 +1,9 @@
-"""Compiler object for source TM instances."""
+"""Compiler facade for source TM instances.
+
+The Compiler is the teaching-facing entry point for turning a source
+``TMInstance`` into a semantic ``UTMEncoded`` object. Lower-level band layout
+and ABI inference helpers stay behind this facade.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +15,15 @@ from .semantic_objects import TMAbi, TMInstance, UTMEncoded, infer_minimal_abi, 
 
 @dataclass(frozen=True)
 class Compiler:
+    """Compile source TM instances into semantic UTM-encoded objects."""
+
     target_abi: TMAbi | None = None
     initial_state: str | None = None
     halt_state: str | None = None
 
     def infer_abi(self, instance: TMInstance) -> TMAbi:
+        """Infer the minimal ABI needed by a source machine instance."""
+
         initial_state, halt_state = self._resolve_states(instance)
         return infer_minimal_abi(
             instance.program,
@@ -24,6 +33,8 @@ class Compiler:
         )
 
     def compile(self, instance: TMInstance) -> UTMEncoded:
+        """Compile a source machine instance into semantic UTM input."""
+
         initial_state, halt_state = self._resolve_states(instance)
         band = compile_tm_to_universal_tape(
             instance.program,
@@ -36,6 +47,8 @@ class Compiler:
         return utm_encoded_from_band(band)
 
     def _resolve_states(self, instance: TMInstance) -> tuple[str, str]:
+        """Resolve initial/halt states from the instance or compiler defaults."""
+
         initial_state = instance.initial_state or self.initial_state
         halt_state = instance.halt_state or self.halt_state
         if initial_state is None or halt_state is None:

@@ -1,4 +1,10 @@
-"""Compiled runtime-band layout for encoded source Turing machines."""
+"""Concrete band layout for universal-machine input.
+
+The runtime input has two bands: registers and rules on the left side,
+simulated source tape on the right side. This module owns that marker
+vocabulary and the conversion from split bands to the raw tape consumed by the
+lowered universal machine.
+"""
 
 from __future__ import annotations
 
@@ -25,14 +31,25 @@ RUNTIME_BLANK = "_RUNTIME_BLANK"
 
 @dataclass(frozen=True)
 class EncodedBand:
-    """Concrete encoded band with a derived runtime tape view."""
+    """Concrete left/right band layout for one encoded UTM input."""
 
     encoding: Encoding; left_band: list[str]; right_band: list[str]
     minimal_abi: TMAbi | None = None; target_abi: TMAbi | None = None
 
-    def linear(self) -> list[str]: return self.left_band + self.right_band
-    def view(self) -> str: return " ".join(self.left_band + ["|"] + self.right_band)
-    def to_runtime_tape(self) -> dict[int, str]: return materialize_runtime_tape(self.left_band, self.right_band)
+    def linear(self) -> list[str]:
+        """Return all concrete tokens without the left/right split."""
+
+        return self.left_band + self.right_band
+
+    def view(self) -> str:
+        """Return a compact text view of the split bands."""
+
+        return " ".join(self.left_band + ["|"] + self.right_band)
+
+    def to_runtime_tape(self) -> dict[int, str]:
+        """Place the split bands onto the raw integer-addressed runtime tape."""
+
+        return materialize_runtime_tape(self.left_band, self.right_band)
 
     @property
     def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
@@ -47,6 +64,8 @@ def wrap_field(marker: str, payload: Iterable[str]) -> list[str]: return [marker
 
 
 def build_register_band(encoding: Encoding) -> list[str]:
+    """Build the initial register block for one encoded source machine."""
+
     temp_width = max(encoding.state_width, encoding.symbol_width, encoding.direction_width)
     return [
         REGS,
@@ -62,6 +81,8 @@ def build_register_band(encoding: Encoding) -> list[str]:
 
 
 def build_rule_band(encoding: Encoding, tm_program: TMProgram) -> list[str]:
+    """Encode every source transition into the rule block."""
+
     band = [RULES]
     for (state, read_symbol), (next_state, write_symbol, move_direction) in tm_program.items():
         band.extend([
@@ -84,6 +105,8 @@ def build_tape_band(
     blanks_left: int = 0,
     blanks_right: int = 8,
 ) -> list[str]:
+    """Build an encoded simulated tape from plain input symbols."""
+
     symbols = [encoding.blank] * blanks_left + list(input_symbols) + [encoding.blank] * blanks_right
     head_position = blanks_left + head_index
     if not 0 <= head_position < len(symbols):
@@ -95,6 +118,8 @@ def build_tape_band(
 
 
 def build_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
+    """Build an encoded simulated tape from a source-level TMBand."""
+
     band = [TAPE]
     for index, symbol in enumerate(source_band.cells):
         band.extend([CELL, HEAD if index == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
@@ -106,6 +131,8 @@ def place_on_positive_side(tokens: list[str], *, start: int = 0) -> dict[int, st
 
 
 def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dict[int, str]:
+    """Place left-band tokens at negative addresses and right-band tokens at nonnegative addresses."""
+
     runtime_tape = defaultdict(lambda: RUNTIME_BLANK)
     runtime_tape.update(place_on_negative_side(left_band, start=-1))
     runtime_tape.update(place_on_positive_side(right_band, start=0))
@@ -113,6 +140,8 @@ def materialize_runtime_tape(left_band: list[str], right_band: list[str]) -> dic
 
 
 def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[str]]:
+    """Recover left and right band token lists from a runtime tape dictionary."""
+
     live_cells = [address for address, symbol in runtime_tape.items() if symbol != RUNTIME_BLANK]
     if not live_cells:
         return [], []
@@ -161,6 +190,8 @@ def compile_tm_to_universal_tape(
     blanks_right: int = 8,
     abi: TMAbi | None = None,
 ) -> EncodedBand:
+    """Compile a source TM and source tape into concrete UTM input bands."""
+
     source_band = _coerce_source_band(source, blank=blank, blanks_left=blanks_left, blanks_right=blanks_right)
     minimal_abi = infer_minimal_abi(
         tm_program,

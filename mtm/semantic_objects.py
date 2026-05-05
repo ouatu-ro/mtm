@@ -1,4 +1,10 @@
-"""Semantic object model for source TMs, UTM encodings, and runtime state."""
+"""Semantic objects for source machines and universal-machine artifacts.
+
+The objects in this module are the teaching-facing model. They describe the
+source Turing machine, the source tape, the encoded universal-machine input,
+and the runnable universal-machine artifacts without exposing the incidental
+layout mechanics first.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +18,11 @@ from .source_encoding import Encoding, TMAbi, TMProgram, encode_direction, encod
 
 @dataclass(frozen=True)
 class TMBand:
-    """Source-level tape/configuration."""
+    """A source-machine tape with one head position.
+
+    This is the tape seen by the object program being simulated. It is not the
+    universal machine's encoded runtime tape.
+    """
 
     cells: tuple[str, ...]
     head: int
@@ -21,7 +31,7 @@ class TMBand:
 
 @dataclass(frozen=True)
 class TMInstance:
-    """Source-level program plus source-level band."""
+    """A complete source-machine input: program, tape, and optional states."""
 
     program: TMProgram
     band: TMBand
@@ -31,7 +41,7 @@ class TMInstance:
 
 @dataclass(frozen=True)
 class UTMRegisters:
-    """Semantic register block used by the universal interpreter."""
+    """Decoded register values used by the universal interpreter."""
 
     cur_state: str
     cur_symbol: str
@@ -44,7 +54,7 @@ class UTMRegisters:
 
 @dataclass(frozen=True)
 class UTMEncodedRule:
-    """One semantic encoded object-program rule."""
+    """One source transition rule after decoding from the UTM rule table."""
 
     state: str
     read_symbol: str
@@ -55,7 +65,7 @@ class UTMEncodedRule:
 
 @dataclass(frozen=True)
 class UTMSimulatedTape:
-    """Semantic view of the encoded object tape."""
+    """Decoded object tape stored inside the universal-machine input."""
 
     cells: tuple[str, ...]
     head: int
@@ -64,7 +74,12 @@ class UTMSimulatedTape:
 
 @dataclass(frozen=True)
 class UTMEncoded:
-    """Semantic compiled object for the universal machine."""
+    """A source TM compiled into semantic universal-machine input.
+
+    The object is still semantic: registers, rule records, and simulated tape
+    are named fields. Use ``to_encoded_band`` or ``to_band_artifact`` when a
+    concrete ``.utm.band`` layout is needed.
+    """
 
     encoding: Encoding
     registers: UTMRegisters
@@ -80,6 +95,8 @@ class UTMEncoded:
     def current_state(self) -> str: return self.registers.cur_state
 
     def to_encoded_band(self) -> EncodedBand:
+        """Materialize this semantic object into the concrete band layout."""
+
         left_band = _register_band_from_semantics(self.encoding, self.registers)
         left_band += _rule_band_from_semantics(self.encoding, self.rules)
         right_band = _tape_band_from_semantics(self.encoding, self.simulated_tape)
@@ -92,9 +109,13 @@ class UTMEncoded:
         )
 
     def to_band_artifact(self) -> "UTMBandArtifact":
+        """Return the serializable ``.utm.band`` artifact object."""
+
         return utm_artifact_from_band(self.to_encoded_band(), minimal_abi=self.minimal_abi)
 
     def decoded_view(self) -> "DecodedBandView":
+        """Return a decoded read-only view of this encoded UTM input."""
+
         return DecodedBandView(
             registers=self.registers,
             rules=self.rules,
@@ -105,7 +126,11 @@ class UTMEncoded:
 
 @dataclass(frozen=True)
 class UTMBandArtifact:
-    """Serialized artifact form of a semantic UTM-encoded object."""
+    """Serializable universal-machine input artifact.
+
+    This is the object form of a ``.utm.band`` file: left band, right band,
+    start head, and the ABI metadata needed to decode it.
+    """
 
     encoding: Encoding
     left_band: tuple[str, ...]
@@ -115,12 +140,18 @@ class UTMBandArtifact:
     minimal_abi: TMAbi
 
     def to_encoded_band(self) -> EncodedBand:
+        """Convert this artifact to the lower-level encoded band layout."""
+
         return encoded_band_from_utm_artifact(self)
 
     def to_runtime_tape(self) -> dict[int, str]:
+        """Materialize the left/right bands into a runtime tape dictionary."""
+
         return self.to_encoded_band().to_runtime_tape()
 
     def to_run_config(self, program_artifact: "UTMProgramArtifact | TMTransitionProgram") -> "TMRunConfig":
+        """Pair this input artifact with a UTM program for raw execution."""
+
         program = program_artifact.program if isinstance(program_artifact, UTMProgramArtifact) else program_artifact
         return TMRunConfig(
             program=program,
@@ -153,7 +184,7 @@ class TMRunConfig:
 
 @dataclass(frozen=True)
 class UTMProgramArtifact:
-    """Lowered universal-machine transition program artifact."""
+    """Serializable universal-machine transition program artifact."""
 
     program: TMTransitionProgram
     target_abi: TMAbi | None = None
@@ -177,6 +208,8 @@ class UTMProgramArtifact:
         )
 
     def run(self, band_artifact: UTMBandArtifact, *, fuel: int = 100) -> dict[str, object]:
+        """Run this universal-machine program on a band artifact."""
+
         config = band_artifact.to_run_config(self)
         return run_raw_tm(
             config.program,
@@ -189,7 +222,7 @@ class UTMProgramArtifact:
 
 @dataclass(frozen=True)
 class DecodedBandView:
-    """Decoded semantic view recovered from a compiled UTM artifact or runtime state."""
+    """Decoded semantic view recovered from an encoded UTM band."""
 
     registers: UTMRegisters
     rules: tuple[UTMEncodedRule, ...]
@@ -204,6 +237,8 @@ class DecodedBandView:
 
 
 def abi_from_encoding(encoding: Encoding) -> TMAbi:
+    """Build ABI metadata from concrete encoding widths."""
+
     return TMAbi(
         state_width=encoding.state_width,
         symbol_width=encoding.symbol_width,
@@ -213,6 +248,8 @@ def abi_from_encoding(encoding: Encoding) -> TMAbi:
 
 
 def source_band_from_simulated_tape(cells: tuple[str, ...], head: int, *, blank: str) -> TMBand:
+    """Build a source-level band from decoded simulated-tape fields."""
+
     return TMBand(cells=cells, head=head, blank=blank)
 
 
@@ -253,6 +290,8 @@ def _tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> lis
 
 
 def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_state: str, halt_state: str) -> TMAbi:
+    """Infer the smallest ABI that can encode a source program and band."""
+
     return infer_minimal_encoding_abi(
         tm_program,
         initial_state=initial_state,
