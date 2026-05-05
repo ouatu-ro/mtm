@@ -50,17 +50,19 @@ Source-level demonstrational tape/configuration.
 
 Fields:
 
-- `cells`
+- `left_band`
+- `right_band`
 - `head`
 - `blank`
 
 Meaning:
 
-- `cells` is the finite tape window supplied as input
-- `head` is the simulated object-machine head position in that window
+- `left_band` contains source cells at negative addresses, ordered left to right
+- `right_band` contains source cells at addresses `0, 1, 2, ...`
+- `head` is the simulated object-machine head address
 - `blank` is the source machine's blank symbol
 
-The represented source machine may be bounded for demonstration purposes. The
+Use `TMBand.from_dict(...)` when source addresses matter directly.
 UTM input artifact supplies explicit blank padding when a larger simulated
 window is needed.
 
@@ -175,7 +177,8 @@ Semantic simulated object tape inside the UTM input.
 
 Fields:
 
-- `cells`
+- `left_band`
+- `right_band`
 - `head`
 - `blank`
 
@@ -224,12 +227,15 @@ Fields:
 Layout:
 
 ```text
-negative addresses:  left band  = registers + transition rules
-nonnegative addresses: right band = simulated object tape
+negative addresses:  left band  = negative simulated tape + registers + rules
+nonnegative addresses: right band = nonnegative simulated tape
 ```
 
 The split point is between address `-1` and address `0`. The right band starts
-at address `0`. The left band is materialized toward negative addresses.
+at address `0`. The left band is materialized toward negative addresses and
+contains `#END_TAPE_LEFT ... #TAPE_LEFT` around the negative simulated tape.
+`#TAPE_LEFT` stays fixed next to the registry/rule area; `#END_TAPE_LEFT`
+moves left when the simulated tape grows.
 
 Responsibilities:
 

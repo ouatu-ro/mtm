@@ -44,18 +44,15 @@ def format_tm_program(tm_program: TMProgram) -> str:
     return "\n".join(rows)
 
 
-def load_fixture_module(name: str): return import_module(f".{name}", __name__)
+def _load_fixture_module(name: str): return import_module(f".{name}", __name__)
 
 
 def list_fixtures() -> list[str]:
     return sorted(name for _, name, is_package in iter_modules(__path__) if not is_package and not name.startswith("_"))
 
 
-def get_fixture(name: str) -> TMFixture: return load_fixture(name)
-
-
 def load_fixture(name: str) -> TMFixture:
-    module = load_fixture_module(name)
+    module = _load_fixture_module(name)
     fixture = getattr(module, "fixture", None)
     if fixture is None:
         raise AttributeError(f"fixture module {name!r} must define `fixture = TMFixture(...)`")
@@ -64,4 +61,4 @@ def load_fixture(name: str) -> TMFixture:
     return fixture
 
 
-__all__ = ["TMFixture", "format_tm_program", "get_fixture", "list_fixtures", "load_fixture", "load_fixture_module"]
+__all__ = ["TMFixture", "format_tm_program", "list_fixtures", "load_fixture"]

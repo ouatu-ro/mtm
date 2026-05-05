@@ -9,14 +9,15 @@ layout mechanics first.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
-from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RULE, RULES, STATE, TAPE, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
-from .pretty import parse_registers, parse_rules, parse_tape
+from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
+from .pretty import parse_left_tape, parse_registers, parse_rules, parse_tape
 from .raw_transition_tm import TMTransitionProgram, run_raw_tm
 from .source_encoding import Encoding, TMAbi, TMProgram, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class TMBand:
     """A source-machine tape with one head position.
 
@@ -24,9 +25,65 @@ class TMBand:
     universal machine's encoded runtime tape.
     """
 
-    cells: tuple[str, ...]
+    right_band: tuple[str, ...]
     head: int
     blank: str
+    left_band: tuple[str, ...]
+
+    def __init__(
+        self,
+        right_band: tuple[str, ...] | None = None,
+        *,
+        head: int,
+        blank: str,
+        left_band: tuple[str, ...] = (),
+        cells: tuple[str, ...] | None = None,
+    ) -> None:
+        if right_band is None:
+            if cells is None:
+                raise TypeError("TMBand requires right_band or cells")
+            right_band = cells
+        elif cells is not None:
+            raise TypeError("TMBand accepts either right_band or cells, not both")
+        left_band = tuple(left_band)
+        right_band = tuple(right_band)
+        if head < -len(left_band) or head >= len(right_band):
+            raise ValueError("head outside source band")
+        object.__setattr__(self, "left_band", left_band)
+        object.__setattr__(self, "right_band", right_band)
+        object.__setattr__(self, "head", head)
+        object.__setattr__(self, "blank", blank)
+
+    @classmethod
+    def from_bands(
+        cls,
+        right_band: tuple[str, ...],
+        *,
+        head: int,
+        blank: str,
+        left_band: tuple[str, ...] = (),
+    ) -> "TMBand":
+        """Build a source tape from explicit negative and nonnegative sides."""
+
+        return cls(right_band=right_band, left_band=left_band, head=head, blank=blank)
+
+    @classmethod
+    def from_dict(cls, cells: Mapping[int, str], *, head: int, blank: str) -> "TMBand":
+        """Build a source tape from integer-addressed source cells."""
+
+        if not cells:
+            cells = {head: blank}
+        low = min(min(cells), head, 0)
+        high = max(max(cells), head, 0)
+        left_band = tuple(cells.get(address, blank) for address in range(low, 0))
+        right_band = tuple(cells.get(address, blank) for address in range(0, high + 1))
+        return cls(right_band=right_band, left_band=left_band, head=head, blank=blank)
+
+    @property
+    def cells(self) -> tuple[str, ...]:
+        """Return the finite source symbols used for ABI inference."""
+
+        return self.left_band + self.right_band
 
 
 @dataclass(frozen=True)
@@ -67,9 +124,16 @@ class UTMEncodedRule:
 class UTMSimulatedTape:
     """Decoded object tape stored inside the universal-machine input."""
 
-    cells: tuple[str, ...]
+    right_band: tuple[str, ...]
     head: int
     blank: str
+    left_band: tuple[str, ...] = ()
+
+    @property
+    def cells(self) -> tuple[str, ...]:
+        """Return the finite decoded source symbols."""
+
+        return self.left_band + self.right_band
 
 
 @dataclass(frozen=True)
@@ -97,9 +161,10 @@ class UTMEncoded:
     def to_encoded_band(self) -> EncodedBand:
         """Materialize this semantic object into the concrete band layout."""
 
-        left_band = _register_band_from_semantics(self.encoding, self.registers)
+        left_band = _left_tape_band_from_semantics(self.encoding, self.simulated_tape)
+        left_band += _register_band_from_semantics(self.encoding, self.registers)
         left_band += _rule_band_from_semantics(self.encoding, self.rules)
-        right_band = _tape_band_from_semantics(self.encoding, self.simulated_tape)
+        right_band = _right_tape_band_from_semantics(self.encoding, self.simulated_tape)
         return EncodedBand(
             self.encoding,
             left_band,
@@ -247,12 +312,6 @@ def abi_from_encoding(encoding: Encoding) -> TMAbi:
     )
 
 
-def source_band_from_simulated_tape(cells: tuple[str, ...], head: int, *, blank: str) -> TMBand:
-    """Build a source-level band from decoded simulated-tape fields."""
-
-    return TMBand(cells=cells, head=head, blank=blank)
-
-
 def _register_band_from_semantics(encoding: Encoding, registers: UTMRegisters) -> list[str]:
     return [
         REGS,
@@ -282,9 +341,18 @@ def _rule_band_from_semantics(encoding: Encoding, rules: tuple[UTMEncodedRule, .
     return band + [END_RULES]
 
 
-def _tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> list[str]:
+def _left_tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> list[str]:
+    band = [END_TAPE_LEFT]
+    first_address = -len(tape.left_band)
+    for index, symbol in enumerate(tape.left_band):
+        address = first_address + index
+        band.extend([CELL, HEAD if address == tape.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+    return band + [TAPE_LEFT]
+
+
+def _right_tape_band_from_semantics(encoding: Encoding, tape: UTMSimulatedTape) -> list[str]:
     band = [TAPE]
-    for index, symbol in enumerate(tape.cells):
+    for index, symbol in enumerate(tape.right_band):
         band.extend([CELL, HEAD if index == tape.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
     return band + [END_TAPE]
 
@@ -309,7 +377,11 @@ def start_head_from_encoded_band(band: EncodedBand) -> int:
 def decoded_view_from_encoded_band(band: EncodedBand) -> DecodedBandView:
     registers, rule_start = parse_registers(band.encoding, band.left_band)
     rules = tuple(UTMEncodedRule(*rule) for rule in parse_rules(band.encoding, band.left_band, rule_start))
-    cells, head = parse_tape(band.encoding, band.right_band)
+    left_cells, left_head = parse_left_tape(band.encoding, band.left_band)
+    right_cells, right_head = parse_tape(band.encoding, band.right_band, require_head=False)
+    heads = [head for head in (left_head, right_head) if head is not None]
+    if len(heads) != 1:
+        raise ValueError("encoded UTM band must contain exactly one simulated head")
     return DecodedBandView(
         registers=UTMRegisters(
             cur_state=registers["CUR_STATE"],
@@ -321,7 +393,12 @@ def decoded_view_from_encoded_band(band: EncodedBand) -> DecodedBandView:
             tmp_bits=tuple(registers["TMP"]),
         ),
         rules=rules,
-        simulated_tape=UTMSimulatedTape(cells=tuple(cells), head=head, blank=band.encoding.blank),
+        simulated_tape=UTMSimulatedTape(
+            left_band=tuple(left_cells),
+            right_band=tuple(right_cells),
+            head=heads[0],
+            blank=band.encoding.blank,
+        ),
         encoding=band.encoding,
     )
 
@@ -372,5 +449,4 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
 __all__ = ["DecodedBandView", "TMRunConfig", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
            "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact", "infer_minimal_abi",
-           "source_band_from_simulated_tape", "start_head_from_encoded_band", "utm_artifact_from_band",
-           "utm_encoded_from_band"]
+           "start_head_from_encoded_band", "utm_artifact_from_band", "utm_encoded_from_band"]

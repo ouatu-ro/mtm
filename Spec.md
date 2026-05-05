@@ -94,10 +94,16 @@ Source band:
 
 ```python
 TMBand(
-    cells=("1", "0", "1", "1"),
+    right_band=("1", "0", "1", "1"),
     head=0,
     blank="_",
 )
+```
+
+For tapes with explicit negative source addresses:
+
+```python
+TMBand.from_dict({-2: "1", 0: "0", 2: "1"}, head=-2, blank="_")
 ```
 
 Source instance:
@@ -205,11 +211,11 @@ UTMSimulatedTape(
 
 ## 6. `.utm.band` Artifact Layout
 
-`UTMBandArtifact` serializes the semantic UTM object into a split band:
+`UTMBandArtifact` serializes the semantic UTM object into a split runtime band:
 
 ```text
-left band:   registers + transition rules
-right band:  simulated object tape
+left band:   negative simulated tape + registers + transition rules
+right band:  nonnegative simulated object tape
 ```
 
 Runtime materialization:
@@ -225,7 +231,23 @@ The left band is placed at negative addresses. The right band starts at address
 
 ### 6.1 Left Band
 
-The left band contains registers and transition rules:
+The left band starts with the negative side of the simulated source tape:
+
+```text
+#END_TAPE_LEFT
+  #CELL #NO_HEAD <symbol_bits> #END_CELL
+  ...
+#TAPE_LEFT
+```
+
+The negative source cells are placed to the left of `#TAPE_LEFT`. `#TAPE_LEFT`
+itself is fixed. Left growth overwrites the old `#END_TAPE_LEFT` with the new
+blank cell's `#END_CELL`, writes the rest of that blank cell to the left, and
+writes a new `#END_TAPE_LEFT` one cell-width farther left. It does not move
+`#TAPE_LEFT` or the registry/rule area.
+
+After `#TAPE_LEFT`, the same physical left band contains registers and
+transition rules:
 
 ```text
 #REGS
@@ -259,7 +281,7 @@ Transition record semantics:
 
 ### 6.2 Right Band
 
-The right band contains the simulated source tape:
+The right band contains the nonnegative side of the simulated source tape:
 
 ```text
 #TAPE
@@ -275,6 +297,9 @@ Invariant:
 ```text
 Exactly one encoded tape cell carries #HEAD.
 ```
+
+The head may be on either the negative side before `#TAPE_LEFT` or the
+nonnegative side after `#TAPE`, but not both.
 
 ### 6.3 Field Widths
 
@@ -790,8 +815,9 @@ Behavior:
 at current #CELL:
   move to head flag
   write #NO_HEAD
-  scan right to next #CELL or #END_TAPE
-  if #END_TAPE: goto STUCK
+  scan right to next #CELL, #TAPE_LEFT, or #END_TAPE
+  if #TAPE_LEFT: jump right over registers/rules to #TAPE and continue
+  if #END_TAPE: construct a blank right cell
   write #HEAD on the next cell
   return to the new #CELL
 ```
@@ -804,8 +830,9 @@ Behavior:
 at current #CELL:
   move to head flag
   write #NO_HEAD
-  scan left to previous #CELL or #TAPE
-  if #TAPE: goto STUCK
+  scan left to previous #CELL, #TAPE, or #END_TAPE_LEFT
+  if #TAPE: jump left over registers/rules to #TAPE_LEFT and continue
+  if #END_TAPE_LEFT: move #END_TAPE_LEFT left and construct a blank left cell
   write #HEAD on the previous cell
   return to the new #CELL
 ```

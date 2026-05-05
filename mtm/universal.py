@@ -15,6 +15,7 @@ from .lowering import ACTIVE_RULE
 from .meta_asm import Program, build_universal_meta_asm
 from .semantic_objects import UTMEncoded, UTMBandArtifact, UTMProgramArtifact
 from .source_encoding import Encoding
+from .utm_band_layout import UTM_STRUCTURAL_ALPHABET
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ class UniversalInterpreter:
     def alphabet_for_band(self, band_artifact: UTMBandArtifact) -> tuple[str, ...]:
         """Compute the raw TM alphabet needed to run one band artifact."""
 
-        return tuple(sorted(set(band_artifact.to_encoded_band().linear()) | {"0", "1", ACTIVE_RULE}))
+        return tuple(sorted(set(band_artifact.to_encoded_band().linear()) | set(UTM_STRUCTURAL_ALPHABET) | {ACTIVE_RULE}))
 
     def lower(
         self,

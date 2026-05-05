@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TMP, WRITE, WRITE_SYMBOL, EncodedBand
+from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand
 from .source_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
@@ -31,10 +31,10 @@ def take_field(tokens: list[str], index: int, marker: str) -> tuple[tuple[str, .
 
 
 def parse_registers(encoding: Encoding, left_band: list[str]) -> tuple[dict[str, object], int]:
-    if not left_band or left_band[0] != REGS:
-        raise ValueError("left band does not start with #REGS")
+    if REGS not in left_band:
+        raise ValueError("left band does not contain #REGS")
 
-    index, registers = 1, {}
+    index, registers = left_band.index(REGS) + 1, {}
     fields = [
         (CUR_STATE, "CUR_STATE", encoding.id_states),
         (CUR_SYMBOL, "CUR_SYMBOL", encoding.id_symbols),
@@ -82,28 +82,65 @@ def parse_rules(encoding: Encoding, left_band: list[str], start: int) -> list[Ru
     return rules
 
 
-def parse_tape(encoding: Encoding, right_band: list[str]) -> tuple[list[str], int]:
-    if not right_band or right_band[0] != TAPE:
-        raise ValueError("right band does not start with #TAPE")
+def _parse_tape_cells(
+    encoding: Encoding,
+    tokens: list[str],
+    *,
+    start_marker: str,
+    end_marker: str,
+    first_address: int,
+) -> tuple[list[str], int | None]:
+    if not tokens or tokens[0] != start_marker:
+        raise ValueError(f"tape band does not start with {start_marker}")
 
-    index, cells, head_index = 1, [], None
-    while right_band[index] != END_TAPE:
-        if right_band[index] != CELL:
-            raise ValueError(f"expected {CELL}, got {right_band[index]!r} at index {index}")
-        head_flag = right_band[index + 1]
-        symbol_bits = tuple(right_band[index + 2:index + 2 + encoding.symbol_width])
-        if right_band[index + 2 + encoding.symbol_width] != END_CELL:
-            raise ValueError(f"expected {END_CELL}, got {right_band[index + 2 + encoding.symbol_width]!r} at index {index}")
+    index, cells, head_address = 1, [], None
+    while tokens[index] != end_marker:
+        if tokens[index] != CELL:
+            raise ValueError(f"expected {CELL}, got {tokens[index]!r} at index {index}")
+        address = first_address + len(cells)
+        head_flag = tokens[index + 1]
+        symbol_bits = tuple(tokens[index + 2:index + 2 + encoding.symbol_width])
+        if tokens[index + 2 + encoding.symbol_width] != END_CELL:
+            raise ValueError(f"expected {END_CELL}, got {tokens[index + 2 + encoding.symbol_width]!r} at index {index}")
         if head_flag == HEAD:
-            if head_index is not None:
+            if head_address is not None:
                 raise ValueError("multiple simulated heads")
-            head_index = len(cells)
+            head_address = address
         elif head_flag != NO_HEAD:
             raise ValueError(f"bad head flag: {head_flag!r}")
         cells.append(encoding.id_symbols[int(format_bits(symbol_bits), 2)])
         index += 3 + encoding.symbol_width
+    return cells, head_address
 
-    if head_index is None:
+
+def parse_left_tape(encoding: Encoding, left_band: list[str]) -> tuple[list[str], int | None]:
+    end = left_band.index(TAPE_LEFT) + 1
+    left_tape = left_band[:end]
+    if left_tape[0] != END_TAPE_LEFT:
+        raise ValueError("left band does not start with #END_TAPE_LEFT")
+    body = [TAPE_LEFT, *left_tape[1:-1], END_TAPE_LEFT]
+    first_address = -(len(left_tape[1:-1]) // (3 + encoding.symbol_width))
+    return _parse_tape_cells(
+        encoding,
+        body,
+        start_marker=TAPE_LEFT,
+        end_marker=END_TAPE_LEFT,
+        first_address=first_address,
+    )
+
+
+def parse_tape(encoding: Encoding, right_band: list[str], *, require_head: bool = True) -> tuple[list[str], int | None]:
+    if not right_band or right_band[0] != TAPE:
+        raise ValueError("right band does not start with #TAPE")
+
+    cells, head_index = _parse_tape_cells(
+        encoding,
+        right_band,
+        start_marker=TAPE,
+        end_marker=END_TAPE,
+        first_address=0,
+    )
+    if require_head and head_index is None:
         raise ValueError("no simulated head")
     return cells, head_index
 
@@ -153,10 +190,10 @@ def pretty_rules(encoding: Encoding, left_band: list[str]) -> str:
 
 
 def pretty_tape(encoding: Encoding, right_band: list[str]) -> str:
-    cells, head = parse_tape(encoding, right_band)
+    cells, head = parse_tape(encoding, right_band, require_head=False)
     rows = [[index, "yes" if index == head else "no", repr(symbol), format_bits(encode_symbol(encoding, symbol))] for index, symbol in enumerate(cells)]
     visual_symbols = " ".join(cells)
-    visual_head = " ".join("^" if index == head else " " for index in range(len(cells)))
+    visual_head = " ".join("^" if index == head else " " for index in range(len(cells))) if head is not None else ""
     return section("TAPE", table(["cell", "head", "symbol", "bits"], rows), visual_symbols, visual_head)
 
 

@@ -1,7 +1,7 @@
 """Teaching-facing objects for the Meta Turing Machine experiment."""
 
 from .compiler import Compiler
-from .fixtures import TMFixture, get_fixture, list_fixtures, load_fixture
+from .fixtures import TMFixture, list_fixtures, load_fixture
 from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import DecodedBandView, TMBand, TMInstance, TMRunConfig, UTMEncoded, UTMBandArtifact, UTMProgramArtifact
 from .source_encoding import Encoding, L, R, TMAbi, TMProgram
@@ -10,5 +10,5 @@ from .universal import UniversalInterpreter
 
 __all__ = ["Compiler", "DecodedBandView", "Encoding", "L", "R", "TMBand", "TMAbi", "TMFixture", "TMInstance",
            "TMProgram", "TMRunConfig", "TMTransitionProgram", "UTMBandArtifact", "UTMEncoded", "UTMProgramArtifact",
-           "UniversalInterpreter", "get_fixture", "list_fixtures", "load_fixture", "load_python_tm",
+           "UniversalInterpreter", "list_fixtures", "load_fixture", "load_python_tm",
            "load_python_tm_instance"]

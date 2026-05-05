@@ -101,12 +101,12 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     rows.append(["FIND_HEAD_CELL", result["status"], result["state"], result["head"], "at head #CELL"])
 
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadRight(), state="start", continuation_label="DONE")
+    assemble_instruction(builder, MoveSimHeadRight(band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), runtime_tape, head=1, max_steps=200)
     rows.append(["MOVE_SIM_HEAD_RIGHT", result["status"], result["state"], result["head"], "head moved to next cell"])
 
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadLeft(), state="start", continuation_label="DONE")
+    assemble_instruction(builder, MoveSimHeadLeft(band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), set_head_cell(band, 1), head=1 + (3 + band.encoding.symbol_width), max_steps=200)
     rows.append(["MOVE_SIM_HEAD_LEFT", result["status"], result["state"], result["head"], "head moved to previous cell"])
 

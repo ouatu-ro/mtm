@@ -9,7 +9,7 @@ TMBuilder.
 from __future__ import annotations
 
 from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
-from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TAPE, WRITE_SYMBOL
+from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, END_TAPE_LEFT, END_CELL, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, RUNTIME_BLANK, TAPE, TAPE_LEFT, WRITE_SYMBOL
 from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_until_one_of, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
 from .constants import ACTIVE_RULE, L, Label, R, S, global_direction
 from .contracts import HeadAt, HeadAtOneOf, HeadOnRuntimeTape
@@ -36,6 +36,84 @@ def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Lab
     write_state = draft.local("write_cmp_flag")
     draft.add(EmitOp(source, CMP_FLAG, write_state, CMP_FLAG, R))
     write_current_bit(draft, write_state, bit=bit, target=target, move=L)
+
+
+def _encoded_blank(symbol_width: int) -> tuple[str, ...]:
+    """Encoded blank bits; source encoding reserves all-zero bits for blank."""
+
+    return ("0",) * symbol_width
+
+
+def _jump_from_right_tape_to_left_tape(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Cross the registry/rule block from ``#TAPE`` to ``#TAPE_LEFT``."""
+
+    seek(draft, source, markers={TAPE_LEFT}, direction="L", target=target)
+
+
+def _jump_from_left_tape_to_right_tape(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Cross the registry/rule block from ``#TAPE_LEFT`` to ``#TAPE``."""
+
+    seek(draft, source, markers={TAPE}, direction="R", target=target)
+
+
+def _seek_regs_from_anywhere(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Seek the register block from either side of the split source tape."""
+
+    seek_right = draft.local("seek_regs_right")
+    seek_until_one_of(draft, source, found={REGS}, boundary={END_TAPE_LEFT}, direction="L", on_found=target, on_boundary=seek_right)
+    seek(draft, seek_right, markers={REGS}, direction="R", target=target)
+
+
+def _seek_global_from_simulated_cell(draft: RoutineDraft, source: Label, *, marker: str, target: Label) -> None:
+    """Seek a global register from either simulated tape side."""
+
+    seek_right = draft.local("seek_global_right")
+    seek_until_one_of(draft, source, found={marker}, boundary={END_TAPE_LEFT}, direction="L", on_found=target, on_boundary=seek_right)
+    seek(draft, seek_right, markers={marker}, direction="R", target=target)
+
+
+def _seek_head_from_global_area(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    """Seek the simulated head from the register/rule area on either side."""
+
+    seek_right = draft.local("seek_head_right")
+    seek_until_one_of(draft, source, found={HEAD}, boundary={END_TAPE_LEFT}, direction="L", on_found=target, on_boundary=seek_right)
+    seek(draft, seek_right, markers={HEAD}, direction="R", target=target)
+
+
+def _construct_blank_right_cell(draft: RoutineDraft, source: Label, *, target: Label, encoded_blank: tuple[str, ...]) -> None:
+    """Overwrite ``#END_TAPE`` with a new blank headed cell and a new end marker."""
+
+    write_head = draft.local("extend_right_head")
+    symbol_width = len(encoded_blank)
+    bit_states = [draft.local(f"extend_right_bit_{index}") for index in range(symbol_width)]
+    end_cell = draft.local("extend_right_end_cell")
+    end_tape = draft.local("extend_right_end_tape")
+    rewind = draft.local("extend_right_rewind")
+    draft.add(EmitOp(source, END_TAPE, write_head, CELL, R))
+    draft.add(EmitOp(write_head, RUNTIME_BLANK, bit_states[0] if bit_states else end_cell, HEAD, R))
+    for index, bit in enumerate(encoded_blank):
+        next_state = bit_states[index + 1] if index + 1 < symbol_width else end_cell
+        draft.add(EmitOp(bit_states[index], RUNTIME_BLANK, next_state, bit, R))
+    draft.add(EmitOp(end_cell, RUNTIME_BLANK, end_tape, END_CELL, R))
+    draft.add(EmitOp(end_tape, RUNTIME_BLANK, rewind, END_TAPE, L))
+    move_steps(draft, rewind, steps=symbol_width + 2, direction="L", target=target)
+
+
+def _construct_blank_left_cell(draft: RoutineDraft, source: Label, *, target: Label, encoded_blank: tuple[str, ...]) -> None:
+    """Move ``#END_TAPE_LEFT`` left and write a blank headed cell after it."""
+
+    bit_states = [draft.local(f"extend_left_bit_{index}") for index in range(len(encoded_blank))]
+    write_head = draft.local("extend_left_head")
+    write_cell = draft.local("extend_left_cell")
+    write_boundary = draft.local("extend_left_boundary")
+    first_target = bit_states[0] if bit_states else write_head
+    draft.add(EmitOp(source, END_TAPE_LEFT, first_target, END_CELL, L))
+    for index, bit in enumerate(reversed(encoded_blank)):
+        next_state = bit_states[index + 1] if index + 1 < len(bit_states) else write_head
+        draft.add(EmitOp(bit_states[index], RUNTIME_BLANK, next_state, bit, L))
+    draft.add(EmitOp(write_head, RUNTIME_BLANK, write_cell, HEAD, L))
+    draft.add(EmitOp(write_cell, RUNTIME_BLANK, write_boundary, CELL, L))
+    draft.add(EmitOp(write_boundary, RUNTIME_BLANK, target, END_TAPE_LEFT, R))
 
 
 def _halt_routine(state: Label, cont: Label) -> Routine:
@@ -71,7 +149,7 @@ def _find_first_rule_routine(state: Label, cont: Label) -> Routine:
     seek_rule = draft.local("seek_rule")
     mark_rule = draft.local("mark_rule")
     draft.add(EmitAllOp(state, seek_regs, S))
-    seek(draft, seek_regs, markers={REGS}, direction="L", target=seek_rules)
+    _seek_regs_from_anywhere(draft, seek_regs, target=seek_rules)
     seek(draft, seek_rules, markers={RULES}, direction="R", target=seek_rule)
     seek(draft, seek_rule, markers={RULE, END_RULES}, direction="R", target=mark_rule)
     draft.add(EmitOp(mark_rule, RULE, cont, ACTIVE_RULE, S))
@@ -93,47 +171,82 @@ def _find_next_rule_routine(state: Label, cont: Label) -> Routine:
 
 def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
     draft = RoutineDraft("find_head_cell", entry=state, exits=(cont, "STUCK"), requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
-    scan_cell = draft.local("scan")
-    found_cell = draft.local("found_cell")
-    inspect_flag = draft.local("flag")
-    return_cell = draft.local("return")
-    draft.add(EmitAllOp(state, scan_cell, S))
-    seek_until_one_of(draft, scan_cell, found={CELL}, boundary={END_TAPE}, direction="R", on_found=found_cell, on_boundary="STUCK")
-    draft.add(EmitOp(found_cell, CELL, inspect_flag, CELL, R))
-    draft.add(EmitOp(inspect_flag, HEAD, return_cell, HEAD, L))
-    draft.add(EmitAnyExceptOp(inspect_flag, HEAD, scan_cell, R))
-    draft.add(EmitOp(return_cell, CELL, cont, CELL, S))
+    scan_right = draft.local("scan_right")
+    right_cell = draft.local("right_cell")
+    right_flag = draft.local("right_flag")
+    right_return = draft.local("right_return")
+    seek_right_origin = draft.local("seek_right_origin")
+    seek_left_origin = draft.local("seek_left_origin")
+    scan_left = draft.local("scan_left")
+    left_cell = draft.local("left_cell")
+    left_flag = draft.local("left_flag")
+    left_leave_cell = draft.local("left_leave_cell")
+    left_return = draft.local("left_return")
+    draft.add(EmitAllOp(state, scan_right, S))
+    seek_until_one_of(draft, scan_right, found={CELL}, boundary={END_TAPE}, direction="R", on_found=right_cell, on_boundary=seek_right_origin)
+    draft.add(EmitOp(right_cell, CELL, right_flag, CELL, R))
+    draft.add(EmitOp(right_flag, HEAD, right_return, HEAD, L))
+    draft.add(EmitAnyExceptOp(right_flag, HEAD, scan_right, R))
+    draft.add(EmitOp(right_return, CELL, cont, CELL, S))
+    seek(draft, seek_right_origin, markers={TAPE}, direction="L", target=seek_left_origin)
+    _jump_from_right_tape_to_left_tape(draft, seek_left_origin, target=scan_left)
+    seek_until_one_of(draft, scan_left, found={CELL}, boundary={END_TAPE_LEFT}, direction="L", on_found=left_cell, on_boundary="STUCK")
+    draft.add(EmitOp(left_cell, CELL, left_flag, CELL, R))
+    draft.add(EmitOp(left_flag, HEAD, left_return, HEAD, L))
+    draft.add(EmitAnyExceptOp(left_flag, HEAD, left_leave_cell, L))
+    draft.add(EmitOp(left_leave_cell, CELL, scan_left, CELL, L))
+    draft.add(EmitOp(left_return, CELL, cont, CELL, S))
     return draft.build()
 
 
-def _move_sim_head_right_routine(state: Label, cont: Label) -> Routine:
+def _move_sim_head_right_routine(state: Label, cont: Label, symbol_width: int) -> Routine:
     draft = RoutineDraft("move_sim_head_right", entry=state, exits=(cont, "STUCK"), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     scan_next = draft.local("scan_next")
     next_cell = draft.local("next_cell")
     mark_head = draft.local("mark_head")
+    inspect_next = draft.local("inspect_next")
+    jump_right = draft.local("jump_right")
+    scan_right = draft.local("scan_right")
+    extend_right = draft.local("extend_right")
     draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
     draft.add(EmitOp(clear_flag, HEAD, scan_next, NO_HEAD, R))
     draft.add(EmitOp(clear_flag, NO_HEAD, scan_next, NO_HEAD, R))
-    seek_until_one_of(draft, scan_next, found={CELL}, boundary={END_TAPE}, direction="R", on_found=next_cell, on_boundary="STUCK")
+    seek(draft, scan_next, markers={CELL, TAPE_LEFT, END_TAPE}, direction="R", target=inspect_next)
+    draft.add(EmitOp(inspect_next, CELL, next_cell, CELL, S))
+    draft.add(EmitOp(inspect_next, TAPE_LEFT, jump_right, TAPE_LEFT, S))
+    draft.add(EmitOp(inspect_next, END_TAPE, extend_right, END_TAPE, S))
+    _jump_from_left_tape_to_right_tape(draft, jump_right, target=scan_right)
+    seek_until_one_of(draft, scan_right, found={CELL}, boundary={END_TAPE}, direction="R", on_found=next_cell, on_boundary=extend_right)
+    _construct_blank_right_cell(draft, extend_right, target=next_cell, encoded_blank=_encoded_blank(symbol_width))
     draft.add(EmitOp(next_cell, CELL, mark_head, CELL, R))
     draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
     draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
     return draft.build()
 
 
-def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
+def _move_sim_head_left_routine(state: Label, cont: Label, symbol_width: int) -> Routine:
     draft = RoutineDraft("move_sim_head_left", entry=state, exits=(cont, "STUCK"), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     leave_current = draft.local("leave_current")
     scan_prev = draft.local("scan_prev")
     prev_cell = draft.local("prev_cell")
     mark_head = draft.local("mark_head")
+    inspect_prev = draft.local("inspect_prev")
+    jump_left = draft.local("jump_left")
+    scan_left = draft.local("scan_left")
+    extend_left = draft.local("extend_left")
     draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
     draft.add(EmitOp(clear_flag, HEAD, leave_current, NO_HEAD, L))
     draft.add(EmitOp(clear_flag, NO_HEAD, leave_current, NO_HEAD, L))
     draft.add(EmitOp(leave_current, CELL, scan_prev, CELL, L))
-    seek_until_one_of(draft, scan_prev, found={CELL}, boundary={TAPE}, direction="L", on_found=prev_cell, on_boundary="STUCK")
+    seek(draft, scan_prev, markers={CELL, TAPE, END_TAPE_LEFT}, direction="L", target=inspect_prev)
+    draft.add(EmitOp(inspect_prev, CELL, prev_cell, CELL, S))
+    draft.add(EmitOp(inspect_prev, TAPE, jump_left, TAPE, S))
+    draft.add(EmitOp(inspect_prev, END_TAPE_LEFT, extend_left, END_TAPE_LEFT, S))
+    _jump_from_right_tape_to_left_tape(draft, jump_left, target=scan_left)
+    seek(draft, scan_left, markers={CELL, END_TAPE_LEFT}, direction="L", target=inspect_prev)
+    _construct_blank_left_cell(draft, extend_left, target=prev_cell, encoded_blank=_encoded_blank(symbol_width))
     draft.add(EmitOp(prev_cell, CELL, mark_head, CELL, R))
     draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
     draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
@@ -154,7 +267,7 @@ def _copy_global_global_routine(state: Label, cont: Label, src_marker: str, dst_
     to_dst, to_src = global_direction(src_marker, dst_marker), global_direction(dst_marker, src_marker)
     current = draft.local("seek_src")
     seek_regs = draft.local("seek_regs")
-    seek(draft, state, markers={REGS}, direction="L", target=seek_regs)
+    _seek_regs_from_anywhere(draft, state, target=seek_regs)
     seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
     for index in range(width):
         branches = branch_bit_at_offset(draft, current, offset=index + 1, move_after_read=R if to_dst == "R" else L, prefix="src", index=index)
@@ -197,13 +310,15 @@ def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, 
         branches = branch_bit_at_offset(draft, current, offset=index + 2, move_after_read=L, prefix="head", index=index)
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for branch in branches:
+            global_marker_state = draft.local(f"global_marker_{branch.bit}_{index}")
+            _seek_global_from_simulated_cell(draft, branch.state, marker=global_marker, target=global_marker_state)
             if index + 1 == width:
-                seek_then_write_bit_at_offset(draft, branch.state, marker=global_marker, seek_direction="L", bit=branch.bit, offset=index + 1, target=cont, write_move=S, prefix="global", index=index)
+                write_bit_at_offset(draft, global_marker_state, bit=branch.bit, offset=index + 1, target=cont, write_move=S, prefix="global", index=index)
             else:
                 back_to_head = draft.local(f"back_to_head_{branch.bit}_{index}")
                 back_to_cell = draft.local(f"back_to_cell_{branch.bit}_{index}")
-                seek_then_write_bit_at_offset(draft, branch.state, marker=global_marker, seek_direction="L", bit=branch.bit, offset=index + 1, target=back_to_head, write_move=S, prefix="global", index=index)
-                seek(draft, back_to_head, markers={HEAD}, direction="R", target=back_to_cell)
+                write_bit_at_offset(draft, global_marker_state, bit=branch.bit, offset=index + 1, target=back_to_head, write_move=S, prefix="global", index=index)
+                _seek_head_from_global_area(draft, back_to_head, target=back_to_cell)
                 draft.add(EmitOp(back_to_cell, HEAD, next_iter, HEAD, L))
         if next_iter is not None:
             current = next_iter
@@ -215,13 +330,13 @@ def _copy_global_to_head_symbol_routine(state: Label, cont: Label, global_marker
     current = state
     for index in range(width):
         global_marker_state = draft.local(f"global_marker_{index}")
-        seek(draft, current, markers={global_marker}, direction="L", target=global_marker_state)
+        _seek_global_from_simulated_cell(draft, current, marker=global_marker, target=global_marker_state)
         branches = branch_bit_at_offset(draft, global_marker_state, offset=index + 1, move_after_read=R, prefix="global", index=index)
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for branch in branches:
             head_flag_state = draft.local(f"head_flag_{branch.bit}_{index}")
             cell_state = draft.local(f"cell_state_{branch.bit}_{index}")
-            seek(draft, branch.state, markers={HEAD}, direction="R", target=head_flag_state)
+            _seek_head_from_global_area(draft, branch.state, target=head_flag_state)
             draft.add(EmitOp(head_flag_state, HEAD, cell_state, HEAD, L))
             if index + 1 == width:
                 write_bit_at_offset(draft, cell_state, bit=branch.bit, offset=index + 2, target=cont, write_move=S, prefix="head", index=index)
@@ -240,7 +355,7 @@ def _compare_global_literal_routine(state: Label, cont: Label, global_marker: st
     seek_regs = draft.local("seek_regs")
     marker_state = draft.local("marker")
     current = draft.local("read_0")
-    seek(draft, state, markers={REGS}, direction="L", target=seek_regs)
+    _seek_regs_from_anywhere(draft, state, target=seek_regs)
     seek(draft, seek_regs, markers={global_marker}, direction="R", target=marker_state)
     draft.add(EmitOp(marker_state, global_marker, current, global_marker, R))
     for index, expected in enumerate(literal_bits):
@@ -388,10 +503,10 @@ def lower_instruction_to_routine(instruction: Instruction, *, state: Label, cont
             return _copy_global_to_head_symbol_routine(state, cont, global_marker, width)
         case WriteGlobal(global_marker, literal_bits):
             return _write_global_routine(state, cont, global_marker, literal_bits)
-        case MoveSimHeadLeft():
-            return _move_sim_head_left_routine(state, cont)
-        case MoveSimHeadRight():
-            return _move_sim_head_right_routine(state, cont)
+        case MoveSimHeadLeft(symbol_width):
+            return _move_sim_head_left_routine(state, cont, symbol_width)
+        case MoveSimHeadRight(symbol_width):
+            return _move_sim_head_right_routine(state, cont, symbol_width)
         case _:
             raise NotImplementedError(f"lowering not implemented for {instruction!r}")
 

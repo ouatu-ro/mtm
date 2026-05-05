@@ -83,11 +83,11 @@ class WriteGlobal:
 
 @dataclass(frozen=True)
 class MoveSimHeadLeft:
-    pass
+    symbol_width: int
 
 @dataclass(frozen=True)
 class MoveSimHeadRight:
-    pass
+    symbol_width: int
 
 @dataclass(frozen=True)
 class BranchAt:
@@ -320,12 +320,12 @@ def build_universal_meta_asm(encoding: Encoding) -> Program:
             )),
             Block("MOVE_LEFT", (
                 FindHeadCell(),
-                MoveSimHeadLeft(),
+                MoveSimHeadLeft(encoding.symbol_width),
                 Goto("START_STEP"),
             )),
             Block("MOVE_RIGHT", (
                 FindHeadCell(),
-                MoveSimHeadRight(),
+                MoveSimHeadRight(encoding.symbol_width),
                 Goto("START_STEP"),
             )),
             Block("HALT", (Halt(),)),

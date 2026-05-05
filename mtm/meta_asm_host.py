@@ -103,8 +103,8 @@ def move_simulated_head(encoding, right_band: list[str], head_address: int, dire
     right_band = list(right_band)
     old_head = head_address
 
-    # NOTE: The host interpreter grows the simulated tape at either boundary.
-    # The lowered UTM backend is currently bounded and branches to STUCK there.
+    # NOTE: The host models tape growth with Python list insertion. The lowered
+    # UTM does it by moving the encoded end marker outward by one cell width.
     if direction > 0:
         next_head = old_head + span
         if right_band[next_head] == END_TAPE:
@@ -254,14 +254,14 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}={''.join(literal_bits)}"
-            case MoveSimHeadLeft():
+            case MoveSimHeadLeft(_symbol_width):
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
                     raise ValueError("MOVE_SIM_HEAD_LEFT requires the runtime head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, -1)
                 runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
-            case MoveSimHeadRight():
+            case MoveSimHeadRight(_symbol_width):
                 if head_address is None or head_address < 0 or right_band[head_address] != CELL:
                     raise ValueError("MOVE_SIM_HEAD_RIGHT requires the runtime head to be at a simulated #CELL")
                 right_band, head_address = move_simulated_head(encoding, right_band, head_address, 1)

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from typing import Iterable
 
 from .source_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
 
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
     from .semantic_objects import TMBand
 
 REGS, END_REGS, RULES, RULE, END_RULE, END_RULES = "#REGS", "#END_REGS", "#RULES", "#RULE", "#END_RULE", "#END_RULES"
+TAPE_LEFT, END_TAPE_LEFT = "#TAPE_LEFT", "#END_TAPE_LEFT"
 TAPE, END_TAPE, CELL = "#TAPE", "#END_TAPE", "#CELL"
 END_FIELD, END_CELL = "#END_FIELD", "#END_CELL"
 
@@ -26,6 +28,17 @@ MOVE_DIR, CMP_FLAG, TMP = "#MOVE_DIR", "#CMP_FLAG", "#TMP"
 STATE, READ, WRITE, NEXT, MOVE = "#STATE", "#READ", "#WRITE", "#NEXT", "#MOVE"
 HEAD, NO_HEAD = "#HEAD", "#NO_HEAD"
 RUNTIME_BLANK = "_RUNTIME_BLANK"
+
+UTM_STRUCTURAL_ALPHABET = (
+    "0", "1",
+    REGS, END_REGS, RULES, RULE, END_RULE, END_RULES,
+    TAPE_LEFT, END_TAPE_LEFT, TAPE, END_TAPE, CELL,
+    END_FIELD, END_CELL,
+    CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE,
+    MOVE_DIR, CMP_FLAG, TMP,
+    STATE, READ, WRITE, NEXT, MOVE,
+    HEAD, NO_HEAD,
+)
 
 
 @dataclass(frozen=True)
@@ -96,11 +109,22 @@ def build_rule_band(encoding: Encoding, tm_program: TMProgram) -> list[str]:
     return band + [END_RULES]
 
 
+def build_left_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
+    """Build the encoded negative side of the simulated source tape."""
+
+    band = [END_TAPE_LEFT]
+    first_address = -len(source_band.left_band)
+    for index, symbol in enumerate(source_band.left_band):
+        address = first_address + index
+        band.extend([CELL, HEAD if address == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+    return band + [TAPE_LEFT]
+
+
 def build_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
-    """Build an encoded simulated tape from a source-level TMBand."""
+    """Build the encoded nonnegative side of the simulated source tape."""
 
     band = [TAPE]
-    for index, symbol in enumerate(source_band.cells):
+    for index, symbol in enumerate(source_band.right_band):
         band.extend([CELL, HEAD if index == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
     return band + [END_TAPE]
 
@@ -164,14 +188,16 @@ def compile_tm_to_universal_tape(
         source_symbols=source_band.cells,
         abi=target_abi,
     )
-    left_band = build_register_band(encoding) + build_rule_band(encoding, tm_program)
+    left_band = build_left_tape_band_from_source_band(encoding, source_band)
+    left_band += build_register_band(encoding) + build_rule_band(encoding, tm_program)
     right_band = build_tape_band_from_source_band(encoding, source_band)
     return EncodedBand(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
 
 
 __all__ = ["CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_CELL", "END_FIELD", "END_REGS", "END_RULE",
            "END_RULES", "END_TAPE", "EncodedBand", "HEAD", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
-           "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TMP", "WRITE", "WRITE_SYMBOL",
-           "build_register_band", "build_rule_band", "build_tape_band_from_source_band",
+           "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TAPE_LEFT",
+           "END_TAPE_LEFT", "TMP", "WRITE", "WRITE_SYMBOL", "build_left_tape_band_from_source_band",
+           "UTM_STRUCTURAL_ALPHABET", "build_register_band", "build_rule_band", "build_tape_band_from_source_band",
            "compile_tm_to_universal_tape", "materialize_runtime_tape", "place_on_negative_side",
            "place_on_positive_side", "split_runtime_tape", "wrap_field"]

@@ -18,8 +18,8 @@ def test_format_instruction_preserves_all_current_spellings() -> None:
         (CopyHeadSymbolTo("#GLOBAL", 2), "COPY_HEAD_SYMBOL_TO #GLOBAL 2"),
         (CopyGlobalToHeadSymbol("#GLOBAL", 2), "COPY_GLOBAL_TO_HEAD_SYMBOL #GLOBAL 2"),
         (WriteGlobal("#GLOBAL", bits("00")), "WRITE_GLOBAL #GLOBAL 00"),
-        (MoveSimHeadLeft(), "MOVE_SIM_HEAD_LEFT"),
-        (MoveSimHeadRight(), "MOVE_SIM_HEAD_RIGHT"),
+        (MoveSimHeadLeft(2), "MOVE_SIM_HEAD_LEFT"),
+        (MoveSimHeadRight(2), "MOVE_SIM_HEAD_RIGHT"),
         (BranchAt("#MARK", "YES", "NO"), "BRANCH_AT #MARK YES NO"),
         (Unimplemented("later"), "UNIMPLEMENTED later"),
     ]

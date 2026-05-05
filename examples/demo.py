@@ -26,12 +26,61 @@ def _instance_from_fixture(fixture: Any) -> TMInstance:
     )
 
 
+def _source_tape_from_fixture(fixture: Any) -> dict[int, str]:
+    return {
+        **{address: symbol for address, symbol in enumerate(fixture.band.left_band, start=-len(fixture.band.left_band))},
+        **{address: symbol for address, symbol in enumerate(fixture.band.right_band)},
+    }
+
+
+def _format_source_snapshot(step: int, state: str, head: int, tape: dict[int, str], blank: str) -> str:
+    addresses = set(tape) | {head}
+    window = range(min(addresses) - 1, max(addresses) + 2)
+    labels = " ".join(f"{address:>2}" for address in window)
+    values = " ".join(tape.get(address, blank) for address in window)
+    heads = " ".join("^" if address == head else " " for address in window)
+    return "\n".join([
+        f"step {step}: state={state}, head={head}",
+        f"addr: {labels}",
+        f"tape: {values}",
+        f"      {heads}",
+    ])
+
+
+def _run_source_preview(fixture: Any, *, max_steps: int) -> None:
+    tape = _source_tape_from_fixture(fixture)
+    state = fixture.initial_state
+    head = fixture.band.head
+    print("SOURCE TRACE")
+    print()
+    print(_format_source_snapshot(0, state, head, tape, fixture.band.blank))
+    for step in range(1, max_steps + 1):
+        read = tape.get(head, fixture.band.blank)
+        transition = fixture.tm_program.transition_for(state, read)
+        if transition is None:
+            print()
+            print(f"STUCK: no transition for ({state!r}, {read!r})")
+            return
+        state, write, move = transition
+        tape[head] = write
+        head += move
+        print()
+        print(_format_source_snapshot(step, state, head, tape, fixture.band.blank))
+        if state == fixture.halt_state:
+            print()
+            print("HALTED")
+            return
+    print()
+    print("FUEL EXHAUSTED")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded runtime band.")
     parser.add_argument("fixture", nargs="?", default="incrementer")
     parser.add_argument("--list", action="store_true", help="List available fixtures.")
     parser.add_argument("--tm-file", help="Load a plain Python TM definition file instead of a fixture.")
     parser.add_argument("--asm", action="store_true", help="Show the compiled Meta-ASM program too.")
+    parser.add_argument("--run-source", action="store_true", help="Run the source TM directly and show a source-tape trace.")
     parser.add_argument("--run-asm", action="store_true", help="Run the Meta-ASM host interpreter and show its trace.")
     parser.add_argument("--emit-raw-tm", action="store_true", help="Show the lowered raw TM for the universal interpreter.")
     parser.add_argument("--run-utm", action="store_true", help="Run the lowered raw TM on the generated runtime tape.")
@@ -55,6 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     raw_tm = program_artifact.program
 
     print(pretty_fixture(fixture, show_runtime=args.show_runtime))
+    if args.run_source:
+        print()
+        print("=" * 88)
+        print()
+        _run_source_preview(fixture, max_steps=args.max_steps)
     if args.asm or args.run_asm:
         print()
         print("=" * 88)

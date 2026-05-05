@@ -178,7 +178,10 @@ def collect_alphabet(
 ) -> tuple[list[str], list[str]]:
     """Collect source states and symbols that must receive binary IDs."""
 
-    return list(tm_program.states(initial_state=initial_state, halt_state=halt_state)), list(tm_program.symbols(source_symbols=source_symbols, blank=blank))
+    symbols = list(tm_program.symbols(source_symbols=source_symbols, blank=blank))
+    # The lowerer constructs fresh blank cells by writing all-zero symbol bits.
+    symbols = [blank, *(symbol for symbol in symbols if symbol != blank)]
+    return list(tm_program.states(initial_state=initial_state, halt_state=halt_state)), symbols
 
 
 def infer_minimal_abi(

@@ -1,12 +1,21 @@
 import mtm
-from mtm import Compiler, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
+from mtm import Compiler, R, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
 from mtm.artifacts import read_utm_artifact, write_utm_artifact
 from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, source_band_from_simulated_tape, utm_artifact_from_band, utm_encoded_from_band
+from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.utm_band_layout import compile_tm_to_universal_tape
+
+
+def _run_instance(instance: TMInstance, *, fuel: int = 500_000):
+    encoded = Compiler().compile(instance)
+    band_artifact = encoded.to_band_artifact()
+    program_artifact = UniversalInterpreter.for_encoded(encoded).lower_for_band(band_artifact)
+    result = program_artifact.run(band_artifact, fuel=fuel)
+    final_band = type(encoded.to_encoded_band()).from_runtime_tape(encoded.encoding, result["tape"])
+    return result, decoded_view_from_encoded_band(final_band)
 
 
 def test_tm_program_wraps_source_transitions_immutably() -> None:
@@ -46,6 +55,37 @@ def test_semantic_view_from_encoded_band() -> None:
     assert view.simulated_tape.head == 0
 
 
+def test_trivial_halted_blank_input_preserves_blank_cell() -> None:
+    blank = "_"
+    band = TMBand.from_dict({}, head=0, blank=blank)
+    program = TMProgram({}, initial_state="HALT", halt_state="HALT", blank=blank)
+
+    result, view = _run_instance(TMInstance(program, band, "HALT", "HALT"))
+
+    assert result["status"] == "halted"
+    assert view.current_state == "HALT"
+    assert view.simulated_tape.left_band == ()
+    assert view.simulated_tape.right_band == ("_",)
+    assert view.simulated_tape.head == 0
+
+
+def test_one_step_right_constructs_blank_right_cell_end_to_end() -> None:
+    blank = "_"
+    band = TMBand.from_dict({}, head=0, blank=blank)
+    program = TMProgram({
+        ("q0", blank): ("q1", blank, R),
+        ("q1", blank): ("HALT", blank, R),
+    }, initial_state="q0", halt_state="HALT", blank=blank)
+
+    result, view = _run_instance(TMInstance(program, band, "q0", "HALT"), fuel=5_000)
+
+    assert result["status"] == "halted"
+    assert view.current_state == "HALT"
+    assert view.simulated_tape.left_band == ()
+    assert view.simulated_tape.right_band == ("_", "_")
+    assert view.simulated_tape.head == 1
+
+
 def test_utm_encoded_and_artifact_helpers() -> None:
     band = load_fixture("incrementer").build_band()
     minimal_abi = TMAbi(2, 2, 1, "mtm-v1", "incrementer-min")
@@ -59,7 +99,8 @@ def test_utm_encoded_and_artifact_helpers() -> None:
     assert encoded.minimal_abi == minimal_abi
     assert artifact.target_abi == encoded.target_abi
     assert artifact.minimal_abi == minimal_abi
-    assert artifact.left_band[0] == "#REGS"
+    assert artifact.left_band[0] == "#END_TAPE_LEFT"
+    assert "#REGS" in artifact.left_band
     assert artifact.right_band[0] == "#TAPE"
     assert artifact.start_head < 0
     assert round_tripped_band.left_band == band.left_band
@@ -170,8 +211,39 @@ def test_universal_interpreter_for_encoded_matches_direct_lowering() -> None:
 
 
 def test_source_band_helper() -> None:
-    band = source_band_from_simulated_tape(("1", "0", "1", "1"), 0, blank="_")
-    assert band == TMBand(cells=("1", "0", "1", "1"), head=0, blank="_")
+    band = TMBand(right_band=("1", "0", "1", "1"), head=0, blank="_")
+    assert band == TMBand(right_band=("1", "0", "1", "1"), head=0, blank="_")
+
+
+def test_source_band_from_dict_splits_negative_and_nonnegative_sides() -> None:
+    band = TMBand.from_dict({-2: "1", 0: "0", 2: "1"}, head=-2, blank="_")
+
+    assert band.left_band == ("1", "_")
+    assert band.right_band == ("0", "_", "1")
+    assert band.cells == ("1", "_", "0", "_", "1")
+    assert band.head == -2
+
+
+def test_blank_symbol_encodes_as_zero_bits() -> None:
+    band = load_fixture("palindrome").build_band()
+
+    assert band.encoding.symbol_ids[band.encoding.blank] == 0
+
+
+def test_encoded_band_preserves_negative_source_head() -> None:
+    fixture = load_fixture("incrementer")
+    source_band = TMBand.from_dict({-1: "1", 0: "0"}, head=-1, blank="_")
+    band = compile_tm_to_universal_tape(
+        fixture.tm_program,
+        source_band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+    view = decoded_view_from_encoded_band(band)
+
+    assert view.simulated_tape.left_band == ("1",)
+    assert view.simulated_tape.right_band == ("0",)
+    assert view.simulated_tape.head == -1
 
 
 def test_minimal_abi_inference_and_explicit_target_abi() -> None:
@@ -297,7 +369,6 @@ def test_public_boundary_is_small() -> None:
         "DecodedBandView",
         "UniversalInterpreter",
         "TMFixture",
-        "get_fixture",
         "list_fixtures",
         "load_fixture",
         "load_python_tm",

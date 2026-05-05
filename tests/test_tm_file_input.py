@@ -17,7 +17,7 @@ INCREMENTER_FILE = """\
 blank = "_"
 initial_state = "qFindMargin"
 halt_state = "qDone"
-band = TMBand(cells=tuple("1011____"), head=0, blank=blank)
+band = TMBand(right_band=tuple("1011____"), head=0, blank=blank)
 
 tm_program = TMProgram({
     ("qFindMargin", "0"): ("qFindMargin", "0", R),
@@ -43,7 +43,7 @@ def test_load_python_tm_file(tmp_path: Path) -> None:
 
     assert fixture.name == "incrementer_tm"
     assert isinstance(fixture.tm_program, TMProgram)
-    assert fixture.band == TMBand(cells=tuple("1011____"), head=0, blank="_")
+    assert fixture.band == TMBand(right_band=tuple("1011____"), head=0, blank="_")
     assert fixture.initial_state == "qFindMargin"
     assert fixture.halt_state == "qDone"
     assert len(fixture.tm_program) == 6
@@ -55,7 +55,7 @@ def test_load_python_tm_file_requires_tm_program_object(tmp_path: Path) -> None:
     path.write_text("""\
 initial_state = "q0"
 halt_state = "qHalt"
-band = TMBand(cells=("_",), head=0, blank="_")
+band = TMBand(right_band=("_",), head=0, blank="_")
 tm_program = {("q0", "_"): ("qHalt", "_", R)}
 """)
 
