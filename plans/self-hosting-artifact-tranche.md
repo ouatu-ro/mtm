@@ -81,7 +81,7 @@ Out of scope:
   Deliverables: infer minimal `TMAbi` from `RawTMInstance.program.start_state`, `program.halt_state`, current `state`, all transition source/target states, program alphabet, program blank, transition read/write symbols, concrete tape symbols, and raw directions actually used; support raw directions including `S`; add a helper such as `build_raw_guest_encoding(...)`.
   Validation: raw-guest encoding tests with `S`; inferred `dir_width` tests when `S` is present; host dispatch test that intentionally treats neither `L` nor `R` as stay-put.
 
-- [ ] S9: Implement the raw-guest compiler path.
+- [x] S9: Implement the raw-guest compiler path.
   Deliverables: compile `RawTMInstance -> UTMEncoded -> UTMBandArtifact`; raw guest tape conversion mirrors `TMBand.from_dict(...)` semantics, with negative addresses on `left_band`, nonnegative addresses on `right_band`, and the current head cell included even if blank.
   Validation: trivial `TMTransitionProgram` guest compiles into `.utm.band`; resulting band is runnable by a lowered host.
 
@@ -109,6 +109,7 @@ Out of scope:
 - 2026-05-05 19:58 EEST: Completed S6. Added `SourceArtifact`, safe `.mtm.source` read/write helpers, `.py` source artifact emission, and CLI `emit-source`. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 20:00 EEST: Completed S8. Added raw-guest ABI inference and `build_raw_guest_encoding(...)` with `S` move support, plus a dispatch test documenting that non-left/non-right moves stay put. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 20:02 EEST: Tightened S8. Preserved existing raw `L`/`R` direction IDs when `S` is present and added unsupported raw move rejection coverage. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
+- 2026-05-05 20:04 EEST: Completed S9. Added `compile_raw_guest(...)`, raw sparse tape conversion with blank head preservation, and tests for compiling a trivial raw guest into a runnable UTM band. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 
 ## Findings / Debt
 

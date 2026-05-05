@@ -5,7 +5,7 @@ from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import S, TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
+from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, compile_raw_guest, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
@@ -292,6 +292,51 @@ def test_universal_dispatch_treats_non_left_non_right_direction_as_stay() -> Non
     assert encoding.direction_ids == {-1: 0, 1: 1, 0: 2}
     assert check_right.instructions[-1].label_equal == "MOVE_RIGHT"
     assert check_right.instructions[-1].label_not_equal == "START_STEP"
+
+
+def test_compile_raw_guest_preserves_sparse_tape_and_head_blank() -> None:
+    builder = TMBuilder(["0", "1"], halt_state="halt")
+    builder.emit("start", "0", "halt", "1", S)
+    program = builder.build("start")
+    instance = RawTMInstance(
+        program=program,
+        tape={-2: "1", 0: "0"},
+        head=2,
+        state="start",
+    )
+
+    encoded = compile_raw_guest(instance)
+    artifact = encoded.to_band_artifact()
+    view = encoded.decoded_view()
+
+    assert view.current_state == "start"
+    assert view.simulated_tape.left_band == ("1", program.blank)
+    assert view.simulated_tape.right_band == ("0", program.blank, program.blank)
+    assert view.simulated_tape.head == 2
+    assert artifact.target_abi == encoded.target_abi
+    assert artifact.minimal_abi == encoded.minimal_abi
+
+
+def test_compiled_raw_guest_band_runs_on_lowered_host() -> None:
+    builder = TMBuilder(["0", "1"], halt_state="halt")
+    builder.emit("start", "0", "halt", "1", S)
+    instance = RawTMInstance(
+        program=builder.build("start"),
+        tape={0: "0"},
+        head=0,
+        state="start",
+    )
+
+    encoded = compile_raw_guest(instance)
+    band_artifact = encoded.to_band_artifact()
+    program_artifact = UniversalInterpreter.for_encoded(encoded).lower_for_band(band_artifact)
+    result = program_artifact.run(band_artifact, fuel=50_000)
+    final_band = type(encoded.to_encoded_band()).from_runtime_tape(encoded.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
+
+    assert result["status"] == "halted"
+    assert final_view.current_state == "halt"
+    assert final_view.simulated_tape.right_band[0] == "1"
 
 
 def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:

@@ -426,6 +426,20 @@ def _raw_guest_directions(instance: RawTMInstance) -> list[int]:
     return [direction for direction in (RAW_L, RAW_R, RAW_S) if direction in directions]
 
 
+def _raw_guest_tape(instance: RawTMInstance) -> UTMSimulatedTape:
+    cells = dict(instance.tape)
+    if not cells:
+        cells = {instance.head: instance.program.blank}
+    low = min(min(cells), instance.head, 0)
+    high = max(max(cells), instance.head, 0)
+    return UTMSimulatedTape(
+        left_band=tuple(cells.get(address, instance.program.blank) for address in range(low, 0)),
+        right_band=tuple(cells.get(address, instance.program.blank) for address in range(0, high + 1)),
+        head=instance.head,
+        blank=instance.program.blank,
+    )
+
+
 def infer_raw_guest_minimal_abi(instance: RawTMInstance) -> TMAbi:
     """Infer the smallest ABI needed to encode a raw guest instance."""
 
@@ -473,6 +487,40 @@ def build_raw_guest_encoding(instance: RawTMInstance, *, abi: TMAbi | None = Non
         blank=instance.program.blank,
         initial_state=instance.state,
         halt_state=instance.program.halt_state,
+    )
+
+
+def compile_raw_guest(instance: RawTMInstance, *, abi: TMAbi | None = None) -> UTMEncoded:
+    """Compile an already-lowered raw guest into semantic UTM input."""
+
+    minimal_abi = infer_raw_guest_minimal_abi(instance)
+    target_abi = minimal_abi if abi is None else abi
+    encoding = build_raw_guest_encoding(instance, abi=target_abi)
+    simulated_tape = _raw_guest_tape(instance)
+    return UTMEncoded(
+        encoding=encoding,
+        registers=UTMRegisters(
+            cur_state=instance.state,
+            cur_symbol=instance.program.blank,
+            write_symbol=instance.program.blank,
+            next_state=instance.state,
+            move_dir=RAW_L,
+            cmp_flag="0",
+            tmp_bits=("0",) * max(encoding.state_width, encoding.symbol_width, encoding.direction_width),
+        ),
+        rules=tuple(
+            UTMEncodedRule(
+                state=state,
+                read_symbol=read_symbol,
+                next_state=next_state,
+                write_symbol=write_symbol,
+                move_dir=move_direction,
+            )
+            for (state, read_symbol), (next_state, write_symbol, move_direction) in instance.program.transitions.items()
+        ),
+        simulated_tape=simulated_tape,
+        minimal_abi=minimal_abi,
+        target_abi=target_abi,
     )
 
 
@@ -555,6 +603,6 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
 
 __all__ = ["DecodedBandView", "RawTMInstance", "SourceArtifact", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
-           "build_raw_guest_encoding", "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact",
+           "build_raw_guest_encoding", "compile_raw_guest", "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact",
            "infer_minimal_abi", "infer_raw_guest_minimal_abi", "start_head_from_encoded_band",
            "utm_artifact_from_band", "utm_encoded_from_band"]
