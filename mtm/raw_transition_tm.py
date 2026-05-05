@@ -9,7 +9,8 @@ assembly boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from types import MappingProxyType
+from typing import Iterable, Mapping
 
 L, S, R = -1, 0, 1
 
@@ -26,6 +27,12 @@ class TMTransitionProgram:
     halt_state: str
     alphabet: tuple[str, ...]
     blank: str = "_RUNTIME_BLANK"
+
+    @property
+    def transitions(self) -> Mapping[TransitionKey, Transition]:
+        """Read-only conceptual alias for the raw transition relation."""
+
+        return MappingProxyType(self.prog)
 
     def write(self, path: str | "Path") -> None:
         """Write this program as a ``.tm`` artifact."""

@@ -64,7 +64,7 @@ Out of scope:
   Deliverables: `UTMProgramArtifact.run(...)` checks `.tm` versus `.utm.band` compatibility only when both carry `target_abi`; incompatible grammar/version or width mismatches fail before execution; missing `.tm` ABI metadata still allows execution; CLI `run` preserves program-side ABI metadata instead of copying band ABI onto the program artifact.
   Validation: tests cover compatible metadata, incompatible metadata, missing `.tm` metadata, and CLI `run` metadata preservation.
 
-- [ ] S5: Add `TMTransitionProgram.transitions`.
+- [x] S5: Add `TMTransitionProgram.transitions`.
   Deliverables: read-only `transitions` alias over `prog`.
   Validation: existing raw transition tests still pass; docs can refer to `transitions` without lying.
 
@@ -105,6 +105,7 @@ Out of scope:
 - 2026-05-05 19:48 EEST: Completed S2. Added ABI-aware `.tm` program artifact read/write paths, kept raw `TMTransitionProgram` IO metadata-blind, and updated artifact/CLI tests to read metadata from the file. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 19:51 EEST: Completed S3. Fixed compiler endpoint fallback order, added source blank mismatch rejection, and made selected ABI validation reject grammar-version mismatches. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 19:53 EEST: Completed S4. Added runtime artifact ABI compatibility checks, changed CLI `run` to preserve program-side `.tm` metadata, and covered compatible, incompatible, missing metadata, and CLI regression paths. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
+- 2026-05-05 19:54 EEST: Completed S5. Added `TMTransitionProgram.transitions` as a read-only conceptual alias over `prog` and covered it in semantic object tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 
 ## Findings / Debt
 

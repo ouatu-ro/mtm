@@ -198,6 +198,13 @@ def test_primary_tm_program_names_and_io(tmp_path) -> None:
     instance = RawTMInstance(program=loaded, tape={0: "_RUNTIME_BLANK"}, head=0, state=loaded.start_state)
 
     assert loaded == raw_tm
+    assert loaded.transitions == raw_tm.prog
+    try:
+        loaded.transitions[("start", "0")] = ("other", "0", 0)
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("expected transitions alias to be read-only")
     assert instance.program == raw_tm
     assert instance.state == raw_tm.start_state
 
