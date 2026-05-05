@@ -284,7 +284,10 @@ def build_encoding(
     if abi is None:
         state_width, symbol_width, direction_width = required_state_width, required_symbol_width, required_dir_width
     else:
+        required_abi = TMAbi(required_state_width, required_symbol_width, required_dir_width)
         errors = []
+        if abi.grammar_version != required_abi.grammar_version:
+            errors.append(f"grammar_version requires {required_abi.grammar_version!r}, ABI provides {abi.grammar_version!r}")
         if required_state_width > abi.state_width:
             errors.append(f"states require {required_state_width} bits, ABI provides {abi.state_width}")
         if required_symbol_width > abi.symbol_width:
@@ -292,7 +295,9 @@ def build_encoding(
         if required_dir_width > abi.dir_width:
             errors.append(f"directions require {required_dir_width} bits, ABI provides {abi.dir_width}")
         if errors:
-            raise ValueError("selected ABI too small: " + "; ".join(errors))
+            if any(error.startswith(("states", "symbols", "directions")) for error in errors):
+                raise ValueError("selected ABI too small: " + "; ".join(errors))
+            raise ValueError("selected ABI incompatible: " + "; ".join(errors))
         state_width, symbol_width, direction_width = abi.state_width, abi.symbol_width, abi.dir_width
     return Encoding(
         state_ids=assign_ids(states),

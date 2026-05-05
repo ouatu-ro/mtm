@@ -24,6 +24,7 @@ class Compiler:
     def infer_abi(self, instance: TMInstance) -> TMAbi:
         """Infer the minimal ABI needed by a source machine instance."""
 
+        self._validate_instance(instance)
         initial_state, halt_state = self._resolve_states(instance)
         return infer_minimal_abi(
             instance.program,
@@ -35,6 +36,7 @@ class Compiler:
     def compile(self, instance: TMInstance) -> UTMEncoded:
         """Compile a source machine instance into semantic UTM input."""
 
+        self._validate_instance(instance)
         initial_state, halt_state = self._resolve_states(instance)
         band = compile_tm_to_universal_tape(
             instance.program,
@@ -48,11 +50,20 @@ class Compiler:
     def _resolve_states(self, instance: TMInstance) -> tuple[str, str]:
         """Resolve initial/halt states from the instance or compiler defaults."""
 
-        initial_state = instance.initial_state or self.initial_state
-        halt_state = instance.halt_state or self.halt_state
+        initial_state = instance.initial_state or instance.program.initial_state or self.initial_state
+        halt_state = instance.halt_state or instance.program.halt_state or self.halt_state
         if initial_state is None or halt_state is None:
-            raise ValueError("Compiler requires initial_state and halt_state on the TMInstance or Compiler")
+            raise ValueError("Compiler requires initial_state and halt_state on the TMInstance, TMProgram, or Compiler")
         return initial_state, halt_state
+
+    def _validate_instance(self, instance: TMInstance) -> None:
+        """Reject source instances whose program and band contracts disagree."""
+
+        if instance.program.blank != instance.band.blank:
+            raise ValueError(
+                f"source blank mismatch: TMProgram.blank={instance.program.blank!r} "
+                f"!= TMBand.blank={instance.band.blank!r}"
+            )
 
 
 __all__ = ["Compiler"]

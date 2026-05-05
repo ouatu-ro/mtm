@@ -56,7 +56,7 @@ Out of scope:
   Deliverables: `UTMProgramArtifact.write(...)` emits `target_abi` / `minimal_abi` when known; `UTMProgramArtifact.read(...)` returns persisted metadata or `None`; `read_tm(path) -> TMTransitionProgram` and `TMTransitionProgram.write(...)` remain raw-only.
   Validation: old `.tm` artifacts still read; new round-trip tests cover `.tm` with and without ABI metadata.
 
-- [ ] S3: Fix compiler correctness gaps.
+- [x] S3: Fix compiler correctness gaps.
   Deliverables: endpoint fallback order is `TMInstance`, then `TMProgram`, then `Compiler`; instance values override program values; compilation rejects `TMProgram.blank != TMBand.blank`; ABI validation checks `state_width`, `symbol_width`, `dir_width`, and `grammar_version`.
   Validation: targeted compiler tests for all endpoint sources, blank mismatch, and grammar-version mismatch.
 
@@ -103,6 +103,7 @@ Out of scope:
 - 2026-05-05 19:20 EEST: Restyled plan as a durable execute-disk-plan artifact.
 - 2026-05-05 19:26 EEST: Completed S1. Added shared ABI literal and compatibility helpers in `mtm/source_encoding.py`, updated `.utm.band` artifact IO to use them, and added focused helper tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 19:48 EEST: Completed S2. Added ABI-aware `.tm` program artifact read/write paths, kept raw `TMTransitionProgram` IO metadata-blind, and updated artifact/CLI tests to read metadata from the file. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
+- 2026-05-05 19:51 EEST: Completed S3. Fixed compiler endpoint fallback order, added source blank mismatch rejection, and made selected ABI validation reject grammar-version mismatches. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 
 ## Findings / Debt
 

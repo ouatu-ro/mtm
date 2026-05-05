@@ -172,6 +172,11 @@ def compile_tm_to_universal_tape(
 ) -> EncodedBand:
     """Compile a source TM and source tape into concrete UTM input bands."""
 
+    if tm_program.blank != source_band.blank:
+        raise ValueError(
+            f"source blank mismatch: TMProgram.blank={tm_program.blank!r} "
+            f"!= TMBand.blank={source_band.blank!r}"
+        )
     minimal_abi = infer_minimal_abi(
         tm_program,
         initial_state=initial_state,

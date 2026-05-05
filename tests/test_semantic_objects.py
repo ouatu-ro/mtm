@@ -345,6 +345,58 @@ def test_compiler_infers_abi_and_compiles_to_utm_encoded() -> None:
     assert encoded.to_band_artifact() == utm_artifact_from_band(fixture.build_band())
 
 
+def test_compiler_resolves_endpoints_from_tm_program() -> None:
+    band = TMBand.from_dict({}, head=0, blank="_")
+    program = TMProgram({}, initial_state="program_start", halt_state="program_halt", blank="_")
+
+    encoded = Compiler().compile(TMInstance(program, band))
+
+    assert encoded.current_state == "program_start"
+    assert encoded.encoding.initial_state == "program_start"
+    assert encoded.encoding.halt_state == "program_halt"
+
+
+def test_compiler_instance_endpoints_override_program_endpoints() -> None:
+    band = TMBand.from_dict({}, head=0, blank="_")
+    program = TMProgram({}, initial_state="program_start", halt_state="program_halt", blank="_")
+
+    encoded = Compiler().compile(
+        TMInstance(
+            program,
+            band,
+            initial_state="instance_start",
+            halt_state="instance_halt",
+        )
+    )
+
+    assert encoded.current_state == "instance_start"
+    assert encoded.encoding.initial_state == "instance_start"
+    assert encoded.encoding.halt_state == "instance_halt"
+
+
+def test_compiler_resolves_endpoints_from_compiler_defaults() -> None:
+    band = TMBand.from_dict({}, head=0, blank="_")
+    program = TMProgram({}, blank="_")
+
+    encoded = Compiler(initial_state="compiler_start", halt_state="compiler_halt").compile(TMInstance(program, band))
+
+    assert encoded.current_state == "compiler_start"
+    assert encoded.encoding.initial_state == "compiler_start"
+    assert encoded.encoding.halt_state == "compiler_halt"
+
+
+def test_compiler_rejects_source_blank_mismatch() -> None:
+    band = TMBand.from_dict({}, head=0, blank="_")
+    program = TMProgram({}, initial_state="start", halt_state="halt", blank=" ")
+
+    try:
+        Compiler().compile(TMInstance(program, band))
+    except ValueError as exc:
+        assert "source blank mismatch" in str(exc)
+    else:
+        raise AssertionError("expected blank mismatch to be rejected")
+
+
 def test_compiler_uses_selected_target_abi() -> None:
     fixture = load_fixture("incrementer")
     target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
@@ -432,6 +484,19 @@ def test_compile_rejects_too_small_abi() -> None:
         assert "states require" in str(exc)
     else:
         raise AssertionError("expected selected ABI to be rejected")
+
+
+def test_compile_rejects_grammar_version_mismatch() -> None:
+    fixture = load_fixture("incrementer")
+    wrong_grammar = TMAbi(3, 4, 2, "mtm-v2", "wrong-grammar")
+
+    try:
+        fixture.build_band(abi=wrong_grammar)
+    except ValueError as exc:
+        assert "selected ABI incompatible" in str(exc)
+        assert "grammar_version" in str(exc)
+    else:
+        raise AssertionError("expected grammar-version mismatch to be rejected")
 
 
 def test_runtime_tape_printer() -> None:
