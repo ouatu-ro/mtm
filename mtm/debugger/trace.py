@@ -23,23 +23,28 @@ from ..utm_band_layout import EncodedBand
 
 @dataclass(frozen=True)
 class RawTraceSnapshot:
-    """One immutable machine configuration captured at a raw step."""
+    """One immutable raw-machine snapshot captured in the history.
 
+    A snapshot is the debugger's anchor for time-travel: each one records the
+    sparse tape, head, state, and absolute raw-step counter after a transition
+    has completed.
+    """
     tape: Mapping[int, str]
     head: int
     state: str
     steps: int
 
     def tape_dict(self) -> dict[int, str]:
-        """Return a mutable copy of this snapshot's sparse tape."""
-
         return dict(self.tape)
 
 
 @dataclass(frozen=True)
 class RawTraceTransition:
-    """One executed raw transition, plus optional source metadata."""
+    """One executed raw transition, optionally annotated with source metadata.
 
+    This records the concrete transition table row that fired between two
+    snapshots, plus the lowered-source explanation when a source map exists.
+    """
     step: int
     state: str
     read_symbol: str
@@ -51,14 +56,16 @@ class RawTraceTransition:
     @property
     def key(self) -> TransitionKey:
         """Return the concrete transition-table key for this row."""
-
         return (self.state, self.read_symbol)
 
 
 @dataclass(frozen=True)
 class RawTraceStepResult:
-    """The outcome of advancing the machine by one raw transition."""
+    """Result of a single raw forward step.
 
+    The runner returns both the new snapshot and the executed transition so the
+    debugger can explain exactly what changed.
+    """
     status: str
     snapshot: RawTraceSnapshot
     transition: RawTraceTransition | None
@@ -66,8 +73,7 @@ class RawTraceStepResult:
 
 @dataclass(frozen=True)
 class RawTraceRunResult:
-    """The outcome of running until halt, stuck, or fuel exhaustion."""
-
+    """Result of running forward until halt, stuck, or fuel exhaustion."""
     status: str
     snapshot: RawTraceSnapshot
     steps_executed: int
@@ -75,8 +81,7 @@ class RawTraceRunResult:
 
 @dataclass(frozen=True)
 class RawTraceGroupStepResult:
-    """The outcome of moving across one grouped boundary."""
-
+    """Result of moving across one higher-level grouped boundary."""
     status: str
     snapshot: RawTraceSnapshot
     raw_steps: int
@@ -84,8 +89,7 @@ class RawTraceGroupStepResult:
 
 @dataclass(frozen=True)
 class RawTraceView:
-    """A teaching-oriented snapshot of raw, source, and semantic state."""
-
+    """Snapshot bundle for raw, source-mapped, and semantic debugger state."""
     snapshot: RawTraceSnapshot
     next_raw_transition_key: TransitionKey | None
     next_raw_transition_row: Transition | None
@@ -118,7 +122,6 @@ class RawTraceRunner:
         source_step_block_label: str = DEFAULT_SOURCE_STEP_BLOCK_LABEL,
     ) -> None:
         """Build a runner from a program and an initial sparse tape."""
-
         self.program = program
         self.source_map = source_map
         self.source_step_block_label = source_step_block_label
@@ -130,25 +133,21 @@ class RawTraceRunner:
     @property
     def current(self) -> RawTraceSnapshot:
         """Return the snapshot currently selected by the history cursor."""
-
         return self._snapshots[self._cursor]
 
     @property
     def history_cursor(self) -> int:
         """Return the active snapshot index in the execution history."""
-
         return self._cursor
 
     @property
     def latest_history_index(self) -> int:
         """Return the newest stored snapshot index."""
-
         return len(self._snapshots) - 1
 
     @property
     def last_transition(self) -> RawTraceTransition | None:
         """Return the most recently executed transition, if any."""
-
         if self._cursor == 0:
             return None
         return self._history[self._cursor - 1]
@@ -156,14 +155,12 @@ class RawTraceRunner:
     @property
     def current_read_symbol(self) -> str:
         """Return the symbol currently under the head."""
-
         snapshot = self.current
         return snapshot.tape.get(snapshot.head, self.program.blank)
 
     @property
     def current_transition_key(self) -> TransitionKey | None:
         """Return the raw row the runner would execute next, if any."""
-
         if self.is_halted:
             return None
         return (self.current.state, self.current_read_symbol)
@@ -171,7 +168,6 @@ class RawTraceRunner:
     @property
     def current_transition(self) -> Transition | None:
         """Return the next raw transition row, if one exists."""
-
         key = self.current_transition_key
         if key is None:
             return None
@@ -180,7 +176,6 @@ class RawTraceRunner:
     @property
     def current_transition_source(self) -> RawTransitionSource | None:
         """Return source metadata for the next row, if one exists."""
-
         key = self.current_transition_key
         if key is None or self.source_map is None:
             return None
@@ -189,7 +184,6 @@ class RawTraceRunner:
     @property
     def last_transition_source(self) -> RawTransitionSource | None:
         """Return source metadata for the last executed row, if any."""
-
         transition = self.last_transition
         if transition is None:
             return None
@@ -198,19 +192,16 @@ class RawTraceRunner:
     @property
     def is_halted(self) -> bool:
         """Return whether the current snapshot is in the halt state."""
-
         return self.current.state == self.program.halt_state
 
     @property
     def is_stuck(self) -> bool:
         """Return whether execution cannot proceed from the current snapshot."""
-
         return not self.is_halted and self.current_transition is None
 
     @property
     def run_status(self) -> str:
         """Return the runner's current execution status."""
-
         if self.is_halted:
             return "halted"
         if self.is_stuck:
@@ -219,7 +210,6 @@ class RawTraceRunner:
 
     def step(self) -> RawTraceStepResult:
         """Execute one raw transition and record the resulting snapshot."""
-
         if self.is_halted:
             return RawTraceStepResult(status="halted", snapshot=self.current, transition=None)
 
@@ -257,7 +247,6 @@ class RawTraceRunner:
 
     def back(self) -> bool:
         """Move the history cursor back by one snapshot if possible."""
-
         if self._cursor == 0:
             return False
         self._cursor -= 1
@@ -265,7 +254,6 @@ class RawTraceRunner:
 
     def run(self, max_steps: int) -> RawTraceRunResult:
         """Run until halt, stuck, or the step budget is exhausted."""
-
         if max_steps < 0:
             raise ValueError("max_steps must be non-negative")
 
@@ -291,47 +279,38 @@ class RawTraceRunner:
 
     def step_to_next_routine(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until execution enters a different routine."""
-
         return self._step_to_next_group(lambda source: source.routine_index, max_raw=max_raw)
 
     def step_to_next_instruction(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until execution enters a different instruction."""
-
         return self._step_to_next_group(lambda source: (source.block_label, source.instruction_index), max_raw=max_raw)
 
     def step_to_next_block(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until execution enters a different block."""
-
         return self._step_to_next_group(lambda source: source.block_label, max_raw=max_raw)
 
     def step_to_next_source_step(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until the next source-step block in the UTM trace."""
-
         return self._step_to_next_source_step_boundary(max_raw=max_raw)
 
     def back_to_previous_routine(self) -> RawTraceGroupStepResult:
         """Rewind to the previous routine boundary."""
-
         return self._back_to_previous_group(lambda source: source.routine_index)
 
     def back_to_previous_instruction(self) -> RawTraceGroupStepResult:
         """Rewind to the previous instruction boundary."""
-
         return self._back_to_previous_group(lambda source: (source.block_label, source.instruction_index))
 
     def back_to_previous_block(self) -> RawTraceGroupStepResult:
         """Rewind to the previous block boundary."""
-
         return self._back_to_previous_group(lambda source: source.block_label)
 
     def back_to_previous_source_step(self) -> RawTraceGroupStepResult:
         """Rewind to the previous source-step block in the UTM trace."""
-
         return self._back_to_previous_source_step_boundary()
 
     def current_view(self, *, encoding: Encoding | None = None) -> RawTraceView:
         """Return the current raw view, optionally with a semantic decode."""
-
         decoded_view = None
         decode_error = None
         if encoding is not None:

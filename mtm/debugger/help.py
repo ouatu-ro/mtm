@@ -27,55 +27,42 @@ COMMAND_SPECS = (
         aliases=("st",),
         usage="status",
         summary="Show compact runner status.",
-        details=(
-            "Displays run status, raw step/history counters, current lowered state, current source location, and active instruction.",
-        ),
+        details=("Displays run status, raw step/history counters, current lowered state, current source location, and active instruction.",),
     ),
     CommandSpec(
         name="view",
         aliases=("v",),
         usage="view",
         summary="Show raw + source + semantic trace view.",
-        details=(
-            "Includes the compact status layers, next/last raw rows, a raw tape window, and semantic decode when available.",
-        ),
+        details=("Includes the compact status layers, next/last raw rows, a raw tape window, and semantic decode when available.",),
     ),
     CommandSpec(
         name="where",
         aliases=("w",),
         usage="where",
         summary="Show current lowered source location.",
-        details=(
-            "Shows the current Meta-ASM source location, active instruction, and the next raw row that would execute.",
-        ),
+        details=("Shows the current Meta-ASM source location, active instruction, and the next raw row that would execute.",),
     ),
     CommandSpec(
         name="step raw",
         aliases=("s",),
         usage="step raw [N]",
         summary="Advance by exactly one raw TM transition.",
-        details=(
-            "Use this when you want to inspect the lowered machine row by row.",
-            "You can pass N, as in `s 10` or `step raw 10`, to repeat the command.",
-        ),
+        details=("Use this when you want to inspect the lowered machine row by row.", "You can pass N, as in `s 10` or `step raw 10`, to repeat the command."),
     ),
     CommandSpec(
         name="step routine",
         aliases=("sr",),
         usage="step routine [N]",
         summary="Advance to the next lowering routine boundary.",
-        details=(
-            "Stops when the next lowered routine begins, or earlier if the runner halts, gets stuck, or hits max-raw.",
-        ),
+        details=("Stops when the next lowered routine begins, or earlier if the runner halts, gets stuck, or hits max-raw.",),
     ),
     CommandSpec(
         name="step instruction",
         aliases=("si",),
         usage="step instruction [N]",
         summary="Advance to the next Meta-ASM instruction boundary.",
-        details=(
-            "Useful when you want source-level stepping without stopping on every lowered raw row.",
-        ),
+        details=("Useful when you want source-level stepping without stopping on every lowered raw row.",),
     ),
     CommandSpec(
         name="step block",
@@ -96,9 +83,7 @@ COMMAND_SPECS = (
         aliases=("b",),
         usage="back raw [N]",
         summary="Rewind by one raw TM transition.",
-        details=(
-            "You can pass N, as in `b 10` or `back raw 10`, to rewind multiple raw transitions.",
-        ),
+        details=("You can pass N, as in `b 10` or `back raw 10`, to rewind multiple raw transitions.",),
     ),
     CommandSpec(
         name="back routine",
@@ -133,18 +118,14 @@ COMMAND_SPECS = (
         aliases=(),
         usage="set max-raw N",
         summary="Set the grouped-step raw transition guard.",
-        details=(
-            "Grouped stepping stops early with `max_raw` if it consumes more than this many raw transitions before reaching its boundary.",
-        ),
+        details=("Grouped stepping stops early with `max_raw` if it consumes more than this many raw transitions before reaching its boundary.",),
     ),
     CommandSpec(
         name="help",
         aliases=("h", "?"),
         usage="help [topic]",
         summary="Show command help.",
-        details=(
-            "Use `help step raw`, `help where`, `help set`, or any alias such as `help s`.",
-        ),
+        details=("Use `help step raw`, `help where`, `help set`, or any alias such as `help s`.",),
     ),
     CommandSpec(
         name="quit",

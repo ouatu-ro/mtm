@@ -7,27 +7,7 @@ step is trying to do.
 
 from __future__ import annotations
 
-from ..meta_asm import (
-    BranchAt,
-    BranchCmp,
-    CompareGlobalLiteral,
-    CompareGlobalLocal,
-    CopyGlobalGlobal,
-    CopyGlobalToHeadSymbol,
-    CopyHeadSymbolTo,
-    CopyLocalGlobal,
-    FindFirstRule,
-    FindHeadCell,
-    FindNextRule,
-    Goto,
-    Halt,
-    MoveSimHeadLeft,
-    MoveSimHeadRight,
-    Seek,
-    SeekOneOf,
-    Unimplemented,
-    WriteGlobal,
-)
+from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, Unimplemented, WriteGlobal
 
 
 def explain_meta_instruction(instruction) -> str | None:

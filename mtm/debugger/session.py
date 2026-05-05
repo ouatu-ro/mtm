@@ -20,13 +20,12 @@ ActionStatus = Literal["stepped", "rewound", "halted", "stuck", "max_raw", "unma
 
 @dataclass(frozen=True)
 class DebuggerActionResult:
-    """The raw outcome of one debugger command before query projection.
+    """One completed debugger action before it is turned into display rows.
 
-    The shell turns this object into the more polished query rows shown to the
-    user, so it keeps the low-level execution details close to the command that
-    produced them.
+    The session returns this lower-level result while it is still close to the
+    raw runner semantics: which boundary was requested, how far the cursor
+    moved, what status stopped the action, and which snapshot is now current.
     """
-
     boundary: Boundary
     status: ActionStatus
     raw_delta: int
@@ -38,9 +37,10 @@ class DebuggerActionResult:
 class DebuggerSession:
     """User-facing debugger commands layered over a raw trace runner.
 
-    This layer is where raw stepping becomes debugger behavior: it refreshes
-    derived facts, applies boundary-aware repeat commands, and exposes the
-    status, where, and view rows consumed by the presenter.
+    The session owns command semantics such as repeated stepping, repeated
+    rewind, grouped boundaries, and the ``max_raw`` guard. It intentionally
+    stops short of presentation: callers ask it for typed query rows or action
+    results, then hand those to the presenter and renderer layers.
     """
 
     DEFAULT_MAX_RAW = 100_000
@@ -55,7 +55,6 @@ class DebuggerSession:
         semantic_window: int = 2,
     ) -> None:
         """Build a debugger session around an existing raw trace runner."""
-
         if max_raw <= 0:
             raise ValueError("max_raw must be positive")
         self.runner = runner
@@ -70,26 +69,22 @@ class DebuggerSession:
         self.queries = DebuggerQueries(self.facts, max_raw=max_raw)
 
     def status(self) -> StatusRow:
-        """Return the current status row after refreshing derived facts."""
-
+        """Return the compact read model used by ``status`` and startup."""
         self._refresh_queries()
         return self.queries.status()
 
     def where(self) -> WhereRow:
-        """Return the current source-location row after refreshing facts."""
-
+        """Return the current source location plus the next raw transition."""
         self._refresh_queries()
         return self.queries.where()
 
     def view(self) -> ViewRow:
-        """Return the current combined raw and semantic view row."""
-
+        """Return the full raw/source/semantic debugger view."""
         self._refresh_queries()
         return self.queries.view()
 
     def step(self, boundary: Boundary) -> DebuggerActionResult:
-        """Step forward by one raw row or one grouped boundary."""
-
+        """Advance once at a raw or grouped boundary."""
         if boundary == "raw":
             step_result = self.runner.step()
             return DebuggerActionResult(
@@ -108,22 +103,16 @@ class DebuggerSession:
         )
 
     def step_many(self, boundary: Boundary, count: int) -> ActionRow:
-        """Repeat a step command and collapse the result into one action row."""
-
+        """Advance repeatedly and return the final presenter-facing action row."""
         result = self._repeat(boundary, count, direction="step")
         self._refresh_queries()
         return self.queries.action(
-            verb="step",
-            boundary=result.boundary,
-            status=result.status,
-            raw_delta=result.raw_delta,
-            count_completed=result.count_completed,
-            count_requested=result.count_requested,
+            verb="step", boundary=result.boundary, status=result.status, raw_delta=result.raw_delta,
+            count_completed=result.count_completed, count_requested=result.count_requested,
         )
 
     def back(self, boundary: Boundary) -> DebuggerActionResult:
-        """Step backward by one raw row or one grouped boundary."""
-
+        """Rewind once at a raw or grouped boundary."""
         if boundary == "raw":
             rewound = self.runner.back()
             return DebuggerActionResult(
@@ -142,29 +131,26 @@ class DebuggerSession:
         )
 
     def back_many(self, boundary: Boundary, count: int) -> ActionRow:
-        """Repeat a back command and collapse the result into one action row."""
-
+        """Rewind repeatedly and return the final presenter-facing action row."""
         result = self._repeat(boundary, count, direction="back")
         self._refresh_queries()
         return self.queries.action(
-            verb="back",
-            boundary=result.boundary,
-            status=result.status,
-            raw_delta=result.raw_delta,
-            count_completed=result.count_completed,
-            count_requested=result.count_requested,
+            verb="back", boundary=result.boundary, status=result.status, raw_delta=result.raw_delta,
+            count_completed=result.count_completed, count_requested=result.count_requested,
         )
 
     def set_max_raw(self, value: int) -> int:
-        """Update the maximum raw steps allowed for grouped stepping."""
-
+        """Update the grouped-step raw-transition guard."""
         if value <= 0:
             raise ValueError("max_raw must be positive")
         self.max_raw = value
         self.queries.max_raw = value
         return value
 
-    def _repeat(self, boundary: Boundary, count: int, *, direction: Literal["step", "back"]) -> DebuggerActionResult:
+    def _repeat(
+        self, boundary: Boundary, count: int, *, direction: Literal["step", "back"],
+    ) -> DebuggerActionResult:
+        """Repeat a directional action until completion count or early stop."""
         if count <= 0:
             raise ValueError("count must be positive")
         total_raw_delta = 0
@@ -189,6 +175,7 @@ class DebuggerSession:
         )
 
     def _group_step(self, boundary: Boundary):
+        """Dispatch one grouped forward step to the matching runner method."""
         if boundary == "routine":
             return self.runner.step_to_next_routine(max_raw=self.max_raw)
         if boundary == "instruction":
@@ -200,6 +187,7 @@ class DebuggerSession:
         raise ValueError(f"unknown boundary: {boundary}")
 
     def _group_back(self, boundary: Boundary):
+        """Dispatch one grouped rewind to the matching runner method."""
         if boundary == "routine":
             return self.runner.back_to_previous_routine()
         if boundary == "instruction":
@@ -211,6 +199,7 @@ class DebuggerSession:
         raise ValueError(f"unknown boundary: {boundary}")
 
     def _refresh_queries(self) -> None:
+        """Rebuild the fact/query layer after runner state changes."""
         self.facts.rebuild_from_trace()
         self.queries.max_raw = self.max_raw
 

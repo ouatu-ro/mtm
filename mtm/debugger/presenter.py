@@ -8,28 +8,7 @@ shape output, while the queries and help metadata supply the content.
 from __future__ import annotations
 
 from .help import COMMAND_SPECS, FIELD_DOCS, OUTPUT_LEGEND, canonical_topic, command_spec
-from .presentation import (
-    ActionBlock,
-    Document,
-    Field,
-    InstructionBlock,
-    MessageBlock,
-    RecordBlock,
-    ROLE_HELP,
-    ROLE_INSTRUCTION,
-    ROLE_RAW,
-    ROLE_SEMANTIC,
-    ROLE_SOURCE,
-    ROLE_STATUS,
-    ROLE_TAPE,
-    ROLE_TRANSITION,
-    ROLE_WARNING,
-    StatusBlock,
-    TableBlock,
-    TapeBlock,
-    TapeCell,
-    TransitionBlock,
-)
+from .presentation import ActionBlock, Document, Field, InstructionBlock, MessageBlock, RecordBlock, ROLE_HELP, ROLE_INSTRUCTION, ROLE_RAW, ROLE_SEMANTIC, ROLE_SOURCE, ROLE_STATUS, ROLE_TAPE, ROLE_TRANSITION, ROLE_WARNING, StatusBlock, TableBlock, TapeBlock, TapeCell, TransitionBlock
 from .queries import ActionRow, SourceRow, StatusRow, ViewRow, WhereRow
 
 
@@ -38,7 +17,6 @@ class DebuggerPresenter:
 
     def startup_doc(self, *, fixture_name: str, status: StatusRow) -> Document:
         """Build the first document shown when the debugger starts."""
-
         return Document(
             kind="startup",
             title=f"MTM debugger  fixture={fixture_name}  type `help` for commands",
@@ -47,77 +25,60 @@ class DebuggerPresenter:
 
     def status_doc(self, row: StatusRow) -> Document:
         """Build the compact status document."""
-
         return Document(kind="status", blocks=self._status_blocks(row))
 
     def where_doc(self, row: WhereRow) -> Document:
         """Build the source-location document for ``where`` output."""
-
-        blocks = [*self._source_blocks(row.source), self._transition_block("NEXT ROW", row.next_row)]
-        return Document(kind="where", blocks=tuple(blocks))
+        return Document(
+            kind="where",
+            blocks=(*self._source_blocks(row.source), self._transition_block("NEXT ROW", row.next_row)),
+        )
 
     def action_doc(self, row: ActionRow) -> Document:
         """Build the document shown after a step or rewind command."""
-
-        blocks = [
-            ActionBlock(
-                verb=row.verb,
-                boundary=row.boundary,
-                status=row.status,
-                raw_delta=row.raw_delta,
-                count_completed=row.count_completed,
-                count_requested=row.count_requested,
+        return Document(
+            kind="action",
+            blocks=(
+                ActionBlock(
+                    verb=row.verb, boundary=row.boundary, status=row.status, raw_delta=row.raw_delta,
+                    count_completed=row.count_completed, count_requested=row.count_requested,
+                ),
+                self._raw_block(row.snapshot), *self._source_blocks(row.source),
+                self._transition_block("NEXT ROW", row.next_row),
             ),
-            self._raw_block(row.snapshot),
-            *self._source_blocks(row.source),
-            self._transition_block("NEXT ROW", row.next_row),
-        ]
-        return Document(kind="action", blocks=tuple(blocks))
+        )
 
     def view_doc(self, row: ViewRow) -> Document:
         """Build the full debugging view with raw, source, tape, and semantic data."""
-
-        blocks = [
-            StatusBlock(
-                run_status=row.status.snapshot.run_status,
-                raw=row.status.snapshot.raw,
-                max_raw=row.status.snapshot.max_raw,
-                hist_current=row.status.snapshot.hist_current,
-                hist_last=row.status.snapshot.hist_last,
+        return Document(
+            kind="view",
+            blocks=(
+                StatusBlock(
+                    run_status=row.status.snapshot.run_status, raw=row.status.snapshot.raw,
+                    max_raw=row.status.snapshot.max_raw, hist_current=row.status.snapshot.hist_current,
+                    hist_last=row.status.snapshot.hist_last,
+                ),
+                self._raw_block(row.status.snapshot), *self._source_blocks(row.status.source),
+                self._transition_block("NEXT ROW", row.next_row),
+                self._transition_block("LAST ROW", row.last_row),
+                TapeBlock(
+                    title="RAW TAPE",
+                    cells=tuple(TapeCell(cell.address, cell.symbol) for cell in row.raw_tape.cells),
+                    head=row.raw_tape.head,
+                    role=ROLE_TAPE,
+                ),
+                *self._semantic_blocks(row),
             ),
-            self._raw_block(row.status.snapshot),
-            *self._source_blocks(row.status.source),
-            self._transition_block("NEXT ROW", row.next_row),
-            self._transition_block("LAST ROW", row.last_row),
-            TapeBlock(
-                title="RAW TAPE",
-                cells=tuple(TapeCell(cell.address, cell.symbol) for cell in row.raw_tape.cells),
-                head=row.raw_tape.head,
-                role=ROLE_TAPE,
-            ),
-            *self._semantic_blocks(row),
-        ]
-        return Document(kind="view", blocks=tuple(blocks))
+        )
 
     def help_doc(self, topic: str | None = None) -> Document | None:
         """Build global or topic-specific help, or return ``None`` for unknown topics."""
-
         if topic is None or not topic.strip():
             rows = tuple((spec.usage, ", ".join(spec.aliases) or "-", spec.summary) for spec in COMMAND_SPECS)
             legend_blocks = [MessageBlock(text="Visual Legend:", role=ROLE_HELP)]
-            legend_blocks.extend(
-                RecordBlock(title=label, fields=(Field("body", body),), role=ROLE_HELP) for label, body in OUTPUT_LEGEND
-            )
+            legend_blocks.extend(RecordBlock(title=label, fields=(Field("body", body),), role=ROLE_HELP) for label, body in OUTPUT_LEGEND)
             field_lines = "\n".join(f"  {name:<7}= {doc}" for name, doc in FIELD_DOCS)
-            return Document(
-                kind="help",
-                title="MTM debugger",
-                blocks=(
-                    TableBlock(headers=("Command", "Alias", "Meaning"), rows=rows, role=ROLE_HELP),
-                    *legend_blocks,
-                    MessageBlock(text=f"Fields:\n{field_lines}", role=ROLE_HELP),
-                ),
-            )
+            return Document(kind="help", title="MTM debugger", blocks=(TableBlock(headers=("Command", "Alias", "Meaning"), rows=rows, role=ROLE_HELP), *legend_blocks, MessageBlock(text=f"Fields:\n{field_lines}", role=ROLE_HELP)))
 
         canonical = canonical_topic(topic)
         if canonical is None:
@@ -128,22 +89,9 @@ class DebuggerPresenter:
             details = "\n".join(spec.details)
             output_lines = None
             if canonical.startswith("step") or canonical.startswith("back") or canonical in {"status", "view", "where"}:
-                output_lines = "\n".join(
-                    [
-                        "Output:",
-                        "  RAW          raw=<step>  head=<raw tape head>  read='<symbol>'  state=<raw TM state>",
-                        "  SOURCE       block=<block>  instr=<instruction index>  routine=<lowering routine>  op=<sub-step>",
-                        "  INSTRUCTION  OPCODE <ARGS>",
-                        "  NEXT ROW     state=<row state>  read='<symbol>'  write='<symbol>'  move=<L|R|S>  next=<next raw state>",
-                    ]
-                )
+                output_lines = "\n".join(["Output:", "  RAW          raw=<step>  head=<raw tape head>  read='<symbol>'  state=<raw TM state>", "  SOURCE       block=<block>  instr=<instruction index>  routine=<lowering routine>  op=<sub-step>", "  INSTRUCTION  OPCODE <ARGS>", "  NEXT ROW     state=<row state>  read='<symbol>'  write='<symbol>'  move=<L|R|S>  next=<next raw state>"])
             field_lines = "\n".join(f"  {name:<7}= {doc}" for name, doc in FIELD_DOCS)
-            blocks = [
-                MessageBlock(text=spec.name, role=ROLE_HELP),
-                MessageBlock(text=f"usage: {spec.usage}", role=ROLE_HELP),
-                MessageBlock(text=f"alias: {', '.join(spec.aliases) if spec.aliases else '-'}", role=ROLE_HELP),
-                MessageBlock(text=spec.summary, role=ROLE_HELP),
-            ]
+            blocks = [MessageBlock(text=spec.name, role=ROLE_HELP), MessageBlock(text=f"usage: {spec.usage}", role=ROLE_HELP), MessageBlock(text=f"alias: {', '.join(spec.aliases) if spec.aliases else '-'}", role=ROLE_HELP), MessageBlock(text=spec.summary, role=ROLE_HELP)]
             if details:
                 blocks.append(MessageBlock(text=details, role=ROLE_HELP))
             if output_lines is not None:
@@ -161,14 +109,10 @@ class DebuggerPresenter:
     def _status_blocks(self, row: StatusRow) -> tuple[object, ...]:
         return (
             StatusBlock(
-                run_status=row.snapshot.run_status,
-                raw=row.snapshot.raw,
-                max_raw=row.snapshot.max_raw,
-                hist_current=row.snapshot.hist_current,
-                hist_last=row.snapshot.hist_last,
+                run_status=row.snapshot.run_status, raw=row.snapshot.raw, max_raw=row.snapshot.max_raw,
+                hist_current=row.snapshot.hist_current, hist_last=row.snapshot.hist_last,
             ),
-            self._raw_block(row.snapshot),
-            *self._source_blocks(row.source),
+            self._raw_block(row.snapshot), *self._source_blocks(row.source),
         )
 
     @staticmethod
@@ -176,10 +120,8 @@ class DebuggerPresenter:
         return RecordBlock(
             title="RAW",
             fields=(
-                Field("raw", snapshot.raw, role=ROLE_RAW),
-                Field("head", snapshot.head, role=ROLE_RAW),
-                Field("read", snapshot.read_symbol, role=ROLE_RAW),
-                Field("state", snapshot.state, role=ROLE_RAW),
+                Field("raw", snapshot.raw, role=ROLE_RAW), Field("head", snapshot.head, role=ROLE_RAW),
+                Field("read", snapshot.read_symbol, role=ROLE_RAW), Field("state", snapshot.state, role=ROLE_RAW),
             ),
             role=ROLE_RAW,
         )
@@ -192,34 +134,20 @@ class DebuggerPresenter:
             RecordBlock(
                 title="SOURCE",
                 fields=(
-                    Field("block", source.block, role=ROLE_SOURCE),
-                    Field("instr", source.instr, role=ROLE_SOURCE),
-                    Field("routine", source.routine, role=ROLE_SOURCE),
-                    Field("op", source.op, role=ROLE_SOURCE),
+                    Field("block", source.block, role=ROLE_SOURCE), Field("instr", source.instr, role=ROLE_SOURCE),
+                    Field("routine", source.routine, role=ROLE_SOURCE), Field("op", source.op, role=ROLE_SOURCE),
                 ),
                 role=ROLE_SOURCE,
             ),
             InstructionBlock(
-                title="INSTRUCTION",
-                opcode=source.opcode,
-                args=source.args,
-                explanation=source.explanation,
-                role=ROLE_INSTRUCTION,
+                title="INSTRUCTION", opcode=source.opcode, args=source.args,
+                explanation=source.explanation, role=ROLE_INSTRUCTION,
             ),
         )
 
     @staticmethod
     def _transition_block(title, row) -> TransitionBlock:
-        return TransitionBlock(
-            title=title,
-            present=row.present,
-            state=row.state,
-            read_symbol=row.read_symbol,
-            write_symbol=row.write_symbol,
-            move=row.move,
-            next_state=row.next_state,
-            role=ROLE_TRANSITION,
-        )
+        return TransitionBlock(title=title, present=row.present, state=row.state, read_symbol=row.read_symbol, write_symbol=row.write_symbol, move=row.move, next_state=row.next_state, role=ROLE_TRANSITION)
 
     @staticmethod
     def _semantic_blocks(row: ViewRow) -> tuple[object, ...]:

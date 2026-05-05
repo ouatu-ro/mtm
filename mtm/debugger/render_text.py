@@ -7,33 +7,21 @@ line-oriented text for terminals, logs, and tests.
 from __future__ import annotations
 
 from ..pretty import table
-from .presentation import (
-    ActionBlock,
-    Document,
-    Field,
-    InstructionBlock,
-    MessageBlock,
-    RecordBlock,
-    StatusBlock,
-    TableBlock,
-    TapeBlock,
-    TransitionBlock,
-)
+from .presentation import ActionBlock, Document, Field, InstructionBlock, MessageBlock, RecordBlock, StatusBlock, TableBlock, TapeBlock, TransitionBlock
 
 
 class PlainTextRenderer:
-    """Render presentation documents into deterministic line-oriented text.
+    """Render debugger documents into stable line-oriented plain text.
 
-    This is the lowest-friction renderer: it keeps the same document model as
-    the richer terminal view, but emits stable plain text that is easy to read
-    in tests, logs, and non-interactive sessions.
+    This is the lowest-friction renderer: it keeps the same shared document
+    model as the richer terminal view, but emits deterministic text that is
+    easy to read in tests, logs, and non-interactive sessions.
     """
 
     LABEL_WIDTH = 12
 
     def render(self, document: Document) -> str:
         """Render one presentation document into plain text."""
-
         lines: list[str] = []
         if document.title is not None:
             lines.append(document.title)

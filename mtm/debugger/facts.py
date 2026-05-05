@@ -20,7 +20,6 @@ from .trace import RawTraceRunner, RawTraceSnapshot
 @dataclass(frozen=True)
 class SnapshotFact:
     """One raw-history snapshot, reduced to the fields the debugger displays."""
-
     step: int
     state: str
     head: int
@@ -30,7 +29,6 @@ class SnapshotFact:
 @dataclass(frozen=True)
 class EventFact:
     """One executed raw transition row from the runner history."""
-
     step: int
     state: str
     read_symbol: str
@@ -42,7 +40,6 @@ class EventFact:
 @dataclass(frozen=True)
 class SourceFact:
     """The source-level location and decoded instruction for one raw row."""
-
     step: int
     block: str | None
     instr: str | None
@@ -59,7 +56,6 @@ class SourceFact:
 @dataclass(frozen=True)
 class TransitionFact:
     """The raw transition row that will execute next, if one exists."""
-
     present: bool
     state: str | None
     read_symbol: str | None
@@ -71,7 +67,6 @@ class TransitionFact:
 @dataclass(frozen=True)
 class TapeCellFact:
     """One address/symbol pair from a debugger tape window."""
-
     address: int
     symbol: str
 
@@ -79,7 +74,6 @@ class TapeCellFact:
 @dataclass(frozen=True)
 class TapeWindowFact:
     """A small tape slice centered on the current head position."""
-
     head: int
     cells: tuple[TapeCellFact, ...]
 
@@ -87,7 +81,6 @@ class TapeWindowFact:
 @dataclass(frozen=True)
 class SemanticFact:
     """Decoded universal-machine state for the simulated source machine."""
-
     status: str
     state: str | None = None
     head: int | None = None
@@ -121,7 +114,6 @@ class TraceFacts:
 
     def rebuild_from_trace(self) -> None:
         """Refresh every derived fact from the runner's current trace state."""
-
         self.cursor = self.runner.history_cursor
         self.latest_history_index = self.runner.latest_history_index
         self.run_status = self.runner.run_status
@@ -160,13 +152,11 @@ class TraceFacts:
 
     def set_encoding(self, encoding: Encoding | None) -> None:
         """Change the semantic decoder and immediately rebuild derived facts."""
-
         self.encoding = encoding
         self.rebuild_from_trace()
 
     def set_windows(self, *, raw_window: int | None = None, semantic_window: int | None = None) -> None:
         """Adjust the raw or semantic tape window sizes and rebuild facts."""
-
         if raw_window is not None:
             self.raw_window = raw_window
         if semantic_window is not None:
@@ -184,31 +174,16 @@ class TraceFacts:
     def _source_fact(self, step: int, source: RawTransitionSource | None) -> SourceFact:
         if source is None:
             return SourceFact(
-                step=step,
-                block=None,
-                instr=None,
-                routine_index=None,
-                routine_name=None,
-                op=None,
-                instruction_text=None,
-                explanation=None,
-                opcode=None,
-                args=(),
-                mapped=False,
+                step=step, block=None, instr=None, routine_index=None, routine_name=None, op=None,
+                instruction_text=None, explanation=None, opcode=None, args=(), mapped=False,
             )
         opcode, args = _split_instruction_text(source.instruction_text)
         return SourceFact(
-            step=step,
-            block=source.block_label,
+            step=step, block=source.block_label,
             instr="setup" if source.instruction_index is None else str(source.instruction_index),
-            routine_index=source.routine_index,
-            routine_name=source.routine_name,
-            op=source.op_index,
-            instruction_text=source.instruction_text,
-            explanation=explain_meta_instruction(source.instruction),
-            opcode=opcode,
-            args=args,
-            mapped=True,
+            routine_index=source.routine_index, routine_name=source.routine_name, op=source.op_index,
+            instruction_text=source.instruction_text, explanation=explain_meta_instruction(source.instruction),
+            opcode=opcode, args=args, mapped=True,
         )
 
     @staticmethod
@@ -218,12 +193,8 @@ class TraceFacts:
         state, read_symbol = key
         next_state, write_symbol, move = row
         return TransitionFact(
-            present=True,
-            state=state,
-            read_symbol=read_symbol,
-            write_symbol=write_symbol,
-            move=move,
-            next_state=next_state,
+            present=True, state=state, read_symbol=read_symbol,
+            write_symbol=write_symbol, move=move, next_state=next_state,
         )
 
     @staticmethod
@@ -231,12 +202,8 @@ class TraceFacts:
         if event is None:
             return TransitionFact(False, None, None, None, None, None)
         return TransitionFact(
-            present=True,
-            state=event.state,
-            read_symbol=event.read_symbol,
-            write_symbol=event.write_symbol,
-            move=event.move,
-            next_state=event.next_state,
+            present=True, state=event.state, read_symbol=event.read_symbol,
+            write_symbol=event.write_symbol, move=event.move, next_state=event.next_state,
         )
 
     def _tape_window(self, snapshot: RawTraceSnapshot) -> TapeWindowFact:
@@ -278,19 +245,12 @@ class TraceFacts:
         )
         registers = decoded_view.registers
         return SemanticFact(
-            status="available",
-            state=decoded_view.current_state,
-            head=head,
-            symbol=cells.get(head, decoded_view.simulated_tape.blank),
-            tape=tape,
+            status="available", state=decoded_view.current_state, head=head,
+            symbol=cells.get(head, decoded_view.simulated_tape.blank), tape=tape,
             registers=(
-                ("cur", registers.cur_state),
-                ("read", registers.cur_symbol),
-                ("write", registers.write_symbol),
-                ("next", registers.next_state),
-                ("move", _format_move(registers.move_dir)),
-                ("cmp", registers.cmp_flag),
-                ("tmp", "".join(registers.tmp_bits) or "-"),
+                ("cur", registers.cur_state), ("read", registers.cur_symbol), ("write", registers.write_symbol),
+                ("next", registers.next_state), ("move", _format_move(registers.move_dir)),
+                ("cmp", registers.cmp_flag), ("tmp", "".join(registers.tmp_bits) or "-"),
             ),
         )
 

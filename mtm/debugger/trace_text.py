@@ -13,8 +13,6 @@ from .trace import RawTraceGroupStepResult, RawTraceView
 
 
 def format_source_location(source: RawTransitionSource | None, *, label: str = "source") -> str:
-    """Format lowered source metadata into a short human-readable block."""
-
     if source is None:
         return f"{label}: <unmapped>"
 
@@ -36,8 +34,6 @@ def format_trace_view(
     semantic_window: int = 2,
     blank_symbol: str = ".",
 ) -> str:
-    """Format a raw debugger view and append a semantic summary when possible."""
-
     lines = [
         f"snapshot: step={view.snapshot.steps} state={view.snapshot.state!r} head={view.snapshot.head}",
         f"raw tape: {_format_sparse_tape(view.snapshot.tape, head=view.snapshot.head, radius=raw_window, blank_symbol=blank_symbol)}",
@@ -75,8 +71,6 @@ def format_group_step_result(
     *,
     source: RawTransitionSource | None = None,
 ) -> str:
-    """Format one grouped-step result for concise teaching output."""
-
     lines = [
         f"group step: status={result.status} raw_steps={result.raw_steps}",
         f"snapshot: step={result.snapshot.steps} state={result.snapshot.state!r} head={result.snapshot.head}",

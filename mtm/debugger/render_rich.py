@@ -12,25 +12,14 @@ from rich.console import Console, Group
 from rich.table import Table
 from rich.text import Text
 
-from .presentation import (
-    ActionBlock,
-    Document,
-    Field,
-    InstructionBlock,
-    MessageBlock,
-    RecordBlock,
-    StatusBlock,
-    TableBlock,
-    TapeBlock,
-    TransitionBlock,
-)
+from .presentation import ActionBlock, Document, Field, InstructionBlock, MessageBlock, RecordBlock, StatusBlock, TableBlock, TapeBlock, TransitionBlock
 
 
 class RichRenderer:
-    """Render presentation documents into ANSI-colored terminal text with Rich.
+    """Render debugger documents into ANSI-colored terminal text with Rich.
 
-    It preserves the same structured debugger document model as the plain-text
-    renderer, but adds color and richer terminal layout when a TTY is present.
+    This renderer preserves the same document model as the plain-text path,
+    but adds semantic color and table layout for interactive shells.
     """
 
     LABEL_WIDTH = 12
@@ -40,7 +29,6 @@ class RichRenderer:
 
     def render(self, document: Document) -> str:
         """Render one presentation document to ANSI-colored terminal text."""
-
         buffer = StringIO()
         console = Console(
             file=buffer,

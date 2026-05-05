@@ -11,7 +11,6 @@ engine. Recursive/LFP-style query evaluation is intentionally deferred; see
 future backend boundary.
 """
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,7 +21,6 @@ from .facts import SemanticFact, SnapshotFact, SourceFact, TapeWindowFact, Trace
 @dataclass(frozen=True)
 class SnapshotRow:
     """Compact runner status with the current raw-history position."""
-
     run_status: str
     raw: int
     max_raw: int
@@ -36,7 +34,6 @@ class SnapshotRow:
 @dataclass(frozen=True)
 class SourceRow:
     """Source-level metadata for the currently selected raw row."""
-
     mapped: bool
     block: str | None
     instr: str | None
@@ -50,7 +47,6 @@ class SourceRow:
 @dataclass(frozen=True)
 class TransitionRow:
     """The next or last raw transition row in display-friendly form."""
-
     present: bool
     state: str | None
     read_symbol: str | None
@@ -62,7 +58,6 @@ class TransitionRow:
 @dataclass(frozen=True)
 class StatusRow:
     """The paired snapshot and source rows used by compact status views."""
-
     snapshot: SnapshotRow
     source: SourceRow
 
@@ -70,7 +65,6 @@ class StatusRow:
 @dataclass(frozen=True)
 class WhereRow:
     """Source location plus the next raw transition that would execute."""
-
     source: SourceRow
     next_row: TransitionRow
 
@@ -78,7 +72,6 @@ class WhereRow:
 @dataclass(frozen=True)
 class ViewRow:
     """Full debugger view row combining status, tape, and semantic state."""
-
     status: StatusRow
     next_row: TransitionRow
     last_row: TransitionRow
@@ -89,7 +82,6 @@ class ViewRow:
 @dataclass(frozen=True)
 class ActionRow:
     """A grouped step or rewind action with the row that ended the action."""
-
     verb: str
     boundary: str
     status: str
@@ -114,7 +106,6 @@ class DebuggerQueries:
 
     def status(self) -> StatusRow:
         """Return the compact row set used by ``status`` output."""
-
         return StatusRow(
             snapshot=self._snapshot_row(self.facts.current_snapshot),
             source=self._source_row(self.facts.display_source),
@@ -122,7 +113,6 @@ class DebuggerQueries:
 
     def where(self) -> WhereRow:
         """Return the source location and next raw row for ``where`` output."""
-
         return WhereRow(
             source=self._source_row(self.facts.display_source),
             next_row=self._transition_row(self.facts.next_transition),
@@ -130,7 +120,6 @@ class DebuggerQueries:
 
     def view(self) -> ViewRow:
         """Return the full row set used by ``view`` output."""
-
         return ViewRow(
             status=self.status(),
             next_row=self._transition_row(self.facts.next_transition),
@@ -140,38 +129,23 @@ class DebuggerQueries:
         )
 
     def action(
-        self,
-        *,
-        verb: str,
-        boundary: str,
-        status: str,
-        raw_delta: int,
-        count_completed: int,
-        count_requested: int,
+        self, *, verb: str, boundary: str, status: str, raw_delta: int,
+        count_completed: int, count_requested: int,
     ) -> ActionRow:
         """Return the row set for a completed step or rewind action."""
-
         status_row = self.status()
         return ActionRow(
-            verb=verb,
-            boundary=boundary,
-            status=status,
-            raw_delta=raw_delta,
-            count_completed=count_completed,
-            count_requested=count_requested,
-            snapshot=status_row.snapshot,
-            source=status_row.source,
-            next_row=self._transition_row(self.facts.next_transition),
+            verb=verb, boundary=boundary, status=status, raw_delta=raw_delta,
+            count_completed=count_completed, count_requested=count_requested,
+            snapshot=status_row.snapshot, source=status_row.source, next_row=self._transition_row(self.facts.next_transition),
         )
 
     def next_boundary(self, kind: str, after: int) -> int | None:
         """Find the next raw cursor where the selected boundary changes."""
-
         return self._find_boundary(kind, start=max(after + 1, 0), stop=self.facts.latest_history_index + 1, step=1)
 
     def previous_boundary(self, kind: str, before: int) -> int | None:
         """Find the previous raw cursor where the selected boundary changes."""
-
         return self._find_boundary(kind, start=min(before - 1, self.facts.latest_history_index), stop=-1, step=-1)
 
     def _find_boundary(self, kind: str, *, start: int, stop: int, step: int) -> int | None:
@@ -187,8 +161,7 @@ class DebuggerQueries:
     def _display_source_for_cursor(self, cursor: int) -> SourceRow:
         current = self.facts.runner._snapshots[cursor]
         key = None if current.state == self.facts.runner.program.halt_state else (
-            current.state,
-            current.tape.get(current.head, self.facts.runner.program.blank),
+            current.state, current.tape.get(current.head, self.facts.runner.program.blank)
         )
         source = None if key is None or self.facts.runner.source_map is None else self.facts.runner.source_map.lookup(*key)
         if source is None and cursor > 0:

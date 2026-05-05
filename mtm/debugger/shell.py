@@ -24,11 +24,11 @@ BOUNDARIES = {"raw", "routine", "instruction", "block", "source"}
 
 
 class DebuggerShell(cmd.Cmd):
-    """Interactive debugger shell for stepping through traced TM execution.
+    """Interactive REPL wrapper around the debugger session.
 
-    The shell handles command parsing, aliases, and output routing. It does
-    not own the debugger logic itself; that stays in the session and presenter
-    layers so the interactive surface remains thin and testable.
+    The shell is intentionally thin: it parses command/alias syntax, asks the
+    session for data, and renders documents through the presenter and the
+    selected renderer. It does not own debugger semantics itself.
     """
 
     prompt = "mtmdbg> "
@@ -42,8 +42,6 @@ class DebuggerShell(cmd.Cmd):
         presenter: DebuggerPresenter | None = None,
         renderer: PlainTextRenderer | None = None,
     ) -> None:
-        """Build a shell around an existing session and optional presentation stack."""
-
         super().__init__(stdin=stdin, stdout=stdout)
         self.session = session
         self.presenter = DebuggerPresenter() if presenter is None else presenter
@@ -51,13 +49,10 @@ class DebuggerShell(cmd.Cmd):
         self.use_rawinput = stdin is None and stdout is None
 
     def emptyline(self) -> bool:
-        """Ignore blank lines instead of repeating the previous command."""
-
         return False
 
     def default(self, line: str) -> None:
         """Handle unknown commands and ``?`` help shortcuts."""
-
         if line == "?":
             self.do_help("")
             return
@@ -69,27 +64,22 @@ class DebuggerShell(cmd.Cmd):
 
     def render_startup(self, fixture_name: str) -> str:
         """Render the startup banner for a named debugger fixture."""
-
         return self.renderer.render(self.presenter.startup_doc(fixture_name=fixture_name, status=self.session.status()))
 
     def do_status(self, arg: str) -> None:
-        """Print the current debugger status."""
-
+        """Show the compact debugger status view."""
         self._write_doc(self.presenter.status_doc(self.session.status()))
 
     def do_view(self, arg: str) -> None:
-        """Print the current debugger view."""
-
+        """Show the full raw/source/semantic debugger view."""
         self._write_doc(self.presenter.view_doc(self.session.view()))
 
     def do_where(self, arg: str) -> None:
-        """Print the current source-location explanation."""
-
+        """Show the current source location and next raw row."""
         self._write_doc(self.presenter.where_doc(self.session.where()))
 
     def do_step(self, arg: str) -> None:
-        """Step forward across a boundary and print the resulting action."""
-
+        """Advance at a named boundary, optionally repeating ``N`` times."""
         parsed = self._parse_boundary_and_count(arg, usage=STEP_USAGE)
         if parsed is None:
             return
@@ -97,8 +87,7 @@ class DebuggerShell(cmd.Cmd):
         self._write_doc(self.presenter.action_doc(self.session.step_many(boundary, count)))
 
     def do_back(self, arg: str) -> None:
-        """Step backward across a boundary and print the resulting action."""
-
+        """Rewind at a named boundary, optionally repeating ``N`` times."""
         parsed = self._parse_boundary_and_count(arg, usage=BACK_USAGE)
         if parsed is None:
             return
@@ -106,8 +95,7 @@ class DebuggerShell(cmd.Cmd):
         self._write_doc(self.presenter.action_doc(self.session.back_many(boundary, count)))
 
     def do_set(self, arg: str) -> None:
-        """Update debugger settings from the command line."""
-
+        """Update debugger settings such as the grouped-step raw guard."""
         parts = arg.split()
         if len(parts) != 2:
             self._write(SET_USAGE)
@@ -130,8 +118,7 @@ class DebuggerShell(cmd.Cmd):
         self._write(f"max_raw={self.session.set_max_raw(value)}")
 
     def do_help(self, arg: str) -> None:
-        """Print general help or a specific help topic."""
-
+        """Print general help or one specific help topic."""
         topic = " ".join(arg.split())
         document = self.presenter.help_doc(topic or None)
         if document is None:
@@ -145,7 +132,6 @@ class DebuggerShell(cmd.Cmd):
 
     def do_quit(self, arg: str) -> bool:
         """Exit the debugger shell."""
-
         return True
 
     def do_q(self, arg: str) -> bool:
@@ -192,21 +178,21 @@ class DebuggerShell(cmd.Cmd):
 
     def do_EOF(self, arg: str) -> bool:
         """Exit when the input stream ends."""
-
         return True
 
     def format_output(self, text: str) -> str:
         """Allow subclasses to post-process rendered output."""
-
         return text
 
     def _default_renderer(self, stdout):
+        """Choose Rich for interactive TTY output and plain text otherwise."""
         target = stdout if stdout is not None else sys.stdout
         is_tty = getattr(target, "isatty", lambda: False)()
         color_enabled = is_tty and "NO_COLOR" not in os.environ
         return RichRenderer(color=True) if color_enabled else PlainTextRenderer()
 
     def _parse_boundary_and_count(self, arg: str, *, usage: str) -> tuple[str, int] | None:
+        """Parse ``boundary [N]`` command tails shared by step/back commands."""
         parts = arg.split()
         if not parts:
             self._write(usage)
@@ -239,9 +225,11 @@ class DebuggerShell(cmd.Cmd):
         return boundary if not stripped else f"{boundary} {stripped}"
 
     def _write_doc(self, document) -> None:
+        """Render one shared debugger document and write it to stdout."""
         self._write(self.renderer.render(document))
 
     def _write(self, text: str) -> None:
+        """Write one logical debugger output block followed by a newline."""
         self.stdout.write(text)
         self.stdout.write("\n")
 
