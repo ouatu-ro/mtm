@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import cmd
+import os
+import sys
 
 from .presenter import DebuggerPresenter
+from .render_rich import RichRenderer
 from .render_text import PlainTextRenderer
 from .session import DebuggerSession
 
@@ -32,7 +35,7 @@ class DebuggerShell(cmd.Cmd):
         super().__init__(stdin=stdin, stdout=stdout)
         self.session = session
         self.presenter = DebuggerPresenter() if presenter is None else presenter
-        self.renderer = PlainTextRenderer() if renderer is None else renderer
+        self.renderer = self._default_renderer(stdout) if renderer is None else renderer
         self.use_rawinput = stdin is None and stdout is None
 
     def emptyline(self) -> bool:
@@ -158,6 +161,12 @@ class DebuggerShell(cmd.Cmd):
 
     def format_output(self, text: str) -> str:
         return text
+
+    def _default_renderer(self, stdout):
+        target = stdout if stdout is not None else sys.stdout
+        is_tty = getattr(target, "isatty", lambda: False)()
+        color_enabled = is_tty and "NO_COLOR" not in os.environ
+        return RichRenderer(color=True) if color_enabled else PlainTextRenderer()
 
     def _parse_boundary_and_count(self, arg: str, *, usage: str) -> tuple[str, int] | None:
         parts = arg.split()

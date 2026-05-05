@@ -123,6 +123,7 @@ class DebuggerPresenter:
             field_lines = "\n".join(f"  {name:<7}= {doc}" for name, doc in FIELD_DOCS)
             blocks = [
                 MessageBlock(text=spec.name, role=ROLE_HELP),
+                MessageBlock(text=f"usage: {spec.usage}", role=ROLE_HELP),
                 MessageBlock(text=f"alias: {', '.join(spec.aliases) if spec.aliases else '-'}", role=ROLE_HELP),
                 MessageBlock(text=spec.summary, role=ROLE_HELP),
             ]
@@ -134,9 +135,9 @@ class DebuggerPresenter:
             return Document(kind="help-topic", blocks=tuple(blocks))
         if canonical in {"step", "back"}:
             if canonical == "step":
-                text = "step <boundary> [N]\n\nBoundaries: raw, routine, instruction, block, source"
+                text = "step <boundary> [N]\n\nBoundaries: raw, routine, instruction, block, source\nUse `help step raw` or `help si` for boundary-specific help."
             else:
-                text = "back <boundary> [N]\n\nBoundaries: raw, routine, instruction, block, source"
+                text = "back <boundary> [N]\n\nBoundaries: raw, routine, instruction, block, source\nUse `help back raw` or `help bi` for boundary-specific help."
             return Document(kind="help-topic", blocks=(MessageBlock(text=text, role=ROLE_HELP),))
         return None
 

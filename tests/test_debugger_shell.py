@@ -4,6 +4,8 @@ from contextlib import redirect_stdout
 import io
 
 from mtm.debugger.shell import DebuggerShell
+from mtm.debugger.render_rich import RichRenderer
+from mtm.debugger.render_text import PlainTextRenderer
 
 
 def _run_command(shell: DebuggerShell, command: str) -> tuple[str, object | None]:
@@ -264,3 +266,21 @@ def test_debugger_shell_render_startup_uses_same_presenter_renderer_stack() -> N
     assert ("status", None) in session.calls
     assert presenter.calls[-1][0] == "startup_doc"
     assert renderer.calls[-1] == {"doc": "startup:incrementer:status-payload"}
+
+
+def test_debugger_shell_defaults_to_plain_text_without_tty() -> None:
+    shell = DebuggerShell(FakeSession(), stdout=io.StringIO())
+
+    assert isinstance(shell.renderer, PlainTextRenderer)
+
+
+def test_debugger_shell_defaults_to_rich_with_tty_stdout(monkeypatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    class FakeTTY(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    shell = DebuggerShell(FakeSession(), stdout=FakeTTY())
+
+    assert isinstance(shell.renderer, RichRenderer)

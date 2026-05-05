@@ -4,6 +4,7 @@ from .facts import TraceFacts
 from .help import COMMAND_SPECS, FIELD_DOCS
 from .presenter import DebuggerPresenter
 from .queries import ActionRow, DebuggerQueries, SnapshotRow, SourceRow, StatusRow, TransitionRow, ViewRow, WhereRow
+from .render_rich import RichRenderer
 from .render_text import PlainTextRenderer
 from .session import ActionStatus, Boundary, DebuggerActionResult, DebuggerSession
 from .shell import BACK_USAGE, HELP_TEXT, SET_USAGE, STEP_USAGE, DebuggerShell
@@ -24,6 +25,7 @@ __all__ = [
     "FIELD_DOCS",
     "HELP_TEXT",
     "PlainTextRenderer",
+    "RichRenderer",
     "RawTraceGroupStepResult",
     "RawTraceRunResult",
     "RawTraceRunner",
