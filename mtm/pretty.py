@@ -2,35 +2,7 @@
 
 from __future__ import annotations
 
-from .utm_band_layout import (
-    CELL,
-    CMP_FLAG,
-    CUR_STATE,
-    CUR_SYMBOL,
-    END_CELL,
-    END_FIELD,
-    END_REGS,
-    END_RULE,
-    END_RULES,
-    END_TAPE,
-    HEAD,
-    MOVE_DIR,
-    MOVE,
-    NEXT,
-    NEXT_STATE,
-    NO_HEAD,
-    RUNTIME_BLANK,
-    READ,
-    REGS,
-    RULE,
-    RULES,
-    STATE,
-    TAPE,
-    TMP,
-    WRITE,
-    WRITE_SYMBOL,
-    EncodedBand,
-)
+from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TMP, WRITE, WRITE_SYMBOL, EncodedBand
 from .source_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
@@ -225,19 +197,5 @@ def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
     return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(band, show_runtime=show_runtime)
 
 
-__all__ = [
-    "dir_name",
-    "format_bits",
-    "parse_registers",
-    "parse_rules",
-    "parse_tape",
-    "pretty_band",
-    "pretty_encoding",
-    "pretty_fixture",
-    "pretty_runtime_tape",
-    "pretty_registers",
-    "pretty_rules",
-    "pretty_tape",
-    "section",
-    "table",
-]
+__all__ = ["dir_name", "format_bits", "parse_registers", "parse_rules", "parse_tape", "pretty_band", "pretty_encoding",
+           "pretty_fixture", "pretty_runtime_tape", "pretty_registers", "pretty_rules", "pretty_tape", "section", "table"]

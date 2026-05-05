@@ -3,29 +3,7 @@
 from __future__ import annotations
 
 from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
-from .meta_asm import (
-    BranchAt,
-    BranchCmp,
-    CompareGlobalLiteral,
-    CompareGlobalLocal,
-    CopyGlobalGlobal,
-    CopyGlobalToHeadSymbol,
-    CopyHeadSymbolTo,
-    CopyLocalGlobal,
-    FindFirstRule,
-    FindHeadCell,
-    FindNextRule,
-    Goto,
-    Halt,
-    MoveSimHeadLeft,
-    MoveSimHeadRight,
-    Program,
-    Seek,
-    SeekOneOf,
-    Unimplemented,
-    WriteGlobal,
-    format_instruction,
-)
+from .meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
 from .source_encoding import encode_symbol
 
@@ -337,8 +315,4 @@ def run_meta_asm_runtime(program: Program, encoding, runtime_tape: dict[int, str
     return result["status"], result["runtime_tape"], result["trace"], result["reason"]
 
 
-__all__ = [
-    "format_meta_trace",
-    "run_meta_asm_block_runtime",
-    "run_meta_asm_runtime",
-]
+__all__ = ["format_meta_trace", "run_meta_asm_block_runtime", "run_meta_asm_runtime"]

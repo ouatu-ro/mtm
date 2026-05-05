@@ -1,27 +1,5 @@
 from mtm import load_fixture
-from mtm.lowering import (
-    ACTIVE_RULE,
-    CFGTransition,
-    HeadAt,
-    KeepWrite,
-    NameSupply,
-    ReadAny,
-    ReadAnyExcept,
-    ReadSymbol,
-    RoutineCFG,
-    ReadSymbols,
-    Routine,
-    SeekOp,
-    WriteSymbolAction,
-    assemble_cfg,
-    compile_routine,
-    instruction_sequence_to_routines,
-    lower_instruction_to_routine,
-    lower_program_to_raw_tm,
-    program_to_cfgs,
-    validate_cfg,
-    validate_program_cfgs,
-)
+from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, program_to_cfgs, validate_cfg, validate_program_cfgs
 from mtm.meta_asm import BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, Goto, Seek
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime

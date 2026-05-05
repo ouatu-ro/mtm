@@ -239,22 +239,6 @@ def encode_symbol(encoding: Encoding, symbol: str) -> tuple[str, ...]: return bi
 def encode_direction(encoding: Encoding, direction: int) -> tuple[str, ...]: return bits(encoding.direction_ids[direction], encoding.direction_width)
 
 
-__all__ = [
-    "Encoding",
-    "L",
-    "R",
-    "TMAbi",
-    "TMProgram",
-    "assign_ids",
-    "bits",
-    "build_encoding",
-    "collect_alphabet",
-    "encode_direction",
-    "encode_state",
-    "encode_symbol",
-    "infer_minimal_abi",
-    "unbits",
-    "width_for",
-    "Transition",
-    "TransitionKey",
-]
+__all__ = ["Encoding", "L", "R", "TMAbi", "TMProgram", "assign_ids", "bits", "build_encoding", "collect_alphabet",
+           "encode_direction", "encode_state", "encode_symbol", "infer_minimal_abi", "unbits", "width_for",
+           "Transition", "TransitionKey"]

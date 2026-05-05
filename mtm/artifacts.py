@@ -147,9 +147,4 @@ def read_tm(path: str | Path) -> TMTransitionProgram:
     )
 
 
-__all__ = [
-    "read_tm",
-    "read_utm_artifact",
-    "write_tm",
-    "write_utm_artifact",
-]
+__all__ = ["read_tm", "read_utm_artifact", "write_tm", "write_utm_artifact"]

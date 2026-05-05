@@ -4,45 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .utm_band_layout import (
-    CELL,
-    CMP_FLAG,
-    CUR_STATE,
-    CUR_SYMBOL,
-    END_CELL,
-    END_REGS,
-    END_RULE,
-    END_RULES,
-    HEAD,
-    MOVE,
-    MOVE_DIR,
-    NEXT,
-    NEXT_STATE,
-    NO_HEAD,
-    READ,
-    REGS,
-    RULE,
-    RULES,
-    STATE,
-    TAPE,
-    TMP,
-    WRITE,
-    WRITE_SYMBOL,
-    END_TAPE,
-    EncodedBand,
-    wrap_field,
-)
+from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RULE, RULES, STATE, TAPE, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
 from .pretty import parse_registers, parse_rules, parse_tape
 from .raw_transition_tm import TMTransitionProgram, run_raw_tm
-from .source_encoding import (
-    Encoding,
-    TMAbi,
-    TMProgram,
-    encode_direction,
-    encode_state,
-    encode_symbol,
-    infer_minimal_abi as infer_minimal_encoding_abi,
-)
+from .source_encoding import Encoding, TMAbi, TMProgram, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi
 
 
 @dataclass(frozen=True)
@@ -365,24 +330,8 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
     )
 
 
-__all__ = [
-    "DecodedBandView",
-    "TMRunConfig",
-    "TMBand",
-    "TMAbi",
-    "TMInstance",
-    "UTMEncoded",
-    "UTMProgramArtifact",
-    "UTMBandArtifact",
-    "UTMEncodedRule",
-    "UTMRegisters",
-    "UTMSimulatedTape",
-    "abi_from_encoding",
-    "decoded_view_from_encoded_band",
-    "encoded_band_from_utm_artifact",
-    "infer_minimal_abi",
-    "source_band_from_simulated_tape",
-    "start_head_from_encoded_band",
-    "utm_artifact_from_band",
-    "utm_encoded_from_band",
-]
+__all__ = ["DecodedBandView", "TMRunConfig", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
+           "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
+           "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact", "infer_minimal_abi",
+           "source_band_from_simulated_tape", "start_head_from_encoded_band", "utm_artifact_from_band",
+           "utm_encoded_from_band"]

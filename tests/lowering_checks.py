@@ -4,27 +4,7 @@ from __future__ import annotations
 
 from mtm.fixtures import TMFixture
 from mtm.lowering import ACTIVE_RULE, NameSupply, assemble_cfg, compile_routine, lower_instruction_to_routine, validate_cfg
-from mtm.meta_asm import (
-    BranchAt,
-    BranchCmp,
-    CompareGlobalLiteral,
-    CompareGlobalLocal,
-    CopyGlobalGlobal,
-    CopyGlobalToHeadSymbol,
-    CopyHeadSymbolTo,
-    CopyLocalGlobal,
-    FindFirstRule,
-    FindHeadCell,
-    FindNextRule,
-    Goto,
-    Halt,
-    MoveSimHeadLeft,
-    MoveSimHeadRight,
-    Seek,
-    SeekOneOf,
-    WriteGlobal,
-    bits,
-)
+from mtm.meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal, bits
 from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, NO_HEAD, READ, RULE, RULES, STATE, WRITE, WRITE_SYMBOL, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 

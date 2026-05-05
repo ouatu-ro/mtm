@@ -1,29 +1,11 @@
 import mtm
-from mtm import (
-    Compiler,
-    TMAbi,
-    TMBand,
-    TMInstance,
-    TMProgram,
-    load_fixture,
-    UniversalInterpreter,
-)
+from mtm import Compiler, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
 from mtm.artifacts import read_utm_artifact, write_utm_artifact
 from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import (
-    TMRunConfig,
-    UTMBandArtifact,
-    UTMProgramArtifact,
-    decoded_view_from_encoded_band,
-    encoded_band_from_utm_artifact,
-    infer_minimal_abi,
-    source_band_from_simulated_tape,
-    utm_artifact_from_band,
-    utm_encoded_from_band,
-)
+from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, source_band_from_simulated_tape, utm_artifact_from_band, utm_encoded_from_band
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
 

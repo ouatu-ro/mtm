@@ -1,29 +1,4 @@
-from mtm.meta_asm import (
-    Block,
-    BranchAt,
-    BranchCmp,
-    CompareGlobalLiteral,
-    CompareGlobalLocal,
-    CopyGlobalGlobal,
-    CopyGlobalToHeadSymbol,
-    CopyHeadSymbolTo,
-    CopyLocalGlobal,
-    FindFirstRule,
-    FindHeadCell,
-    FindNextRule,
-    Goto,
-    Halt,
-    MoveSimHeadLeft,
-    MoveSimHeadRight,
-    Program,
-    Seek,
-    SeekOneOf,
-    Unimplemented,
-    WriteGlobal,
-    bits,
-    format_instruction,
-    format_program,
-)
+from mtm.meta_asm import Block, BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, bits, format_instruction, format_program
 
 
 def test_format_instruction_preserves_all_current_spellings() -> None:

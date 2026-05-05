@@ -65,11 +65,4 @@ def load_fixture(name: str) -> TMFixture:
     return fixture
 
 
-__all__ = [
-    "TMFixture",
-    "format_tm_program",
-    "get_fixture",
-    "list_fixtures",
-    "load_fixture",
-    "load_fixture_module",
-]
+__all__ = ["TMFixture", "format_tm_program", "get_fixture", "list_fixtures", "load_fixture", "load_fixture_module"]

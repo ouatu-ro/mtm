@@ -2,37 +2,9 @@
 
 from __future__ import annotations
 
-from ..meta_asm import (
-    BranchAt,
-    BranchCmp,
-    CompareGlobalLiteral,
-    CompareGlobalLocal,
-    CopyGlobalGlobal,
-    CopyGlobalToHeadSymbol,
-    CopyHeadSymbolTo,
-    CopyLocalGlobal,
-    FindFirstRule,
-    FindHeadCell,
-    FindNextRule,
-    Goto,
-    Halt,
-    Instruction,
-    MoveSimHeadLeft,
-    MoveSimHeadRight,
-    Seek,
-    SeekOneOf,
-    WriteGlobal,
-)
+from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
 from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, WRITE_SYMBOL
-from .combinators import (
-    branch_bit_at_offset,
-    emit_expected_bit_branch,
-    move_steps,
-    seek,
-    seek_then_write_bit_at_offset,
-    write_bit_at_offset,
-    write_current_bit,
-)
+from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
 from .constants import ACTIVE_RULE, L, Label, R, S, global_direction
 from .contracts import HeadAt, HeadAtOneOf, HeadOnRuntimeTape
 from .ops import EmitAllOp, EmitAnyExceptOp, EmitOp, BranchAtOp
