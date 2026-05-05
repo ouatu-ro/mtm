@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 
 from .compiler import Compiler
@@ -17,6 +18,9 @@ from .source_file import load_python_tm_instance, source_artifact_from_python
 from .semantic_objects import RawTMInstance, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, start_head_from_encoded_band
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
+
+
+TRACE_DEFAULT_MAX_RAW = 100_000
 
 
 def _target_abi_from_args(args) -> TMAbi | None:
@@ -107,6 +111,161 @@ def _resolve_debugger_fixture_name(args) -> str:
     return args.fixture
 
 
+def _source_fields(source) -> tuple[object, object, object, object, object, object]:
+    if source is None:
+        return ("", "", "", "", "", "")
+    instruction_index = "setup" if source.instruction_index is None else source.instruction_index
+    return (
+        source.block_label,
+        instruction_index,
+        "" if source.routine_index is None else source.routine_index,
+        source.routine_name,
+        source.op_index,
+        source.instruction_text or "",
+    )
+
+
+def _build_trace_session(
+    tm_file: str | Path,
+    band_file: str | Path,
+    *,
+    max_raw: int,
+) -> DebuggerSession:
+    band_artifact = UTMBandArtifact.read(band_file)
+    program_artifact = UTMProgramArtifact.read(tm_file)
+    interpreter = UniversalInterpreter.for_encoded(band_artifact)
+    lowered = lower_program_with_source_map(
+        interpreter.to_meta_asm(),
+        interpreter.alphabet_for_band(band_artifact),
+    )
+    if lowered.raw_program.prog != program_artifact.program.prog:
+        raise SystemExit("trace requires a .tm matching the UTM lowering for BAND_FILE")
+    if lowered.raw_program.start_state != program_artifact.program.start_state:
+        raise SystemExit("trace requires matching .tm start_state")
+    if lowered.raw_program.halt_state != program_artifact.program.halt_state:
+        raise SystemExit("trace requires matching .tm halt_state")
+
+    return DebuggerSession(
+        RawTraceRunner(
+            program_artifact.program,
+            band_artifact.to_runtime_tape(),
+            head=band_artifact.start_head,
+            state=program_artifact.program.start_state,
+            source_map=lowered.source_map,
+        ),
+        encoding=band_artifact.encoding,
+        max_raw=max_raw,
+    )
+
+
+def _write_trace(args) -> int:
+    if args.max_steps <= 0:
+        raise SystemExit("--max-steps must be positive")
+    if args.max_raw <= 0:
+        raise SystemExit("--max-raw must be positive")
+
+    session = _build_trace_session(
+        args.tm_file,
+        args.band_file,
+        max_raw=args.max_raw,
+    )
+    output = Path(args.out)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    with output.open("w", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t")
+        if args.level == "raw":
+            writer.writerow([
+                "step",
+                "status",
+                "state",
+                "read",
+                "write",
+                "move",
+                "next_state",
+                "head_after",
+                "block",
+                "instruction_index",
+                "routine_index",
+                "routine_name",
+                "op_index",
+                "instruction",
+            ])
+            for _ in range(args.max_steps):
+                result = session.runner.stream_step()
+                transition = result.transition
+                if transition is None:
+                    writer.writerow([
+                        result.snapshot.steps,
+                        result.status,
+                        result.snapshot.state,
+                        "",
+                        "",
+                        "",
+                        "",
+                        result.snapshot.head,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ])
+                    break
+                writer.writerow([
+                    transition.step,
+                    result.status,
+                    transition.state,
+                    transition.read_symbol,
+                    transition.write_symbol,
+                    transition.move,
+                    transition.next_state,
+                    result.snapshot.head,
+                    *_source_fields(transition.source),
+                ])
+            return 0
+
+        writer.writerow([
+            "group",
+            "status",
+            "raw_start",
+            "raw_end",
+            "raw_delta",
+            "start_state",
+            "start_head",
+            "end_state",
+            "end_head",
+            "block",
+            "instruction_index",
+            "routine_index",
+            "routine_name",
+            "op_index",
+            "instruction",
+        ])
+        for group in range(args.max_steps):
+            start = session.runner.current
+            source = session.runner.current_transition_source
+            if args.level == "instruction":
+                result = session.runner.stream_to_next_instruction(max_raw=args.max_raw)
+            else:
+                result = session.runner.stream_to_next_block(max_raw=args.max_raw)
+            writer.writerow([
+                group,
+                result.status,
+                start.steps + 1 if result.raw_steps else start.steps,
+                result.snapshot.steps,
+                result.raw_steps,
+                start.state,
+                start.head,
+                result.snapshot.state,
+                result.snapshot.head,
+                *_source_fields(source),
+            ])
+            if result.status != "stepped":
+                break
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Compile and run MTM artifacts.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -148,6 +307,14 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("tm_file")
     run_parser.add_argument("input", nargs="?")
     run_parser.add_argument("--max-steps", type=int, default=200_000)
+
+    trace_parser = sub.add_parser("trace", help="Emit a TSV trace for a .tm program and .utm.band input.")
+    trace_parser.add_argument("tm_file")
+    trace_parser.add_argument("band_file")
+    trace_parser.add_argument("--out", required=True)
+    trace_parser.add_argument("--level", choices=("raw", "instruction", "block"), default="raw")
+    trace_parser.add_argument("--max-steps", type=int, default=100)
+    trace_parser.add_argument("--max-raw", type=int, default=TRACE_DEFAULT_MAX_RAW)
 
     dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture.")
     dbg_parser.add_argument("fixture", nargs="?")
@@ -210,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "dbg":
         return _run_fixture_debugger(_resolve_debugger_fixture_name(args))
+
+    if args.command == "trace":
+        return _write_trace(args)
 
     if args.input is None:
         raise SystemExit("run requires INPUT.utm.band")

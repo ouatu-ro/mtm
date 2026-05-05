@@ -60,6 +60,31 @@ def test_raw_trace_back_restores_previous_state_head_and_tape() -> None:
     assert runner.back() is False
 
 
+def test_raw_trace_stream_step_keeps_only_current_snapshot() -> None:
+    builder = TMBuilder(["0", "1"])
+    builder.emit("start", "0", "middle", "1", R)
+    builder.emit("middle", "1", builder.halt_state, "0", S)
+    runner = RawTraceRunner(builder.build("start"), {0: "0", 1: "1"}, head=0)
+
+    first = runner.stream_step()
+    second = runner.stream_step()
+
+    assert first.status == "stepped"
+    assert first.transition is not None
+    assert first.transition.state == "start"
+    assert second.status == "stepped"
+    assert second.transition is not None
+    assert second.transition.state == "middle"
+    assert runner.current.state == builder.halt_state
+    assert runner.current.head == 1
+    assert runner.current.steps == 2
+    assert runner.current.tape_dict() == {0: "1", 1: "0"}
+    assert runner.history_cursor == 0
+    assert runner.latest_history_index == 0
+    assert runner.last_transition is None
+    assert runner.back() is False
+
+
 def test_raw_trace_run_reports_stuck_and_fuel_exhausted() -> None:
     stuck_builder = TMBuilder(["0"])
     stuck_runner = RawTraceRunner(stuck_builder.build("start"), {0: "0"}, head=0)
@@ -124,6 +149,34 @@ def test_raw_trace_source_map_attaches_to_last_and_current_transition() -> None:
     assert next_source.routine_name == "goto"
     assert runner.current_transition_key == (next_source.state, next_source.read_symbol)
     assert next_source.state == goto_cfg.entry
+
+
+def test_raw_trace_stream_instruction_step_keeps_source_boundary_without_history() -> None:
+    program = Program(
+        blocks=(Block("ENTRY", (Seek(RULES, "R"), Goto("DONE"))),),
+        entry_label="ENTRY",
+    )
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: "0", 2: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.stream_to_next_instruction()
+
+    assert forward.status == "stepped"
+    assert forward.raw_steps == 3
+    assert runner.current.steps == 3
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "ENTRY"
+    assert runner.current_transition_source.instruction_index == 1
+    assert runner.current_transition_source.routine_name == "goto"
+    assert runner.history_cursor == 0
+    assert runner.latest_history_index == 0
+    assert runner.back() is False
 
 
 def test_raw_trace_grouped_routine_step_and_back_follow_source_boundaries() -> None:

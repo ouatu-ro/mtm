@@ -421,3 +421,63 @@ def test_cli_l2_from_wider_l1_abi_generates_coherent_band(tmp_path: Path, capsys
     ]) == 0
     output = capsys.readouterr().out
     assert "FINAL STATUS: fuel_exhausted" in output
+
+
+def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> None:
+    out_dir = tmp_path / "artifacts"
+
+    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
+
+    tm_path = out_dir / "incrementer.l1.tm"
+    band_path = out_dir / "incrementer.l1.utm.band"
+    raw_trace = out_dir / "raw.tsv"
+    instruction_trace = out_dir / "instruction.tsv"
+    block_trace = out_dir / "block.tsv"
+
+    assert cli_main([
+        "trace",
+        str(tm_path),
+        str(band_path),
+        "--level",
+        "raw",
+        "--max-steps",
+        "3",
+        "--out",
+        str(raw_trace),
+    ]) == 0
+    raw_lines = raw_trace.read_text().splitlines()
+    assert raw_lines[0].startswith("step\tstatus\tstate\tread\twrite\tmove\tnext_state")
+    assert len(raw_lines) == 4
+    assert "\tSTART_STEP\t" in raw_lines[1]
+
+    assert cli_main([
+        "trace",
+        str(tm_path),
+        str(band_path),
+        "--level",
+        "instruction",
+        "--max-steps",
+        "2",
+        "--out",
+        str(instruction_trace),
+    ]) == 0
+    instruction_lines = instruction_trace.read_text().splitlines()
+    assert instruction_lines[0].startswith("group\tstatus\traw_start\traw_end\traw_delta")
+    assert len(instruction_lines) == 3
+    assert "\tSTART_STEP\tsetup\t" in instruction_lines[1]
+
+    assert cli_main([
+        "trace",
+        str(tm_path),
+        str(band_path),
+        "--level",
+        "block",
+        "--max-steps",
+        "1",
+        "--out",
+        str(block_trace),
+    ]) == 0
+    block_lines = block_trace.read_text().splitlines()
+    assert block_lines[0].startswith("group\tstatus\traw_start\traw_end\traw_delta")
+    assert len(block_lines) == 2
+    assert "\tSTART_STEP\tsetup\t" in block_lines[1]
