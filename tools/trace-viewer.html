@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTM Raw Trace Viewer</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #f6f7f8;
+      --panel: #ffffff;
+      --text: #172026;
+      --muted: #66727c;
+      --line: #d7dde2;
+      --accent: #176f6b;
+      --changed: #ffe8a3;
+      --head: #1f7a6d;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101315;
+        --panel: #181d20;
+        --text: #e9eef2;
+        --muted: #9ba8b2;
+        --line: #30383e;
+        --accent: #45b6a9;
+        --changed: #5b4b1f;
+        --head: #42b9a8;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    main {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 100vh;
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .toolbar, .status, .details {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    label {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input[type="number"] {
+      width: 84px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+    }
+
+    input[type="file"] {
+      max-width: 220px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      min-width: 0;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .tape {
+      display: grid;
+      grid-template-columns: repeat(var(--cells), minmax(42px, 1fr));
+      gap: 4px;
+      align-items: stretch;
+      min-height: 106px;
+      overflow: hidden;
+    }
+
+    .cell {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      min-width: 0;
+      padding: 7px 4px;
+      text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .cell.changed { background: var(--changed); }
+    .cell.head { border-color: var(--head); box-shadow: inset 0 -3px 0 var(--head); }
+
+    .addr {
+      color: var(--muted);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sym {
+      margin-top: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    pre {
+      margin: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    @media (max-width: 760px) {
+      main { padding: 10px; }
+      .status, .details { grid-template-columns: 1fr; }
+      input[type="file"] { max-width: 160px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="toolbar">
+      <label>Meta JSON <input id="metaFile" type="file" accept=".json,application/json"></label>
+      <label>Raw TSV <input id="traceFile" type="file" accept=".tsv,text/tab-separated-values,text/plain"></label>
+      <button id="resetBtn">Reset</button>
+      <button id="playBtn" class="primary">Play</button>
+      <button id="step1Btn">+1</button>
+      <button id="step10Btn">+10</button>
+      <button id="step100Btn">+100</button>
+      <button id="step1000Btn">+1000</button>
+      <label>Speed <input id="speedInput" type="number" min="1" max="120" value="12"> steps/s</label>
+      <label>Cells <input id="cellsInput" type="number" min="7" max="151" value="51"></label>
+    </section>
+
+    <section class="status">
+      <div class="metric"><span>Row</span><strong id="rowMetric">0 / 0</strong></div>
+      <div class="metric"><span>State</span><strong id="stateMetric">-</strong></div>
+      <div class="metric"><span>Head</span><strong id="headMetric">-</strong></div>
+      <div class="metric"><span>Status</span><strong id="statusMetric">-</strong></div>
+      <div class="metric"><span>Blank</span><strong id="blankMetric">-</strong></div>
+    </section>
+
+    <section id="tape" class="tape" style="--cells: 51"></section>
+
+    <section class="details">
+      <pre id="transitionPanel">Load a trace meta JSON and raw TSV to begin.</pre>
+      <pre id="sourcePanel"></pre>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      meta: null,
+      rows: [],
+      tape: new Map(),
+      head: 0,
+      currentState: "",
+      status: "",
+      index: 0,
+      viewportStart: 0,
+      changedAddress: null,
+      timer: null,
+    };
+
+    const fields = {
+      metaFile: document.getElementById("metaFile"),
+      traceFile: document.getElementById("traceFile"),
+      resetBtn: document.getElementById("resetBtn"),
+      playBtn: document.getElementById("playBtn"),
+      step1Btn: document.getElementById("step1Btn"),
+      step10Btn: document.getElementById("step10Btn"),
+      step100Btn: document.getElementById("step100Btn"),
+      step1000Btn: document.getElementById("step1000Btn"),
+      speedInput: document.getElementById("speedInput"),
+      cellsInput: document.getElementById("cellsInput"),
+      rowMetric: document.getElementById("rowMetric"),
+      stateMetric: document.getElementById("stateMetric"),
+      headMetric: document.getElementById("headMetric"),
+      statusMetric: document.getElementById("statusMetric"),
+      blankMetric: document.getElementById("blankMetric"),
+      tape: document.getElementById("tape"),
+      transitionPanel: document.getElementById("transitionPanel"),
+      sourcePanel: document.getElementById("sourcePanel"),
+    };
+
+    function readFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+      });
+    }
+
+    function parseTsv(text) {
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) return [];
+      const headers = lines[0].split("\t");
+      return lines.slice(1).filter(Boolean).map((line) => {
+        const values = line.split("\t");
+        const row = {};
+        headers.forEach((header, index) => { row[header] = values[index] ?? ""; });
+        return row;
+      });
+    }
+
+    function loadInitialState() {
+      state.tape = new Map();
+      for (const [address, symbol] of Object.entries(state.meta?.initial_tape ?? {})) {
+        state.tape.set(Number(address), symbol);
+      }
+      state.head = Number(state.meta?.initial_head ?? 0);
+      state.currentState = String(state.meta?.initial_state ?? "");
+      state.status = "initial";
+      state.index = 0;
+      state.changedAddress = null;
+      state.viewportStart = state.head - Math.floor(cellCount() / 2);
+      render();
+    }
+
+    function cellCount() {
+      const value = Number(fields.cellsInput.value) || 51;
+      return Math.max(7, Math.min(151, value | 0));
+    }
+
+    function blankSymbol() {
+      return String(state.meta?.blank ?? "_");
+    }
+
+    function step(count) {
+      if (!state.meta || !state.rows.length) {
+        stop();
+        return;
+      }
+      for (let i = 0; i < count && state.index < state.rows.length; i += 1) {
+        const row = state.rows[state.index];
+        const write = row.write ?? "";
+        const beforeHead = state.head;
+        if (write !== "") state.tape.set(beforeHead, write);
+        state.changedAddress = write === "" ? null : beforeHead;
+        state.head = row.head_after === "" ? state.head : Number(row.head_after);
+        state.currentState = row.next_state || row.state || state.currentState;
+        state.status = row.status || "";
+        state.index += 1;
+      }
+      followHead();
+      render();
+      if (state.index >= state.rows.length) stop();
+    }
+
+    function followHead() {
+      const count = cellCount();
+      const leftLimit = state.viewportStart + Math.floor(count * 0.25);
+      const rightLimit = state.viewportStart + Math.floor(count * 0.75);
+      if (state.head < leftLimit || state.head > rightLimit) {
+        state.viewportStart = state.head - Math.floor(count / 2);
+      }
+    }
+
+    function play() {
+      if (!state.meta || !state.rows.length) return;
+      if (state.timer) {
+        stop();
+        return;
+      }
+      const tick = () => {
+        const speed = Math.max(1, Number(fields.speedInput.value) || 1);
+        step(1);
+        if (state.timer) {
+          state.timer = setTimeout(tick, 1000 / speed);
+        }
+      };
+      fields.playBtn.textContent = "Pause";
+      state.timer = setTimeout(tick, 0);
+    }
+
+    function stop() {
+      if (state.timer) clearTimeout(state.timer);
+      state.timer = null;
+      fields.playBtn.textContent = "Play";
+    }
+
+    function reset() {
+      stop();
+      loadInitialState();
+    }
+
+    function render() {
+      const count = cellCount();
+      fields.tape.style.setProperty("--cells", String(count));
+      fields.rowMetric.textContent = `${state.index} / ${state.rows.length}`;
+      fields.stateMetric.textContent = state.currentState || "-";
+      fields.headMetric.textContent = String(state.head);
+      fields.statusMetric.textContent = state.status || "-";
+      fields.blankMetric.textContent = blankSymbol();
+
+      fields.tape.replaceChildren();
+      for (let offset = 0; offset < count; offset += 1) {
+        const address = state.viewportStart + offset;
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        if (address === state.head) cell.classList.add("head");
+        if (address === state.changedAddress) cell.classList.add("changed");
+        const addr = document.createElement("div");
+        addr.className = "addr";
+        addr.textContent = String(address);
+        const sym = document.createElement("div");
+        sym.className = "sym";
+        sym.title = state.tape.get(address) ?? blankSymbol();
+        sym.textContent = state.tape.get(address) ?? blankSymbol();
+        cell.append(addr, sym);
+        fields.tape.append(cell);
+      }
+
+      const row = state.rows[Math.max(0, state.index - 1)];
+      fields.transitionPanel.textContent = row
+        ? `(${row.state}, ${row.read}) -> (${row.next_state}, ${row.write}, ${row.move})\nhead_after: ${row.head_after}`
+        : "Initial snapshot";
+      fields.sourcePanel.textContent = row
+        ? [
+            `block: ${row.block || "-"}`,
+            `instruction: ${row.instruction || "-"}`,
+            `routine: ${row.routine_name || "-"}`,
+            `op_index: ${row.op_index || "-"}`,
+          ].join("\n")
+        : "";
+    }
+
+    fields.metaFile.addEventListener("change", async () => {
+      const file = fields.metaFile.files?.[0];
+      if (!file) return;
+      state.meta = JSON.parse(await readFile(file));
+      loadInitialState();
+    });
+
+    fields.traceFile.addEventListener("change", async () => {
+      const file = fields.traceFile.files?.[0];
+      if (!file) return;
+      state.rows = parseTsv(await readFile(file));
+      reset();
+    });
+
+    fields.resetBtn.addEventListener("click", reset);
+    fields.playBtn.addEventListener("click", play);
+    fields.step1Btn.addEventListener("click", () => step(1));
+    fields.step10Btn.addEventListener("click", () => step(10));
+    fields.step100Btn.addEventListener("click", () => step(100));
+    fields.step1000Btn.addEventListener("click", () => step(1000));
+    fields.cellsInput.addEventListener("change", () => {
+      state.viewportStart = state.head - Math.floor(cellCount() / 2);
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -431,6 +432,7 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
     tm_path = out_dir / "incrementer.l1.tm"
     band_path = out_dir / "incrementer.l1.utm.band"
     raw_trace = out_dir / "raw.tsv"
+    raw_meta = out_dir / "raw.json"
     instruction_trace = out_dir / "instruction.tsv"
     block_trace = out_dir / "block.tsv"
 
@@ -444,11 +446,20 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
         "3",
         "--out",
         str(raw_trace),
+        "--meta-out",
+        str(raw_meta),
     ]) == 0
     raw_lines = raw_trace.read_text().splitlines()
     assert raw_lines[0].startswith("step\tstatus\tstate\tread\twrite\tmove\tnext_state")
     assert len(raw_lines) == 4
     assert "\tSTART_STEP\t" in raw_lines[1]
+    raw_meta_data = json.loads(raw_meta.read_text())
+    assert raw_meta_data["format"] == "mtm-trace-meta-v1"
+    assert raw_meta_data["level"] == "raw"
+    assert raw_meta_data["initial_state"] == "START_STEP"
+    assert isinstance(raw_meta_data["initial_head"], int)
+    assert str(raw_meta_data["initial_head"]) in raw_meta_data["initial_tape"]
+    assert raw_meta_data["initial_tape"][str(raw_meta_data["initial_head"])] == "#CUR_STATE"
 
     assert cli_main([
         "trace",

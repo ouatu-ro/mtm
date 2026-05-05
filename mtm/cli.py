@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from pathlib import Path
 
 from .compiler import Compiler
@@ -179,6 +180,31 @@ def _build_trace_session(
     )
 
 
+def _write_trace_meta(args, session: DebuggerSession, *, max_raw: int) -> None:
+    if args.meta_out is None:
+        return
+    snapshot = session.runner.current
+    meta = {
+        "format": "mtm-trace-meta-v1",
+        "tm_file": str(args.tm_file),
+        "band_file": str(args.band_file),
+        "level": args.level,
+        "max_steps": args.max_steps,
+        "max_raw": max_raw,
+        "blank": session.runner.program.blank,
+        "initial_state": snapshot.state,
+        "initial_head": snapshot.head,
+        "initial_steps": snapshot.steps,
+        "initial_tape": {
+            str(address): symbol
+            for address, symbol in sorted(snapshot.tape.items())
+        },
+    }
+    output = Path(args.meta_out)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n")
+
+
 def _write_trace(args) -> int:
     if args.max_steps <= 0:
         raise SystemExit("--max-steps must be positive")
@@ -193,6 +219,7 @@ def _write_trace(args) -> int:
         args.band_file,
         max_raw=max_raw,
     )
+    _write_trace_meta(args, session, max_raw=max_raw)
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -389,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     trace_parser.add_argument("--level", choices=("raw", "instruction", "block", "source", "guest"), default="raw")
     trace_parser.add_argument("--max-steps", type=int, default=100)
     trace_parser.add_argument("--max-raw", type=int)
+    trace_parser.add_argument("--meta-out")
 
     dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture.")
     dbg_parser.add_argument("fixture", nargs="?")
