@@ -1,4 +1,8 @@
-"""Plain-text debugger renderer over presentation documents."""
+"""Plain-text debugger renderer over presentation documents.
+
+This renderer turns the structured debugger document model into stable,
+line-oriented text for terminals, logs, and tests.
+"""
 
 from __future__ import annotations
 
@@ -18,11 +22,18 @@ from .presentation import (
 
 
 class PlainTextRenderer:
-    """Render presentation documents into deterministic line-oriented text."""
+    """Render presentation documents into deterministic line-oriented text.
+
+    This is the lowest-friction renderer: it keeps the same document model as
+    the richer terminal view, but emits stable plain text that is easy to read
+    in tests, logs, and non-interactive sessions.
+    """
 
     LABEL_WIDTH = 12
 
     def render(self, document: Document) -> str:
+        """Render one presentation document into plain text."""
+
         lines: list[str] = []
         if document.title is not None:
             lines.append(document.title)

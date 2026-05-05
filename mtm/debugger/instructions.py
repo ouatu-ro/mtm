@@ -1,4 +1,9 @@
-"""Debugger-facing descriptions of Meta-ASM instructions."""
+"""Debugger-facing descriptions of Meta-ASM instructions.
+
+The debugger does not show raw instruction objects directly. It translates
+them into short teaching sentences so a trace can explain what each Meta-ASM
+step is trying to do.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ from ..meta_asm import (
 
 
 def explain_meta_instruction(instruction) -> str | None:
-    """Return a short debugger-facing explanation for one Meta-ASM instruction."""
+    """Translate one Meta-ASM instruction into a short teaching sentence."""
 
     if instruction is None:
         return None

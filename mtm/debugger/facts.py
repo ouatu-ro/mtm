@@ -1,4 +1,10 @@
-"""In-memory debugger facts derived from a raw trace runner."""
+"""In-memory debugger facts built from a raw trace runner.
+
+This module turns the runner's live trace state into small, stable records that
+the query and presentation layers can read without reaching back into runner
+internals. The goal is to make debugger output easy to explain, test, and
+render.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +19,8 @@ from .trace import RawTraceRunner, RawTraceSnapshot
 
 @dataclass(frozen=True)
 class SnapshotFact:
+    """One raw-history snapshot, reduced to the fields the debugger displays."""
+
     step: int
     state: str
     head: int
@@ -21,6 +29,8 @@ class SnapshotFact:
 
 @dataclass(frozen=True)
 class EventFact:
+    """One executed raw transition row from the runner history."""
+
     step: int
     state: str
     read_symbol: str
@@ -31,6 +41,8 @@ class EventFact:
 
 @dataclass(frozen=True)
 class SourceFact:
+    """The source-level location and decoded instruction for one raw row."""
+
     step: int
     block: str | None
     instr: str | None
@@ -46,6 +58,8 @@ class SourceFact:
 
 @dataclass(frozen=True)
 class TransitionFact:
+    """The raw transition row that will execute next, if one exists."""
+
     present: bool
     state: str | None
     read_symbol: str | None
@@ -56,18 +70,24 @@ class TransitionFact:
 
 @dataclass(frozen=True)
 class TapeCellFact:
+    """One address/symbol pair from a debugger tape window."""
+
     address: int
     symbol: str
 
 
 @dataclass(frozen=True)
 class TapeWindowFact:
+    """A small tape slice centered on the current head position."""
+
     head: int
     cells: tuple[TapeCellFact, ...]
 
 
 @dataclass(frozen=True)
 class SemanticFact:
+    """Decoded universal-machine state for the simulated source machine."""
+
     status: str
     state: str | None = None
     head: int | None = None
@@ -78,7 +98,12 @@ class SemanticFact:
 
 
 class TraceFacts:
-    """Materialized trace facts and current read indices for one runner."""
+    """Materialize runner trace state into query-friendly fact records.
+
+    The query layer reads these cached records instead of walking the runner
+    history directly. Rebuilding is explicit so callers can refresh after the
+    runner advances, changes encoding, or changes tape window sizes.
+    """
 
     def __init__(
         self,
@@ -95,6 +120,8 @@ class TraceFacts:
         self.rebuild_from_trace()
 
     def rebuild_from_trace(self) -> None:
+        """Refresh every derived fact from the runner's current trace state."""
+
         self.cursor = self.runner.history_cursor
         self.latest_history_index = self.runner.latest_history_index
         self.run_status = self.runner.run_status
@@ -132,10 +159,14 @@ class TraceFacts:
         self.semantic = self._semantic_fact()
 
     def set_encoding(self, encoding: Encoding | None) -> None:
+        """Change the semantic decoder and immediately rebuild derived facts."""
+
         self.encoding = encoding
         self.rebuild_from_trace()
 
     def set_windows(self, *, raw_window: int | None = None, semantic_window: int | None = None) -> None:
+        """Adjust the raw or semantic tape window sizes and rebuild facts."""
+
         if raw_window is not None:
             self.raw_window = raw_window
         if semantic_window is not None:

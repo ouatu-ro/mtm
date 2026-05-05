@@ -1,4 +1,9 @@
-"""Shared debugger presentation model."""
+"""Shared debugger presentation model.
+
+These dataclasses are the neutral document format that the debugger presenter
+emits. They intentionally describe layout-independent content so the same
+document can be rendered in text, tests, or other front ends.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +24,8 @@ ROLE_WARNING = "warning"
 
 @dataclass(frozen=True)
 class Field:
+    """One named value inside a record-style presentation block."""
+
     key: str
     value: Any
     role: str | None = None
@@ -27,6 +34,8 @@ class Field:
 
 @dataclass(frozen=True)
 class StatusBlock:
+    """A compact summary block for runner, history, and request counters."""
+
     run_status: str
     raw: int
     max_raw: int
@@ -37,6 +46,8 @@ class StatusBlock:
 
 @dataclass(frozen=True)
 class ActionBlock:
+    """A short description of a grouped debugger step or rewind action."""
+
     verb: str
     boundary: str
     status: str
@@ -48,6 +59,8 @@ class ActionBlock:
 
 @dataclass(frozen=True)
 class RecordBlock:
+    """A titled list of named values."""
+
     title: str
     fields: tuple[Field, ...]
     role: str | None = None
@@ -56,6 +69,8 @@ class RecordBlock:
 
 @dataclass(frozen=True)
 class InstructionBlock:
+    """A decoded instruction line plus optional argument/explanation text."""
+
     title: str
     opcode: str | None
     args: tuple[str, ...] = ()
@@ -66,6 +81,8 @@ class InstructionBlock:
 
 @dataclass(frozen=True)
 class TransitionBlock:
+    """The display form of a raw transition row."""
+
     title: str
     present: bool
     state: str | None = None
@@ -79,12 +96,16 @@ class TransitionBlock:
 
 @dataclass(frozen=True)
 class TapeCell:
+    """One tape cell in a rendered tape window."""
+
     address: int
     symbol: str
 
 
 @dataclass(frozen=True)
 class TapeBlock:
+    """A tape window with a visible head position."""
+
     title: str
     cells: tuple[TapeCell, ...]
     head: int
@@ -94,6 +115,8 @@ class TapeBlock:
 
 @dataclass(frozen=True)
 class MessageBlock:
+    """A free-form message block used for help, warnings, and placeholders."""
+
     text: str
     title: str | None = None
     role: str | None = None
@@ -102,6 +125,8 @@ class MessageBlock:
 
 @dataclass(frozen=True)
 class TableBlock:
+    """A simple text table block."""
+
     headers: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
     title: str | None = None
@@ -114,12 +139,16 @@ Block = StatusBlock | ActionBlock | RecordBlock | InstructionBlock | TransitionB
 
 @dataclass(frozen=True)
 class Document:
+    """A complete debugger document made of typed presentation blocks."""
+
     kind: str
     blocks: tuple[Block, ...]
     title: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the document as plain nested dictionaries and tuples."""
+
         return asdict(self)
 
 

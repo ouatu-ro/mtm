@@ -1,4 +1,9 @@
-"""Debugger surfaces layered over reversible raw transition execution."""
+"""Debugger surfaces layered over reversible raw transition execution.
+
+The package exposes the raw tracer, the session layer, the shell, and the
+plain-text/Rich renderers used to present low-level execution in a teaching
+friendly way.
+"""
 
 from .facts import TraceFacts
 from .help import COMMAND_SPECS, FIELD_DOCS

@@ -1,4 +1,9 @@
-"""Thin cmd.Cmd adapter for the debugger session/presenter/renderer stack."""
+"""Thin ``cmd.Cmd`` adapter for the debugger session, presenter, and renderer.
+
+This module is the command-line surface of the debugger. It keeps parsing and
+output formatting in one place while delegating execution to the session and
+document rendering to the presenter/renderers.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +24,12 @@ BOUNDARIES = {"raw", "routine", "instruction", "block", "source"}
 
 
 class DebuggerShell(cmd.Cmd):
-    """Interactive debugger shell that delegates to session, presenter, and renderer."""
+    """Interactive debugger shell for stepping through traced TM execution.
+
+    The shell handles command parsing, aliases, and output routing. It does
+    not own the debugger logic itself; that stays in the session and presenter
+    layers so the interactive surface remains thin and testable.
+    """
 
     prompt = "mtmdbg> "
 
@@ -32,6 +42,8 @@ class DebuggerShell(cmd.Cmd):
         presenter: DebuggerPresenter | None = None,
         renderer: PlainTextRenderer | None = None,
     ) -> None:
+        """Build a shell around an existing session and optional presentation stack."""
+
         super().__init__(stdin=stdin, stdout=stdout)
         self.session = session
         self.presenter = DebuggerPresenter() if presenter is None else presenter
@@ -39,9 +51,13 @@ class DebuggerShell(cmd.Cmd):
         self.use_rawinput = stdin is None and stdout is None
 
     def emptyline(self) -> bool:
+        """Ignore blank lines instead of repeating the previous command."""
+
         return False
 
     def default(self, line: str) -> None:
+        """Handle unknown commands and ``?`` help shortcuts."""
+
         if line == "?":
             self.do_help("")
             return
@@ -52,18 +68,28 @@ class DebuggerShell(cmd.Cmd):
         self._write("type `help` for commands")
 
     def render_startup(self, fixture_name: str) -> str:
+        """Render the startup banner for a named debugger fixture."""
+
         return self.renderer.render(self.presenter.startup_doc(fixture_name=fixture_name, status=self.session.status()))
 
     def do_status(self, arg: str) -> None:
+        """Print the current debugger status."""
+
         self._write_doc(self.presenter.status_doc(self.session.status()))
 
     def do_view(self, arg: str) -> None:
+        """Print the current debugger view."""
+
         self._write_doc(self.presenter.view_doc(self.session.view()))
 
     def do_where(self, arg: str) -> None:
+        """Print the current source-location explanation."""
+
         self._write_doc(self.presenter.where_doc(self.session.where()))
 
     def do_step(self, arg: str) -> None:
+        """Step forward across a boundary and print the resulting action."""
+
         parsed = self._parse_boundary_and_count(arg, usage=STEP_USAGE)
         if parsed is None:
             return
@@ -71,6 +97,8 @@ class DebuggerShell(cmd.Cmd):
         self._write_doc(self.presenter.action_doc(self.session.step_many(boundary, count)))
 
     def do_back(self, arg: str) -> None:
+        """Step backward across a boundary and print the resulting action."""
+
         parsed = self._parse_boundary_and_count(arg, usage=BACK_USAGE)
         if parsed is None:
             return
@@ -78,6 +106,8 @@ class DebuggerShell(cmd.Cmd):
         self._write_doc(self.presenter.action_doc(self.session.back_many(boundary, count)))
 
     def do_set(self, arg: str) -> None:
+        """Update debugger settings from the command line."""
+
         parts = arg.split()
         if len(parts) != 2:
             self._write(SET_USAGE)
@@ -100,6 +130,8 @@ class DebuggerShell(cmd.Cmd):
         self._write(f"max_raw={self.session.set_max_raw(value)}")
 
     def do_help(self, arg: str) -> None:
+        """Print general help or a specific help topic."""
+
         topic = " ".join(arg.split())
         document = self.presenter.help_doc(topic or None)
         if document is None:
@@ -112,6 +144,8 @@ class DebuggerShell(cmd.Cmd):
         self.do_help(arg)
 
     def do_quit(self, arg: str) -> bool:
+        """Exit the debugger shell."""
+
         return True
 
     def do_q(self, arg: str) -> bool:
@@ -157,9 +191,13 @@ class DebuggerShell(cmd.Cmd):
         self.do_back(self._alias_arg("source", arg))
 
     def do_EOF(self, arg: str) -> bool:
+        """Exit when the input stream ends."""
+
         return True
 
     def format_output(self, text: str) -> str:
+        """Allow subclasses to post-process rendered output."""
+
         return text
 
     def _default_renderer(self, stdout):

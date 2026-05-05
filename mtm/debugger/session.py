@@ -1,4 +1,8 @@
-"""Session-layer debugger semantics over raw trace, facts, and queries."""
+"""Session-layer debugger semantics over raw trace, facts, and queries.
+
+``DebuggerSession`` sits above ``RawTraceRunner`` and turns raw stepping into
+user commands, query rows, and boundary-aware repeat/back operations.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,12 @@ ActionStatus = Literal["stepped", "rewound", "halted", "stuck", "max_raw", "unma
 
 @dataclass(frozen=True)
 class DebuggerActionResult:
-    """Result of one debugger command before query projection."""
+    """The raw outcome of one debugger command before query projection.
+
+    The shell turns this object into the more polished query rows shown to the
+    user, so it keeps the low-level execution details close to the command that
+    produced them.
+    """
 
     boundary: Boundary
     status: ActionStatus
@@ -27,7 +36,12 @@ class DebuggerActionResult:
 
 
 class DebuggerSession:
-    """User-facing debugger commands layered over a raw trace runner."""
+    """User-facing debugger commands layered over a raw trace runner.
+
+    This layer is where raw stepping becomes debugger behavior: it refreshes
+    derived facts, applies boundary-aware repeat commands, and exposes the
+    status, where, and view rows consumed by the presenter.
+    """
 
     DEFAULT_MAX_RAW = 100_000
 
@@ -40,6 +54,8 @@ class DebuggerSession:
         raw_window: int = 2,
         semantic_window: int = 2,
     ) -> None:
+        """Build a debugger session around an existing raw trace runner."""
+
         if max_raw <= 0:
             raise ValueError("max_raw must be positive")
         self.runner = runner
@@ -54,18 +70,26 @@ class DebuggerSession:
         self.queries = DebuggerQueries(self.facts, max_raw=max_raw)
 
     def status(self) -> StatusRow:
+        """Return the current status row after refreshing derived facts."""
+
         self._refresh_queries()
         return self.queries.status()
 
     def where(self) -> WhereRow:
+        """Return the current source-location row after refreshing facts."""
+
         self._refresh_queries()
         return self.queries.where()
 
     def view(self) -> ViewRow:
+        """Return the current combined raw and semantic view row."""
+
         self._refresh_queries()
         return self.queries.view()
 
     def step(self, boundary: Boundary) -> DebuggerActionResult:
+        """Step forward by one raw row or one grouped boundary."""
+
         if boundary == "raw":
             step_result = self.runner.step()
             return DebuggerActionResult(
@@ -84,6 +108,8 @@ class DebuggerSession:
         )
 
     def step_many(self, boundary: Boundary, count: int) -> ActionRow:
+        """Repeat a step command and collapse the result into one action row."""
+
         result = self._repeat(boundary, count, direction="step")
         self._refresh_queries()
         return self.queries.action(
@@ -96,6 +122,8 @@ class DebuggerSession:
         )
 
     def back(self, boundary: Boundary) -> DebuggerActionResult:
+        """Step backward by one raw row or one grouped boundary."""
+
         if boundary == "raw":
             rewound = self.runner.back()
             return DebuggerActionResult(
@@ -114,6 +142,8 @@ class DebuggerSession:
         )
 
     def back_many(self, boundary: Boundary, count: int) -> ActionRow:
+        """Repeat a back command and collapse the result into one action row."""
+
         result = self._repeat(boundary, count, direction="back")
         self._refresh_queries()
         return self.queries.action(
@@ -126,6 +156,8 @@ class DebuggerSession:
         )
 
     def set_max_raw(self, value: int) -> int:
+        """Update the maximum raw steps allowed for grouped stepping."""
+
         if value <= 0:
             raise ValueError("max_raw must be positive")
         self.max_raw = value

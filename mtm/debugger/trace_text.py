@@ -1,4 +1,9 @@
-"""Standalone text helpers for low-level raw-trace inspection."""
+"""Standalone text helpers for low-level raw-trace inspection.
+
+These helpers turn raw trace state into compact plain text that can be read in
+tests, terminals, and teaching notes without needing the richer document
+renderers.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ from .trace import RawTraceGroupStepResult, RawTraceView
 
 
 def format_source_location(source: RawTransitionSource | None, *, label: str = "source") -> str:
-    """Format one lowered raw-row location for teaching output."""
+    """Format lowered source metadata into a short human-readable block."""
 
     if source is None:
         return f"{label}: <unmapped>"
@@ -31,7 +36,7 @@ def format_trace_view(
     semantic_window: int = 2,
     blank_symbol: str = ".",
 ) -> str:
-    """Format a raw debugger view plus semantic summary when available."""
+    """Format a raw debugger view and append a semantic summary when possible."""
 
     lines = [
         f"snapshot: step={view.snapshot.steps} state={view.snapshot.state!r} head={view.snapshot.head}",

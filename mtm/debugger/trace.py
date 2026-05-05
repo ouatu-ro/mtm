@@ -1,11 +1,11 @@
 """Reversible tracing for raw transition-machine programs.
 
-The core object is ``RawTraceRunner``. It always executes concrete raw TM rows,
-and it can optionally layer on:
-
-- lowering source metadata for "where did this row come from?"
-- grouped stepping across routine/instruction/block/source-step boundaries
-- semantic decode of an encoded UTM band for teaching-facing inspection
+``RawTraceRunner`` keeps a full snapshot history so the debugger can move one
+raw step at a time or jump across higher-level boundaries such as routines,
+instructions, blocks, and source steps. When source metadata is available, it
+can explain which lowered row produced each transition. When an encoded UTM
+band is available, it can also expose a decoded semantic view for teaching and
+inspection.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from ..utm_band_layout import EncodedBand
 
 @dataclass(frozen=True)
 class RawTraceSnapshot:
-    """One immutable raw-machine configuration."""
+    """One immutable machine configuration captured at a raw step."""
 
     tape: Mapping[int, str]
     head: int
@@ -38,7 +38,7 @@ class RawTraceSnapshot:
 
 @dataclass(frozen=True)
 class RawTraceTransition:
-    """One executed raw transition plus optional source metadata."""
+    """One executed raw transition, plus optional source metadata."""
 
     step: int
     state: str
@@ -57,7 +57,7 @@ class RawTraceTransition:
 
 @dataclass(frozen=True)
 class RawTraceStepResult:
-    """Result of one `RawTraceRunner.step()` call."""
+    """The outcome of advancing the machine by one raw transition."""
 
     status: str
     snapshot: RawTraceSnapshot
@@ -66,7 +66,7 @@ class RawTraceStepResult:
 
 @dataclass(frozen=True)
 class RawTraceRunResult:
-    """Result of running until halt, stuck, or fuel exhaustion."""
+    """The outcome of running until halt, stuck, or fuel exhaustion."""
 
     status: str
     snapshot: RawTraceSnapshot
@@ -75,7 +75,7 @@ class RawTraceRunResult:
 
 @dataclass(frozen=True)
 class RawTraceGroupStepResult:
-    """Result of stepping across one source-level boundary."""
+    """The outcome of moving across one grouped boundary."""
 
     status: str
     snapshot: RawTraceSnapshot
@@ -84,7 +84,7 @@ class RawTraceGroupStepResult:
 
 @dataclass(frozen=True)
 class RawTraceView:
-    """Projection of the runner's current state for teaching-facing inspection."""
+    """A teaching-oriented snapshot of raw, source, and semantic state."""
 
     snapshot: RawTraceSnapshot
     next_raw_transition_key: TransitionKey | None
@@ -97,7 +97,13 @@ class RawTraceView:
 
 
 class RawTraceRunner:
-    """Step a raw transition program forward and backward using full snapshots."""
+    """Execute a raw transition program while retaining a rewindable history.
+
+    The runner keeps every snapshot it visits so debugger commands can move
+    backward as well as forward. That makes it possible to show both the raw
+    transition-level machine state and the higher-level source mapping used in
+    the teaching UI.
+    """
 
     DEFAULT_SOURCE_STEP_BLOCK_LABEL = "START_STEP"
 
@@ -111,6 +117,8 @@ class RawTraceRunner:
         source_map: TransitionSourceMap | None = None,
         source_step_block_label: str = DEFAULT_SOURCE_STEP_BLOCK_LABEL,
     ) -> None:
+        """Build a runner from a program and an initial sparse tape."""
+
         self.program = program
         self.source_map = source_map
         self.source_step_block_label = source_step_block_label
@@ -121,13 +129,13 @@ class RawTraceRunner:
 
     @property
     def current(self) -> RawTraceSnapshot:
-        """Return the active machine snapshot."""
+        """Return the snapshot currently selected by the history cursor."""
 
         return self._snapshots[self._cursor]
 
     @property
     def history_cursor(self) -> int:
-        """Return the active snapshot index in execution history."""
+        """Return the active snapshot index in the execution history."""
 
         return self._cursor
 
@@ -147,7 +155,7 @@ class RawTraceRunner:
 
     @property
     def current_read_symbol(self) -> str:
-        """Return the symbol under the head in the current snapshot."""
+        """Return the symbol currently under the head."""
 
         snapshot = self.current
         return snapshot.tape.get(snapshot.head, self.program.blank)
@@ -189,7 +197,7 @@ class RawTraceRunner:
 
     @property
     def is_halted(self) -> bool:
-        """Return whether the current state is the machine halt state."""
+        """Return whether the current snapshot is in the halt state."""
 
         return self.current.state == self.program.halt_state
 
@@ -210,7 +218,7 @@ class RawTraceRunner:
         return "running"
 
     def step(self) -> RawTraceStepResult:
-        """Execute one raw transition if possible."""
+        """Execute one raw transition and record the resulting snapshot."""
 
         if self.is_halted:
             return RawTraceStepResult(status="halted", snapshot=self.current, transition=None)
@@ -248,7 +256,7 @@ class RawTraceRunner:
         return RawTraceStepResult(status="stepped", snapshot=next_snapshot, transition=executed)
 
     def back(self) -> bool:
-        """Restore the previous snapshot if history exists."""
+        """Move the history cursor back by one snapshot if possible."""
 
         if self._cursor == 0:
             return False
@@ -282,22 +290,22 @@ class RawTraceRunner:
         return RawTraceRunResult(status=status, snapshot=self.current, steps_executed=self.current.steps - start_steps)
 
     def step_to_next_routine(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
-        """Advance until the next routine boundary."""
+        """Advance until execution enters a different routine."""
 
         return self._step_to_next_group(lambda source: source.routine_index, max_raw=max_raw)
 
     def step_to_next_instruction(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
-        """Advance until the next instruction boundary."""
+        """Advance until execution enters a different instruction."""
 
         return self._step_to_next_group(lambda source: (source.block_label, source.instruction_index), max_raw=max_raw)
 
     def step_to_next_block(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
-        """Advance until the next block boundary."""
+        """Advance until execution enters a different block."""
 
         return self._step_to_next_group(lambda source: source.block_label, max_raw=max_raw)
 
     def step_to_next_source_step(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
-        """Advance until the next universal-machine source-step boundary."""
+        """Advance until the next source-step block in the UTM trace."""
 
         return self._step_to_next_source_step_boundary(max_raw=max_raw)
 
@@ -317,12 +325,12 @@ class RawTraceRunner:
         return self._back_to_previous_group(lambda source: source.block_label)
 
     def back_to_previous_source_step(self) -> RawTraceGroupStepResult:
-        """Rewind to the previous universal-machine source-step boundary."""
+        """Rewind to the previous source-step block in the UTM trace."""
 
         return self._back_to_previous_source_step_boundary()
 
     def current_view(self, *, encoding: Encoding | None = None) -> RawTraceView:
-        """Return the current raw view plus an optional semantic decode."""
+        """Return the current raw view, optionally with a semantic decode."""
 
         decoded_view = None
         decode_error = None

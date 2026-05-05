@@ -1,4 +1,8 @@
-"""Rich-based debugger renderer over presentation documents."""
+"""Rich-based debugger renderer over presentation documents.
+
+This renderer uses Rich to preserve the same document model while adding color
+and terminal layout when the output is meant for an interactive shell.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +27,11 @@ from .presentation import (
 
 
 class RichRenderer:
-    """Render presentation documents into ANSI-colored terminal text with Rich."""
+    """Render presentation documents into ANSI-colored terminal text with Rich.
+
+    It preserves the same structured debugger document model as the plain-text
+    renderer, but adds color and richer terminal layout when a TTY is present.
+    """
 
     LABEL_WIDTH = 12
 
@@ -31,6 +39,8 @@ class RichRenderer:
         self.color = color
 
     def render(self, document: Document) -> str:
+        """Render one presentation document to ANSI-colored terminal text."""
+
         buffer = StringIO()
         console = Console(
             file=buffer,

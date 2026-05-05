@@ -1,4 +1,9 @@
-"""Debugger presentation builder over typed query rows and help metadata."""
+"""Debugger presentation builder over typed query rows and help metadata.
+
+This layer turns the query rows into the document blocks that the debugger UI
+or tests can render. It is intentionally narrow: the presenter knows how to
+shape output, while the queries and help metadata supply the content.
+"""
 
 from __future__ import annotations
 
@@ -29,9 +34,11 @@ from .queries import ActionRow, SourceRow, StatusRow, ViewRow, WhereRow
 
 
 class DebuggerPresenter:
-    """Convert typed debugger query rows into shared presentation documents."""
+    """Convert debugger query rows into shared presentation documents."""
 
     def startup_doc(self, *, fixture_name: str, status: StatusRow) -> Document:
+        """Build the first document shown when the debugger starts."""
+
         return Document(
             kind="startup",
             title=f"MTM debugger  fixture={fixture_name}  type `help` for commands",
@@ -39,13 +46,19 @@ class DebuggerPresenter:
         )
 
     def status_doc(self, row: StatusRow) -> Document:
+        """Build the compact status document."""
+
         return Document(kind="status", blocks=self._status_blocks(row))
 
     def where_doc(self, row: WhereRow) -> Document:
+        """Build the source-location document for ``where`` output."""
+
         blocks = [*self._source_blocks(row.source), self._transition_block("NEXT ROW", row.next_row)]
         return Document(kind="where", blocks=tuple(blocks))
 
     def action_doc(self, row: ActionRow) -> Document:
+        """Build the document shown after a step or rewind command."""
+
         blocks = [
             ActionBlock(
                 verb=row.verb,
@@ -62,6 +75,8 @@ class DebuggerPresenter:
         return Document(kind="action", blocks=tuple(blocks))
 
     def view_doc(self, row: ViewRow) -> Document:
+        """Build the full debugging view with raw, source, tape, and semantic data."""
+
         blocks = [
             StatusBlock(
                 run_status=row.status.snapshot.run_status,
@@ -85,6 +100,8 @@ class DebuggerPresenter:
         return Document(kind="view", blocks=tuple(blocks))
 
     def help_doc(self, topic: str | None = None) -> Document | None:
+        """Build global or topic-specific help, or return ``None`` for unknown topics."""
+
         if topic is None or not topic.strip():
             rows = tuple((spec.usage, ", ".join(spec.aliases) or "-", spec.summary) for spec in COMMAND_SPECS)
             legend_blocks = [MessageBlock(text="Visual Legend:", role=ROLE_HELP)]

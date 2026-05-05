@@ -1,4 +1,9 @@
-"""Command and field metadata for the debugger REPL."""
+"""Command and field metadata for the debugger REPL.
+
+The debugger uses these tables as the single source of truth for command help,
+field glossaries, and topic aliases. Keeping them together makes the help text
+consistent with the presenter and easy to update as the REPL evolves.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CommandSpec:
+    """A debugger command with its aliases, usage, and explanatory text."""
+
     name: str
     aliases: tuple[str, ...]
     usage: str
@@ -212,6 +219,8 @@ OUTPUT_LEGEND = (
 
 
 def canonical_topic(topic: str) -> str | None:
+    """Normalize a help topic or alias to its canonical command name."""
+
     normalized = " ".join(topic.strip().split())
     if not normalized:
         return "help"
@@ -219,6 +228,8 @@ def canonical_topic(topic: str) -> str | None:
 
 
 def command_spec(name: str) -> CommandSpec | None:
+    """Return the command specification for a canonical command name."""
+
     for spec in COMMAND_SPECS:
         if spec.name == name:
             return spec
