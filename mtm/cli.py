@@ -21,6 +21,7 @@ from .universal import UniversalInterpreter
 
 
 TRACE_DEFAULT_MAX_RAW = 100_000
+TRACE_SOURCE_DEFAULT_MAX_RAW = 5_000_000
 
 
 def _target_abi_from_args(args) -> TMAbi | None:
@@ -125,6 +126,26 @@ def _source_fields(source) -> tuple[object, object, object, object, object, obje
     )
 
 
+def _simulated_symbol_at(view, address: int) -> str:
+    tape = view.simulated_tape
+    if address < 0:
+        index = address + len(tape.left_band)
+        if 0 <= index < len(tape.left_band):
+            return tape.left_band[index]
+        return tape.blank
+    if address < len(tape.right_band):
+        return tape.right_band[address]
+    return tape.blank
+
+
+def _decoded_guest_view(session: DebuggerSession):
+    view = session.runner.current_view(encoding=session.encoding)
+    if view.decoded_view is None:
+        detail = f": {view.decode_error}" if view.decode_error is not None else ""
+        raise SystemExit(f"source trace could not decode simulated guest{detail}")
+    return view.decoded_view
+
+
 def _build_trace_session(
     tm_file: str | Path,
     band_file: str | Path,
@@ -161,13 +182,16 @@ def _build_trace_session(
 def _write_trace(args) -> int:
     if args.max_steps <= 0:
         raise SystemExit("--max-steps must be positive")
-    if args.max_raw <= 0:
+    max_raw = args.max_raw
+    if max_raw is None:
+        max_raw = TRACE_SOURCE_DEFAULT_MAX_RAW if args.level in {"source", "guest"} else TRACE_DEFAULT_MAX_RAW
+    if max_raw <= 0:
         raise SystemExit("--max-raw must be positive")
 
     session = _build_trace_session(
         args.tm_file,
         args.band_file,
-        max_raw=args.max_raw,
+        max_raw=max_raw,
     )
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +249,56 @@ def _write_trace(args) -> int:
                 ])
             return 0
 
+        if args.level in ("source", "guest"):
+            writer.writerow([
+                "group",
+                "status",
+                "raw_start",
+                "raw_end",
+                "raw_delta",
+                "state",
+                "read",
+                "write",
+                "move",
+                "next_state",
+                "head_before",
+                "head_after",
+                "block",
+                "instruction_index",
+                "routine_index",
+                "routine_name",
+                "op_index",
+                "instruction",
+            ])
+            for group in range(args.max_steps):
+                start = session.runner.current
+                before = _decoded_guest_view(session)
+                head_before = before.simulated_head
+                read_symbol = _simulated_symbol_at(before, head_before)
+                source = session.runner.current_transition_source
+                result = session.runner.stream_to_next_source_step(max_raw=max_raw)
+                after = _decoded_guest_view(session)
+                head_after = after.simulated_head
+                write_symbol = _simulated_symbol_at(after, head_before)
+                writer.writerow([
+                    group,
+                    result.status,
+                    start.steps + 1 if result.raw_steps else start.steps,
+                    result.snapshot.steps,
+                    result.raw_steps,
+                    before.current_state,
+                    read_symbol,
+                    write_symbol,
+                    head_after - head_before,
+                    after.current_state,
+                    head_before,
+                    head_after,
+                    *_source_fields(source),
+                ])
+                if result.status != "stepped":
+                    break
+            return 0
+
         writer.writerow([
             "group",
             "status",
@@ -246,9 +320,9 @@ def _write_trace(args) -> int:
             start = session.runner.current
             source = session.runner.current_transition_source
             if args.level == "instruction":
-                result = session.runner.stream_to_next_instruction(max_raw=args.max_raw)
+                result = session.runner.stream_to_next_instruction(max_raw=max_raw)
             else:
-                result = session.runner.stream_to_next_block(max_raw=args.max_raw)
+                result = session.runner.stream_to_next_block(max_raw=max_raw)
             writer.writerow([
                 group,
                 result.status,
@@ -312,9 +386,9 @@ def main(argv: list[str] | None = None) -> int:
     trace_parser.add_argument("tm_file")
     trace_parser.add_argument("band_file")
     trace_parser.add_argument("--out", required=True)
-    trace_parser.add_argument("--level", choices=("raw", "instruction", "block"), default="raw")
+    trace_parser.add_argument("--level", choices=("raw", "instruction", "block", "source", "guest"), default="raw")
     trace_parser.add_argument("--max-steps", type=int, default=100)
-    trace_parser.add_argument("--max-raw", type=int, default=TRACE_DEFAULT_MAX_RAW)
+    trace_parser.add_argument("--max-raw", type=int)
 
     dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture.")
     dbg_parser.add_argument("fixture", nargs="?")

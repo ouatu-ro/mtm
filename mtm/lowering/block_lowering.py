@@ -96,8 +96,9 @@ def instruction_sequence_to_routines(
     routines: list[Routine] = []
     current_state = start_state
     instructions = tuple(instructions)
+    hint_root = block_label if block_label is not None else start_state
     for index, instruction in enumerate(instructions):
-        cont = exit_label if index + 1 == len(instructions) else names.fresh(f"{start_state}_cont_{index}")
+        cont = exit_label if index + 1 == len(instructions) else names.fresh(f"{hint_root}_cont_{instruction_offset + index}")
         routine = lower_instruction_to_routine(instruction, state=current_state, cont=cont)
         if not routine.falls_through and index + 1 < len(instructions):
             raise ValueError(f"terminal instruction before end of block: {instruction!r}")
