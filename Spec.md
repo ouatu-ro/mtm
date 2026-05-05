@@ -567,26 +567,67 @@ the source state is already halting or the encoded machine becomes stuck.
 
 ## 10. Lowering to `.tm`
 
-Each Meta-ASM instruction lowers to a finite fragment of ordinary TM transition
-states.
+Each Meta-ASM instruction lowers through an explicit compiler pipeline:
 
-Lowerer shape:
-
-```python
-def lower_instruction(builder, instruction, continuation_label):
-    ...
+```text
+Instruction -> Routine -> RoutineCFG -> TMBuilder -> TMTransitionProgram
 ```
 
-Builder interface:
+The semantic lowerer does not receive a `TMBuilder` and does not emit raw
+transition rows. It returns a `Routine`:
 
 ```python
-class TMBuilder:
-    def fresh(self, prefix): ...
-    def emit(self, state, read, next_state, write, move): ...
-    def label_state(self, label): ...
+@dataclass(frozen=True)
+class Routine:
+    name: str
+    entry: str
+    exit: str
+    ops: tuple[Op, ...]
+    requires: HeadContract = HeadAnywhere()
+    ensures: HeadContract = HeadAnywhere()
 ```
 
-Every lowering rule defines:
+`Routine.entry` and `Routine.exit` are labels supplied by the caller. Any
+internal labels in the routine are symbolic; concrete internal state names are
+allocated later by `compile_routine`.
+
+Routine operations are composable lowering IR nodes such as:
+
+```python
+SeekOp(...)
+MoveStepsOp(...)
+BranchOnBitOp(...)
+WriteBitOp(...)
+EmitOp(...)
+EmitAllOp(...)
+EmitAnyExceptOp(...)
+```
+
+`compile_routine` turns a routine into a structured CFG:
+
+```python
+@dataclass(frozen=True)
+class RoutineCFG:
+    entry: str
+    exit: str
+    states: tuple[str, ...]
+    transitions: tuple[CFGTransition, ...]
+```
+
+`CFGTransition` is still structured. It uses `ReadSet` and `WriteAction`
+objects so wide alphabet cases like "all symbols except marker X" remain
+inspectable until the final assembly boundary.
+
+Only final assembly calls `TMBuilder.emit`:
+
+```python
+routine = lower_instruction_to_routine(instruction, state=entry, cont=exit)
+cfg = compile_routine(routine, alphabet, NameSupply(routine.name))
+validate_cfg(cfg, alphabet)
+assemble_cfg(builder, cfg)
+```
+
+Every routine defines:
 
 - expected head position before the instruction
 - head position after the instruction
@@ -594,7 +635,11 @@ Every lowering rule defines:
 - temporary markers it must clean
 - continuation behavior
 
-The output is:
+`validate_cfg` checks the generated control graph before raw transition rows
+exist. It rejects duplicate `(state, read)` coverage, transitions out of the
+routine exit state, unknown transition states, and unreachable internal states.
+
+The final output is:
 
 ```python
 TMTransitionProgram(

@@ -180,6 +180,51 @@ def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
     assert tm.start_state == "START_STEP"
 
 
+def test_raw_tm_artifact_reader_rejects_executable_code(tmp_path: Path) -> None:
+    marker = tmp_path / "executed"
+    raw_tm_path = tmp_path / "evil.tm"
+    raw_tm_path.write_text(f"""\
+format = 'mtm-raw-tm-v1'
+start_state = __import__('pathlib').Path({str(marker)!r}).write_text('bad')
+halt_state = 'halt'
+blank = '_RUNTIME_BLANK'
+alphabet = ['_RUNTIME_BLANK']
+raw_tm = {{}}
+""")
+
+    with pytest.raises(ValueError, match="start_state.*literal"):
+        TMTransitionProgram.read(raw_tm_path)
+
+    assert not marker.exists()
+
+
+def test_utm_band_artifact_reader_rejects_executable_code(tmp_path: Path) -> None:
+    marker = tmp_path / "executed"
+    utm_path = tmp_path / "evil.utm.band"
+    utm_path.write_text(f"""\
+format = 'mtm-utm-band-v1'
+start_head = 0
+encoding = __import__('pathlib').Path({str(marker)!r}).write_text('bad')
+left_band = []
+right_band = []
+target_abi = {{}}
+minimal_abi = {{}}
+""")
+
+    with pytest.raises(ValueError, match="encoding.*literal"):
+        UTMBandArtifact.read(utm_path)
+
+    assert not marker.exists()
+
+
+def test_artifact_readers_validate_format(tmp_path: Path) -> None:
+    raw_tm_path = tmp_path / "wrong.tm"
+    raw_tm_path.write_text("format = 'not-mtm'\n")
+
+    with pytest.raises(ValueError, match="unsupported artifact format"):
+        TMTransitionProgram.read(raw_tm_path)
+
+
 def test_primary_program_and_band_artifact_work_together(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     utm_path = tmp_path / "incrementer.utm.band"

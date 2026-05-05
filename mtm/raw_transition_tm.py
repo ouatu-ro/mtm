@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 L, S, R = -1, 0, 1
 
@@ -40,7 +41,7 @@ class TMTransitionProgram:
 
 
 class TMBuilder:
-    def __init__(self, alphabet: list[str] | tuple[str, ...], *, halt_state: str = "U_HALT", blank: str = "_RUNTIME_BLANK"):
+    def __init__(self, alphabet: Iterable[str], *, halt_state: str = "U_HALT", blank: str = "_RUNTIME_BLANK"):
         self.alphabet = tuple(dict.fromkeys([blank, *alphabet]))
         self.halt_state = halt_state
         self.blank = blank

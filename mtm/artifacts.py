@@ -2,16 +2,46 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
-from runpy import run_path
 
 from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import TMAbi, UTMBandArtifact
 from .source_encoding import Encoding
 
+UTM_BAND_FORMAT = "mtm-utm-band-v1"
+RAW_TM_FORMAT = "mtm-raw-tm-v1"
+
 
 def _literal(value) -> str:
     return repr(value)
+
+
+def _read_literal_assignments(path: str | Path) -> dict[str, object]:
+    path = Path(path)
+    try:
+        tree = ast.parse(path.read_text(), filename=str(path))
+    except SyntaxError as exc:
+        raise ValueError(f"{path} is not a valid MTM artifact") from exc
+
+    namespace: dict[str, object] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            raise ValueError("MTM artifact may contain only simple literal assignments")
+        name = node.targets[0].id
+        if name in namespace:
+            raise ValueError(f"duplicate artifact field: {name}")
+        try:
+            namespace[name] = ast.literal_eval(node.value)
+        except (SyntaxError, TypeError, ValueError) as exc:
+            raise ValueError(f"artifact field `{name}` must be a Python literal") from exc
+    return namespace
+
+
+def _require_format(namespace: dict[str, object], expected: str) -> None:
+    actual = namespace.get("format")
+    if actual != expected:
+        raise ValueError(f"unsupported artifact format: expected {expected!r}, got {actual!r}")
 
 
 def _abi_literal(abi: TMAbi) -> dict[str, object]:
@@ -56,7 +86,7 @@ def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
         "halt_state": artifact.encoding.halt_state,
     }
     text = "\n".join([
-        "format = 'mtm-utm-band-v1'",
+        f"format = {UTM_BAND_FORMAT!r}",
         f"start_head = {artifact.start_head!r}",
         f"encoding = {_literal(encoding)}",
         f"left_band = {_literal(list(artifact.left_band))}",
@@ -68,7 +98,8 @@ def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
 
 
 def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
-    namespace = run_path(str(path))
+    namespace = _read_literal_assignments(path)
+    _require_format(namespace, UTM_BAND_FORMAT)
     encoding_data = namespace["encoding"]
     encoding = Encoding(
         state_ids=encoding_data["state_ids"],
@@ -94,7 +125,7 @@ def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
 def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
     path = Path(path)
     text = "\n".join([
-        "format = 'mtm-raw-tm-v1'",
+        f"format = {RAW_TM_FORMAT!r}",
         f"start_state = {_literal(tm.start_state)}",
         f"halt_state = {_literal(tm.halt_state)}",
         f"blank = {_literal(tm.blank)}",
@@ -105,7 +136,8 @@ def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
 
 
 def read_tm(path: str | Path) -> TMTransitionProgram:
-    namespace = run_path(str(path))
+    namespace = _read_literal_assignments(path)
+    _require_format(namespace, RAW_TM_FORMAT)
     return TMTransitionProgram(
         prog=namespace["raw_tm"],
         start_state=namespace["start_state"],

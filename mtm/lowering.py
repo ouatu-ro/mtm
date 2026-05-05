@@ -1,6 +1,9 @@
-"""First raw-TM lowerings for small Meta-ASM instructions."""
+"""Lower Meta-ASM routines through an explicit CFG before raw TM emission."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Protocol, TypeAlias
 
 from .meta_asm import (
     Block,
@@ -25,397 +28,783 @@ from .meta_asm import (
     SeekOneOf,
     WriteGlobal,
 )
-from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TMP, WRITE_SYMBOL
 from .raw_transition_tm import L, R, S, TMBuilder, TMTransitionProgram
+from .utm_band_layout import (
+    CELL,
+    CMP_FLAG,
+    CUR_STATE,
+    CUR_SYMBOL,
+    END_RULES,
+    HEAD,
+    MOVE_DIR,
+    NEXT_STATE,
+    NO_HEAD,
+    REGS,
+    RULE,
+    RULES,
+    TMP,
+    WRITE_SYMBOL,
+)
+
+Label: TypeAlias = str
+State: TypeAlias = str
+Symbol: TypeAlias = str
 
 GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
 ACTIVE_RULE = "#ACTIVE_RULE"
 
 
-def lower_seek(builder: TMBuilder, state: str, *, markers: set[str], direction: str, continuation_label: str) -> None:
-    move = R if direction == "R" else L
-    continuation = builder.label_state(continuation_label)
-    for symbol in builder.alphabet:
-        if symbol in markers:
-            builder.emit(state, symbol, continuation, symbol, S)
-        else:
-            builder.emit(state, symbol, state, symbol, move)
+@dataclass(frozen=True)
+class HeadAnywhere:
+    pass
+
+
+@dataclass(frozen=True)
+class HeadOnRuntimeTape:
+    pass
+
+
+@dataclass(frozen=True)
+class HeadAt:
+    marker: str
+
+
+@dataclass(frozen=True)
+class HeadAtOneOf:
+    markers: tuple[str, ...]
+
+
+HeadContract: TypeAlias = HeadAnywhere | HeadOnRuntimeTape | HeadAt | HeadAtOneOf | str
+
+
+class ReadSet(Protocol):
+    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
+        ...
+
+
+@dataclass(frozen=True)
+class ReadAny:
+    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
+        return alphabet
+
+
+@dataclass(frozen=True)
+class ReadSymbol:
+    symbol: str
+
+    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
+        del alphabet
+        return (self.symbol,)
+
+
+@dataclass(frozen=True)
+class ReadSymbols:
+    symbols: frozenset[str]
+
+    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(symbol for symbol in alphabet if symbol in self.symbols)
+
+
+@dataclass(frozen=True)
+class ReadAnyExcept:
+    symbols: frozenset[str]
+
+    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(symbol for symbol in alphabet if symbol not in self.symbols)
+
+
+class WriteAction(Protocol):
+    def resolve(self, read: str) -> str:
+        ...
+
+
+@dataclass(frozen=True)
+class KeepWrite:
+    def resolve(self, read: str) -> str:
+        return read
+
+
+@dataclass(frozen=True)
+class WriteSymbolAction:
+    symbol: str
+
+    def resolve(self, read: str) -> str:
+        del read
+        return self.symbol
+
+
+@dataclass(frozen=True)
+class CFGTransition:
+    source: State
+    reads: ReadSet
+    target: State
+    write: WriteAction
+    move: int
+
+
+@dataclass(frozen=True)
+class RoutineCFG:
+    entry: State
+    exit: State
+    states: tuple[State, ...]
+    transitions: tuple[CFGTransition, ...]
+
+
+@dataclass(frozen=True)
+class EmitOp:
+    source: Label
+    read: Symbol
+    target: Label
+    write: Symbol
+    move: int
+
+
+@dataclass(frozen=True)
+class EmitAllOp:
+    source: Label
+    target: Label
+    move: int
+
+
+@dataclass(frozen=True)
+class SeekOp:
+    source: Label
+    target: Label
+    markers: frozenset[str]
+    direction: str
+
+
+@dataclass(frozen=True)
+class MoveStepsOp:
+    source: Label
+    target: Label
+    steps: int
+    direction: str
+
+
+@dataclass(frozen=True)
+class BranchOnBitOp:
+    source: Label
+    zero: Label
+    one: Label
+    move: int
+
+
+@dataclass(frozen=True)
+class WriteBitOp:
+    source: Label
+    target: Label
+    bit: str
+    move: int
+
+
+@dataclass(frozen=True)
+class BranchAtOp:
+    source: Label
+    marker: str
+    label_true: Label
+    label_false: Label
+
+
+@dataclass(frozen=True)
+class EmitAnyExceptOp:
+    source: Label
+    except_symbol: Symbol
+    target: Label
+    move: int
+
+
+Op: TypeAlias = EmitOp | EmitAllOp | SeekOp | MoveStepsOp | BranchOnBitOp | WriteBitOp | BranchAtOp | EmitAnyExceptOp
+
+
+@dataclass(frozen=True)
+class Routine:
+    name: str
+    entry: Label
+    exit: Label
+    ops: tuple[Op, ...]
+    requires: HeadContract = HeadAnywhere()
+    ensures: HeadContract = HeadAnywhere()
+
+
+class NameSupply:
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+        self._fresh_ids: dict[str, int] = {}
+        self._named: dict[str, str] = {}
+
+    def fresh(self, hint: str) -> str:
+        clean_hint = hint.replace("@", "").replace("#", "").replace(" ", "_")
+        next_id = self._fresh_ids.get(clean_hint, 0)
+        self._fresh_ids[clean_hint] = next_id + 1
+        return f"{self.prefix}_{clean_hint}_{next_id}"
+
+    def named(self, local_label: str) -> str:
+        clean_label = local_label.replace("@", "").replace("#", "").replace(" ", "_")
+        return self._named.setdefault(local_label, self.fresh(clean_label))
+
+
+class RoutineDraft:
+    def __init__(
+        self,
+        name: str,
+        *,
+        entry: Label,
+        exit: Label,
+        requires: HeadContract = HeadAnywhere(),
+        ensures: HeadContract = HeadAnywhere(),
+    ):
+        self.name = name
+        self.entry = entry
+        self.exit = exit
+        self.requires = requires
+        self.ensures = ensures
+        self.ops: list[Op] = []
+        self._local_ids: dict[str, int] = {}
+
+    def local(self, hint: str) -> Label:
+        next_id = self._local_ids.get(hint, 0)
+        self._local_ids[hint] = next_id + 1
+        return f"@{hint}_{next_id}"
+
+    def add(self, op: Op) -> None:
+        self.ops.append(op)
+
+    def build(self) -> Routine:
+        return Routine(
+            name=self.name,
+            entry=self.entry,
+            exit=self.exit,
+            ops=tuple(self.ops),
+            requires=self.requires,
+            ensures=self.ensures,
+        )
+
+
+class CFGCompiler:
+    def __init__(self, *, alphabet: tuple[str, ...], names: NameSupply, halt_state: str):
+        self.alphabet = alphabet
+        self.names = names
+        self.halt_state = halt_state
+        self.transitions: list[CFGTransition] = []
+
+    def state(self, label: Label) -> State:
+        if label == "__HALT__":
+            return self.halt_state
+        if label.startswith("@"):
+            return self.names.named(label)
+        return label
+
+    def fresh(self, hint: str) -> State:
+        return self.names.fresh(hint)
+
+    def add(self, source: Label | State, reads: ReadSet, target: Label | State, write: WriteAction, move: int) -> None:
+        self.transitions.append(CFGTransition(self.state(source), reads, self.state(target), write, move))
+
+    def compile_op(self, op: Op) -> None:
+        match op:
+            case EmitOp(source, read, target, write, move):
+                self.add(source, ReadSymbol(read), target, WriteSymbolAction(write), move)
+            case EmitAllOp(source, target, move):
+                self.add(source, ReadAny(), target, KeepWrite(), move)
+            case SeekOp(source, target, markers, direction):
+                move = R if direction == "R" else L
+                self.add(source, ReadSymbols(markers), target, KeepWrite(), S)
+                self.add(source, ReadAnyExcept(markers), source, KeepWrite(), move)
+            case MoveStepsOp(source, target, steps, direction):
+                if steps == 0:
+                    self.add(source, ReadAny(), target, KeepWrite(), S)
+                    return
+                move = R if direction == "R" else L
+                current = self.state(source)
+                for index in range(steps):
+                    next_state = self.state(target) if index + 1 == steps else self.fresh(f"{source}_move_{index}")
+                    self.transitions.append(CFGTransition(current, ReadAny(), next_state, KeepWrite(), move))
+                    current = next_state
+            case BranchOnBitOp(source, zero, one, move):
+                self.add(source, ReadSymbol("0"), zero, KeepWrite(), move)
+                self.add(source, ReadSymbol("1"), one, KeepWrite(), move)
+            case WriteBitOp(source, target, bit, move):
+                self.add(source, ReadSymbol("0"), target, WriteSymbolAction(bit), move)
+                self.add(source, ReadSymbol("1"), target, WriteSymbolAction(bit), move)
+            case BranchAtOp(source, marker, label_true, label_false):
+                self.add(source, ReadSymbol(marker), label_true, KeepWrite(), S)
+                self.add(source, ReadAnyExcept(frozenset({marker})), label_false, KeepWrite(), S)
+            case EmitAnyExceptOp(source, except_symbol, target, move):
+                self.add(source, ReadAnyExcept(frozenset({except_symbol})), target, KeepWrite(), move)
+
+    def cfg(self, routine: Routine) -> RoutineCFG:
+        states = {self.state(routine.entry), self.state(routine.exit)}
+        for transition in self.transitions:
+            states.add(transition.source)
+            states.add(transition.target)
+        return RoutineCFG(
+            entry=self.state(routine.entry),
+            exit=self.state(routine.exit),
+            states=tuple(sorted(states)),
+            transitions=tuple(self.transitions),
+        )
+
+
+def compile_routine(
+    routine: Routine,
+    alphabet: Iterable[str],
+    names: NameSupply,
+    *,
+    halt_state: str = "U_HALT",
+) -> RoutineCFG:
+    compiler = CFGCompiler(alphabet=tuple(alphabet), names=names, halt_state=halt_state)
+    for op in routine.ops:
+        compiler.compile_op(op)
+    return compiler.cfg(routine)
+
+
+def validate_cfg(cfg: RoutineCFG, alphabet: Iterable[str]) -> None:
+    alphabet = tuple(alphabet)
+    known_states = set(cfg.states)
+    seen: set[tuple[str, str]] = set()
+    outgoing: dict[str, set[str]] = {}
+
+    for transition in cfg.transitions:
+        if transition.source not in known_states:
+            raise ValueError(f"unknown CFG transition source: {transition.source!r}")
+        if transition.target not in known_states:
+            raise ValueError(f"unknown CFG transition target: {transition.target!r}")
+        if transition.source == cfg.exit:
+            raise ValueError(f"CFG exit state has outgoing transition: {cfg.exit!r}")
+        reads = transition.reads.expand(alphabet)
+        if not reads:
+            raise ValueError(f"CFG transition has empty read set: {transition!r}")
+        for read in reads:
+            key = (transition.source, read)
+            if key in seen:
+                raise ValueError(f"duplicate CFG transition for {key!r}")
+            seen.add(key)
+            outgoing.setdefault(transition.source, set()).add(transition.target)
+
+    reachable = {cfg.entry}
+    frontier = [cfg.entry]
+    while frontier:
+        state = frontier.pop()
+        for target in outgoing.get(state, set()):
+            if target not in reachable:
+                reachable.add(target)
+                frontier.append(target)
+
+    unreachable = {
+        state
+        for state in known_states
+        if state not in reachable and any(transition.source == state for transition in cfg.transitions)
+    }
+    if unreachable:
+        raise ValueError(f"unreachable CFG states: {sorted(unreachable)!r}")
+
+
+def assemble_cfg(builder: TMBuilder, cfg: RoutineCFG) -> None:
+    for transition in cfg.transitions:
+        for read in transition.reads.expand(builder.alphabet):
+            builder.emit(
+                transition.source,
+                read,
+                transition.target,
+                transition.write.resolve(read),
+                transition.move,
+            )
 
 
 def global_direction(src_marker: str, dst_marker: str) -> str:
     return "R" if GLOBAL_MARKERS.index(src_marker) < GLOBAL_MARKERS.index(dst_marker) else "L"
 
 
-def move_steps(builder: TMBuilder, state: str, *, steps: int, direction: str, continuation_label: str) -> None:
-    if steps == 0:
-        builder.emit_all(state, builder.label_state(continuation_label), move=S)
-        return
-    move = R if direction == "R" else L
-    current = state
-    for index in range(steps):
-        next_state = builder.label_state(continuation_label) if index + 1 == steps else builder.fresh(f"{state}_move_{index}")
-        builder.emit_all(current, next_state, move=move)
-        current = next_state
+def _seek(draft: RoutineDraft, source: Label, *, markers: set[str], direction: str, target: Label) -> None:
+    draft.add(SeekOp(source, target, frozenset(markers), direction))
 
 
-def branch_on_bit(builder: TMBuilder, state: str, *, zero_label: str, one_label: str, move: int) -> None:
-    builder.emit(state, "0", builder.label_state(zero_label), "0", move)
-    builder.emit(state, "1", builder.label_state(one_label), "1", move)
+def _move_steps(draft: RoutineDraft, source: Label, *, steps: int, direction: str, target: Label) -> None:
+    draft.add(MoveStepsOp(source, target, steps, direction))
 
 
-def write_current_bit(builder: TMBuilder, state: str, *, bit: str, continuation_label: str, move: int) -> None:
-    next_state = builder.label_state(continuation_label)
-    builder.emit(state, "0", next_state, bit, move)
-    builder.emit(state, "1", next_state, bit, move)
+def _branch_on_bit(draft: RoutineDraft, source: Label, *, zero_label: Label, one_label: Label, move: int) -> None:
+    draft.add(BranchOnBitOp(source, zero_label, one_label, move))
 
 
-def write_cmp_flag(builder: TMBuilder, state: str, *, bit: str, continuation_label: str) -> None:
-    write_state = builder.fresh("write_cmp_flag")
-    builder.emit(state, CMP_FLAG, write_state, CMP_FLAG, R)
-    write_current_bit(builder, write_state, bit=bit, continuation_label=continuation_label, move=L)
+def _write_current_bit(draft: RoutineDraft, source: Label, *, bit: str, target: Label, move: int) -> None:
+    draft.add(WriteBitOp(source, target, bit, move))
 
 
-def lower_move_sim_head_right(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
-    clear_flag = builder.fresh("move_head_right_clear_flag")
-    scan_next = builder.fresh("move_head_right_scan_next")
-    mark_head = builder.fresh("move_head_right_mark_head")
-    builder.emit(state, CELL, clear_flag, CELL, R)
-    builder.emit(clear_flag, HEAD, scan_next, NO_HEAD, R)
-    builder.emit(clear_flag, NO_HEAD, scan_next, NO_HEAD, R)
-    for symbol in builder.alphabet:
-        if symbol == CELL:
-            builder.emit(scan_next, symbol, mark_head, symbol, R)
-        else:
-            builder.emit(scan_next, symbol, scan_next, symbol, R)
-    builder.emit(mark_head, HEAD, builder.label_state(continuation_label), HEAD, L)
-    builder.emit(mark_head, NO_HEAD, builder.label_state(continuation_label), HEAD, L)
+def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Label) -> None:
+    write_state = draft.local("write_cmp_flag")
+    draft.add(EmitOp(source, CMP_FLAG, write_state, CMP_FLAG, R))
+    _write_current_bit(draft, write_state, bit=bit, target=target, move=L)
 
 
-def lower_move_sim_head_left(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
-    clear_flag = builder.fresh("move_head_left_clear_flag")
-    leave_current = builder.fresh("move_head_left_leave_current")
-    scan_prev = builder.fresh("move_head_left_scan_prev")
-    mark_head = builder.fresh("move_head_left_mark_head")
-    builder.emit(state, CELL, clear_flag, CELL, R)
-    builder.emit(clear_flag, HEAD, leave_current, NO_HEAD, L)
-    builder.emit(clear_flag, NO_HEAD, leave_current, NO_HEAD, L)
-    builder.emit(leave_current, CELL, scan_prev, CELL, L)
-    for symbol in builder.alphabet:
-        if symbol == CELL:
-            builder.emit(scan_prev, symbol, mark_head, symbol, R)
-        else:
-            builder.emit(scan_prev, symbol, scan_prev, symbol, L)
-    builder.emit(mark_head, HEAD, builder.label_state(continuation_label), HEAD, L)
-    builder.emit(mark_head, NO_HEAD, builder.label_state(continuation_label), HEAD, L)
+def _halt_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("halt", entry=state, exit=cont)
+    draft.add(EmitAllOp(state, "__HALT__", S))
+    return draft.build()
 
 
-def lower_deactivate_active_rule(builder: TMBuilder, state: str, *, continuation_label: str) -> None:
-    builder.emit(state, ACTIVE_RULE, builder.label_state(continuation_label), RULE, S)
-    builder.emit(state, RULE, builder.label_state(continuation_label), RULE, S)
+def _goto_routine(state: Label, cont: Label, label: Label) -> Routine:
+    draft = RoutineDraft("goto", entry=state, exit=cont)
+    draft.add(EmitAllOp(state, label, S))
+    return draft.build()
 
 
-def lower_copy_global_global(builder: TMBuilder, state: str, *, src_marker: str, dst_marker: str, width: int, continuation_label: str) -> None:
+def _seek_routine(state: Label, cont: Label, marker: str, direction: str) -> Routine:
+    draft = RoutineDraft("seek", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(marker))
+    _seek(draft, state, markers={marker}, direction=direction, target=cont)
+    return draft.build()
+
+
+def _seek_one_of_routine(state: Label, cont: Label, markers: tuple[str, ...], direction: str) -> Routine:
+    draft = RoutineDraft("seek_one_of", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf(markers))
+    _seek(draft, state, markers=set(markers), direction=direction, target=cont)
+    return draft.build()
+
+
+def _find_first_rule_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("find_first_rule", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf((RULE, END_RULES)))
+    seek_regs = draft.local("seek_regs")
+    seek_rules = draft.local("seek_rules")
+    seek_rule = draft.local("seek_rule")
+    mark_rule = draft.local("mark_rule")
+    draft.add(EmitAllOp(state, seek_regs, S))
+    _seek(draft, seek_regs, markers={REGS}, direction="L", target=seek_rules)
+    _seek(draft, seek_rules, markers={RULES}, direction="R", target=seek_rule)
+    _seek(draft, seek_rule, markers={RULE, END_RULES}, direction="R", target=mark_rule)
+    draft.add(EmitOp(mark_rule, RULE, cont, ACTIVE_RULE, S))
+    draft.add(EmitOp(mark_rule, END_RULES, cont, END_RULES, S))
+    return draft.build()
+
+
+def _find_next_rule_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("find_next_rule", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAtOneOf((RULE, END_RULES)))
+    seek_next = draft.local("seek_next")
+    mark_rule = draft.local("mark_rule")
+    draft.add(EmitOp(state, ACTIVE_RULE, seek_next, RULE, R))
+    draft.add(EmitOp(state, RULE, seek_next, RULE, R))
+    _seek(draft, seek_next, markers={RULE, END_RULES}, direction="R", target=mark_rule)
+    draft.add(EmitOp(mark_rule, RULE, cont, ACTIVE_RULE, S))
+    draft.add(EmitOp(mark_rule, END_RULES, cont, END_RULES, S))
+    return draft.build()
+
+
+def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("find_head_cell", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
+    scan_cell = draft.local("scan")
+    inspect_flag = draft.local("flag")
+    return_cell = draft.local("return")
+    draft.add(EmitAllOp(state, scan_cell, S))
+    draft.add(EmitOp(scan_cell, CELL, inspect_flag, CELL, R))
+    draft.add(EmitAnyExceptOp(scan_cell, CELL, scan_cell, R))
+    draft.add(EmitOp(inspect_flag, HEAD, return_cell, HEAD, L))
+    draft.add(EmitAnyExceptOp(inspect_flag, HEAD, scan_cell, R))
+    draft.add(EmitOp(return_cell, CELL, cont, CELL, S))
+    return draft.build()
+
+
+def _move_sim_head_right_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("move_sim_head_right", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    clear_flag = draft.local("clear_flag")
+    scan_next = draft.local("scan_next")
+    mark_head = draft.local("mark_head")
+    draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
+    draft.add(EmitOp(clear_flag, HEAD, scan_next, NO_HEAD, R))
+    draft.add(EmitOp(clear_flag, NO_HEAD, scan_next, NO_HEAD, R))
+    draft.add(EmitOp(scan_next, CELL, mark_head, CELL, R))
+    draft.add(EmitAnyExceptOp(scan_next, CELL, scan_next, R))
+    draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
+    draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
+    return draft.build()
+
+
+def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("move_sim_head_left", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    clear_flag = draft.local("clear_flag")
+    leave_current = draft.local("leave_current")
+    scan_prev = draft.local("scan_prev")
+    mark_head = draft.local("mark_head")
+    draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
+    draft.add(EmitOp(clear_flag, HEAD, leave_current, NO_HEAD, L))
+    draft.add(EmitOp(clear_flag, NO_HEAD, leave_current, NO_HEAD, L))
+    draft.add(EmitOp(leave_current, CELL, scan_prev, CELL, L))
+    draft.add(EmitOp(scan_prev, CELL, mark_head, CELL, R))
+    draft.add(EmitAnyExceptOp(scan_prev, CELL, scan_prev, L))
+    draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
+    draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
+    return draft.build()
+
+
+def _deactivate_active_rule_routine(state: Label, cont: Label) -> Routine:
+    draft = RoutineDraft("deactivate_active_rule", entry=state, exit=cont, requires=HeadAtOneOf((ACTIVE_RULE, RULE)), ensures=HeadAt(RULE))
+    draft.add(EmitOp(state, ACTIVE_RULE, cont, RULE, S))
+    draft.add(EmitOp(state, RULE, cont, RULE, S))
+    return draft.build()
+
+
+def _copy_global_global_routine(state: Label, cont: Label, src_marker: str, dst_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("copy_global_global", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadOnRuntimeTape())
     to_dst, to_src = global_direction(src_marker, dst_marker), global_direction(dst_marker, src_marker)
-    current = builder.fresh("copy_gg_seek_src")
-    seek_regs = builder.fresh("copy_gg_seek_regs")
-    lower_seek(builder, state, markers={REGS}, direction="L", continuation_label=seek_regs)
-    lower_seek(builder, seek_regs, markers={src_marker}, direction="R", continuation_label=current)
+    current = draft.local("seek_src")
+    seek_regs = draft.local("seek_regs")
+    _seek(draft, state, markers={REGS}, direction="L", target=seek_regs)
+    _seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
     for index in range(width):
-        src_read = builder.fresh(f"copy_gg_src_{index}")
-        move_steps(builder, current, steps=index + 1, direction="R", continuation_label=src_read)
-        bit0, bit1 = builder.fresh(f"copy_gg_bit0_{index}"), builder.fresh(f"copy_gg_bit1_{index}")
-        branch_on_bit(builder, src_read, zero_label=bit0, one_label=bit1, move=R if to_dst == "R" else L)
-        next_iter = builder.fresh(f"copy_gg_next_{index}") if index + 1 < width else None
+        src_read = draft.local(f"src_{index}")
+        _move_steps(draft, current, steps=index + 1, direction="R", target=src_read)
+        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
+        _branch_on_bit(draft, src_read, zero_label=bit0, one_label=bit1, move=R if to_dst == "R" else L)
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            dst_marker_state = builder.fresh(f"copy_gg_dst_marker_{bit}_{index}")
-            lower_seek(builder, bit_state, markers={dst_marker}, direction=to_dst, continuation_label=dst_marker_state)
-            dst_write = builder.fresh(f"copy_gg_dst_write_{bit}_{index}")
-            move_steps(builder, dst_marker_state, steps=index + 1, direction="R", continuation_label=dst_write)
+            dst_marker_state = draft.local(f"dst_marker_{bit}_{index}")
+            _seek(draft, bit_state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
+            dst_write = draft.local(f"dst_write_{bit}_{index}")
+            _move_steps(draft, dst_marker_state, steps=index + 1, direction="R", target=dst_write)
             if index + 1 == width:
-                write_current_bit(builder, dst_write, bit=bit, continuation_label=continuation_label, move=S)
+                _write_current_bit(draft, dst_write, bit=bit, target=cont, move=S)
             else:
-                back_to_src = builder.fresh(f"copy_gg_back_to_src_{bit}_{index}")
-                write_current_bit(builder, dst_write, bit=bit, continuation_label=back_to_src, move=R if to_src == "R" else L)
-                lower_seek(builder, back_to_src, markers={src_marker}, direction=to_src, continuation_label=next_iter)
+                back_to_src = draft.local(f"back_to_src_{bit}_{index}")
+                _write_current_bit(draft, dst_write, bit=bit, target=back_to_src, move=R if to_src == "R" else L)
+                _seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
         if next_iter is not None:
             current = next_iter
+    return draft.build()
 
 
-def lower_copy_local_global(builder: TMBuilder, state: str, *, local_marker: str, global_marker: str, width: int, continuation_label: str) -> None:
-    activate_rule = builder.fresh("copy_lg_activate_rule")
+def _copy_local_global_routine(state: Label, cont: Label, local_marker: str, global_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("copy_local_global", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
+    activate_rule = draft.local("activate_rule")
     current = activate_rule
-    builder.emit(state, RULE, activate_rule, ACTIVE_RULE, S)
-    builder.emit(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S)
+    draft.add(EmitOp(state, RULE, activate_rule, ACTIVE_RULE, S))
+    draft.add(EmitOp(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S))
     for index in range(width):
-        local_marker_state = builder.fresh(f"copy_lg_local_marker_{index}")
-        lower_seek(builder, current, markers={local_marker}, direction="R", continuation_label=local_marker_state)
-        local_read = builder.fresh(f"copy_lg_local_read_{index}")
-        move_steps(builder, local_marker_state, steps=index + 1, direction="R", continuation_label=local_read)
-        bit0, bit1 = builder.fresh(f"copy_lg_bit0_{index}"), builder.fresh(f"copy_lg_bit1_{index}")
-        branch_on_bit(builder, local_read, zero_label=bit0, one_label=bit1, move=L)
-        next_iter = builder.fresh(f"copy_lg_next_{index}") if index + 1 < width else None
+        local_marker_state = draft.local(f"local_marker_{index}")
+        _seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
+        local_read = draft.local(f"local_read_{index}")
+        _move_steps(draft, local_marker_state, steps=index + 1, direction="R", target=local_read)
+        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
+        _branch_on_bit(draft, local_read, zero_label=bit0, one_label=bit1, move=L)
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            global_marker_state = builder.fresh(f"copy_lg_global_marker_{bit}_{index}")
-            lower_seek(builder, bit_state, markers={global_marker}, direction="L", continuation_label=global_marker_state)
-            global_write = builder.fresh(f"copy_lg_global_write_{bit}_{index}")
-            move_steps(builder, global_marker_state, steps=index + 1, direction="R", continuation_label=global_write)
-            back_to_rule = builder.fresh(f"copy_lg_back_to_rule_{bit}_{index}")
-            write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_rule, move=S)
-            lower_seek(
-                builder,
-                back_to_rule,
-                markers={ACTIVE_RULE},
-                direction="R",
-                continuation_label=continuation_label if index + 1 == width else next_iter,
-            )
+            global_marker_state = draft.local(f"global_marker_{bit}_{index}")
+            _seek(draft, bit_state, markers={global_marker}, direction="L", target=global_marker_state)
+            global_write = draft.local(f"global_write_{bit}_{index}")
+            _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_write)
+            back_to_rule = draft.local(f"back_to_rule_{bit}_{index}")
+            _write_current_bit(draft, global_write, bit=bit, target=back_to_rule, move=S)
+            _seek(draft, back_to_rule, markers={ACTIVE_RULE}, direction="R", target=cont if index + 1 == width else next_iter)
         if next_iter is not None:
             current = next_iter
+    return draft.build()
 
 
-def lower_copy_head_symbol_to(builder: TMBuilder, state: str, *, global_marker: str, width: int, continuation_label: str) -> None:
+def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("copy_head_symbol_to", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
     for index in range(width):
-        head_read = builder.fresh(f"copy_hg_head_read_{index}")
-        move_steps(builder, current, steps=index + 2, direction="R", continuation_label=head_read)
-        bit0, bit1 = builder.fresh(f"copy_hg_bit0_{index}"), builder.fresh(f"copy_hg_bit1_{index}")
-        branch_on_bit(builder, head_read, zero_label=bit0, one_label=bit1, move=L)
-        next_iter = builder.fresh(f"copy_hg_next_{index}") if index + 1 < width else None
+        head_read = draft.local(f"head_read_{index}")
+        _move_steps(draft, current, steps=index + 2, direction="R", target=head_read)
+        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
+        _branch_on_bit(draft, head_read, zero_label=bit0, one_label=bit1, move=L)
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            global_marker_state = builder.fresh(f"copy_hg_global_marker_{bit}_{index}")
-            lower_seek(builder, bit_state, markers={global_marker}, direction="L", continuation_label=global_marker_state)
-            global_write = builder.fresh(f"copy_hg_global_write_{bit}_{index}")
-            move_steps(builder, global_marker_state, steps=index + 1, direction="R", continuation_label=global_write)
+            global_marker_state = draft.local(f"global_marker_{bit}_{index}")
+            _seek(draft, bit_state, markers={global_marker}, direction="L", target=global_marker_state)
+            global_write = draft.local(f"global_write_{bit}_{index}")
+            _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_write)
             if index + 1 == width:
-                write_current_bit(builder, global_write, bit=bit, continuation_label=continuation_label, move=S)
+                _write_current_bit(draft, global_write, bit=bit, target=cont, move=S)
             else:
-                back_to_head = builder.fresh(f"copy_hg_back_to_head_{bit}_{index}")
-                back_to_cell = builder.fresh(f"copy_hg_back_to_cell_{bit}_{index}")
-                write_current_bit(builder, global_write, bit=bit, continuation_label=back_to_head, move=S)
-                lower_seek(builder, back_to_head, markers={HEAD}, direction="R", continuation_label=back_to_cell)
-                builder.emit(back_to_cell, HEAD, next_iter, HEAD, L)
+                back_to_head = draft.local(f"back_to_head_{bit}_{index}")
+                back_to_cell = draft.local(f"back_to_cell_{bit}_{index}")
+                _write_current_bit(draft, global_write, bit=bit, target=back_to_head, move=S)
+                _seek(draft, back_to_head, markers={HEAD}, direction="R", target=back_to_cell)
+                draft.add(EmitOp(back_to_cell, HEAD, next_iter, HEAD, L))
         if next_iter is not None:
             current = next_iter
+    return draft.build()
 
 
-def lower_copy_global_to_head_symbol(builder: TMBuilder, state: str, *, global_marker: str, width: int, continuation_label: str) -> None:
+def _copy_global_to_head_symbol_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("copy_global_to_head_symbol", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
     for index in range(width):
-        global_marker_state = builder.fresh(f"copy_gh_global_marker_{index}")
-        lower_seek(builder, current, markers={global_marker}, direction="L", continuation_label=global_marker_state)
-        global_read = builder.fresh(f"copy_gh_global_read_{index}")
-        move_steps(builder, global_marker_state, steps=index + 1, direction="R", continuation_label=global_read)
-        bit0, bit1 = builder.fresh(f"copy_gh_bit0_{index}"), builder.fresh(f"copy_gh_bit1_{index}")
-        branch_on_bit(builder, global_read, zero_label=bit0, one_label=bit1, move=R)
-        next_iter = builder.fresh(f"copy_gh_next_{index}") if index + 1 < width else None
+        global_marker_state = draft.local(f"global_marker_{index}")
+        _seek(draft, current, markers={global_marker}, direction="L", target=global_marker_state)
+        global_read = draft.local(f"global_read_{index}")
+        _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
+        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
+        _branch_on_bit(draft, global_read, zero_label=bit0, one_label=bit1, move=R)
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            head_flag_state = builder.fresh(f"copy_gh_head_flag_{bit}_{index}")
-            cell_state = builder.fresh(f"copy_gh_cell_state_{bit}_{index}")
-            lower_seek(builder, bit_state, markers={HEAD}, direction="R", continuation_label=head_flag_state)
-            builder.emit(head_flag_state, HEAD, cell_state, HEAD, L)
-            head_write = builder.fresh(f"copy_gh_head_write_{bit}_{index}")
-            move_steps(builder, cell_state, steps=index + 2, direction="R", continuation_label=head_write)
+            head_flag_state = draft.local(f"head_flag_{bit}_{index}")
+            cell_state = draft.local(f"cell_state_{bit}_{index}")
+            _seek(draft, bit_state, markers={HEAD}, direction="R", target=head_flag_state)
+            draft.add(EmitOp(head_flag_state, HEAD, cell_state, HEAD, L))
+            head_write = draft.local(f"head_write_{bit}_{index}")
+            _move_steps(draft, cell_state, steps=index + 2, direction="R", target=head_write)
             if index + 1 == width:
-                write_current_bit(builder, head_write, bit=bit, continuation_label=continuation_label, move=S)
+                _write_current_bit(draft, head_write, bit=bit, target=cont, move=S)
             else:
-                back_to_cell = builder.fresh(f"copy_gh_back_to_cell_{bit}_{index}")
-                write_current_bit(builder, head_write, bit=bit, continuation_label=back_to_cell, move=L)
-                lower_seek(builder, back_to_cell, markers={CELL}, direction="L", continuation_label=next_iter)
+                back_to_cell = draft.local(f"back_to_cell_{bit}_{index}")
+                _write_current_bit(draft, head_write, bit=bit, target=back_to_cell, move=L)
+                _seek(draft, back_to_cell, markers={CELL}, direction="L", target=next_iter)
         if next_iter is not None:
             current = next_iter
+    return draft.build()
 
 
-def lower_compare_global_literal(builder: TMBuilder, state: str, *, global_marker: str, literal_bits: tuple[str, ...], continuation_label: str) -> None:
+def _compare_global_literal_routine(state: Label, cont: Label, global_marker: str, literal_bits: tuple[str, ...]) -> Routine:
+    draft = RoutineDraft("compare_global_literal", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(CMP_FLAG))
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
-    seek_regs = builder.fresh("cmp_glob_seek_regs")
-    marker_state = builder.fresh("cmp_glob_marker")
-    current = builder.fresh("cmp_glob_read_0")
-    lower_seek(builder, state, markers={REGS}, direction="L", continuation_label=seek_regs)
-    lower_seek(builder, seek_regs, markers={global_marker}, direction="R", continuation_label=marker_state)
-    builder.emit(marker_state, global_marker, current, global_marker, R)
+    seek_regs = draft.local("seek_regs")
+    marker_state = draft.local("marker")
+    current = draft.local("read_0")
+    _seek(draft, state, markers={REGS}, direction="L", target=seek_regs)
+    _seek(draft, seek_regs, markers={global_marker}, direction="R", target=marker_state)
+    draft.add(EmitOp(marker_state, global_marker, current, global_marker, R))
     for index, expected in enumerate(literal_bits):
-        next_read = builder.fresh(f"cmp_glob_read_{index + 1}") if index + 1 < len(literal_bits) else None
-        seek_true = builder.fresh(f"cmp_glob_seek_true_{index}")
-        seek_false = builder.fresh(f"cmp_glob_seek_false_{index}")
+        next_read = draft.local(f"read_{index + 1}") if index + 1 < len(literal_bits) else None
+        seek_false = draft.local(f"seek_false_{index}")
+        seek_true = draft.local(f"seek_true_{index}") if next_read is None else None
+        expected_target = next_read if next_read else seek_true
+        expected_move = R if next_read else (R if dir_to_cmp == "R" else L)
+        mismatch_move = R if dir_to_cmp == "R" else L
         if expected == "0":
-            builder.emit(current, "0", next_read if next_read else seek_true, "0", R if next_read else (R if dir_to_cmp == "R" else L))
-            builder.emit(current, "1", seek_false, "1", R if dir_to_cmp == "R" else L)
+            draft.add(EmitOp(current, "0", expected_target, "0", expected_move))
+            draft.add(EmitOp(current, "1", seek_false, "1", mismatch_move))
         else:
-            builder.emit(current, "1", next_read if next_read else seek_true, "1", R if next_read else (R if dir_to_cmp == "R" else L))
-            builder.emit(current, "0", seek_false, "0", R if dir_to_cmp == "R" else L)
-        cmp_true_state = builder.fresh(f"cmp_glob_true_cmp_{index}")
-        cmp_false_state = builder.fresh(f"cmp_glob_false_cmp_{index}")
-        lower_seek(builder, seek_true, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_true_state)
-        lower_seek(builder, seek_false, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_false_state)
-        write_cmp_flag(builder, cmp_true_state, bit="1", continuation_label=continuation_label)
-        write_cmp_flag(builder, cmp_false_state, bit="0", continuation_label=continuation_label)
+            draft.add(EmitOp(current, "1", expected_target, "1", expected_move))
+            draft.add(EmitOp(current, "0", seek_false, "0", mismatch_move))
+        cmp_false_state = draft.local(f"false_cmp_{index}")
+        _seek(draft, seek_false, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+        if seek_true is not None:
+            cmp_true_state = draft.local(f"true_cmp_{index}")
+            _seek(draft, seek_true, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+            _write_cmp_flag(draft, cmp_true_state, bit="1", target=cont)
+        _write_cmp_flag(draft, cmp_false_state, bit="0", target=cont)
         current = next_read if next_read else current
+    return draft.build()
 
 
-def lower_compare_global_local(builder: TMBuilder, state: str, *, global_marker: str, local_marker: str, width: int, continuation_label: str) -> None:
+def _compare_global_local_routine(state: Label, cont: Label, global_marker: str, local_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("compare_global_local", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
-    activate_rule = builder.fresh("cmp_gl_activate_rule")
+    activate_rule = draft.local("activate_rule")
     current = activate_rule
-    builder.emit(state, RULE, activate_rule, ACTIVE_RULE, S)
-    builder.emit(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S)
+    draft.add(EmitOp(state, RULE, activate_rule, ACTIVE_RULE, S))
+    draft.add(EmitOp(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S))
     for index in range(width):
-        local_marker_state = builder.fresh(f"cmp_gl_local_marker_{index}")
-        lower_seek(builder, current, markers={local_marker}, direction="R", continuation_label=local_marker_state)
-        local_read = builder.fresh(f"cmp_gl_local_read_{index}")
-        move_steps(builder, local_marker_state, steps=index + 1, direction="R", continuation_label=local_read)
-        next_iter = builder.fresh(f"cmp_gl_next_{index}") if index + 1 < width else None
+        local_marker_state = draft.local(f"local_marker_{index}")
+        _seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
+        local_read = draft.local(f"local_read_{index}")
+        _move_steps(draft, local_marker_state, steps=index + 1, direction="R", target=local_read)
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
         for local_bit in ("0", "1"):
-            global_seek = builder.fresh(f"cmp_gl_seek_global_{local_bit}_{index}")
-            builder.emit(local_read, local_bit, global_seek, local_bit, L)
-            global_marker_state = builder.fresh(f"cmp_gl_global_marker_{local_bit}_{index}")
-            lower_seek(builder, global_seek, markers={global_marker}, direction="L", continuation_label=global_marker_state)
-            global_read = builder.fresh(f"cmp_gl_global_read_{local_bit}_{index}")
-            move_steps(builder, global_marker_state, steps=index + 1, direction="R", continuation_label=global_read)
-            mismatch_seek = builder.fresh(f"cmp_gl_mismatch_seek_{local_bit}_{index}")
+            global_seek = draft.local(f"seek_global_{local_bit}_{index}")
+            draft.add(EmitOp(local_read, local_bit, global_seek, local_bit, L))
+            global_marker_state = draft.local(f"global_marker_{local_bit}_{index}")
+            _seek(draft, global_seek, markers={global_marker}, direction="L", target=global_marker_state)
+            global_read = draft.local(f"global_read_{local_bit}_{index}")
+            _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
+            mismatch_seek = draft.local(f"mismatch_seek_{local_bit}_{index}")
             if next_iter is not None:
-                back_to_rule = builder.fresh(f"cmp_gl_back_to_rule_{local_bit}_{index}")
-                builder.emit(global_read, local_bit, back_to_rule, local_bit, S)
-                lower_seek(builder, back_to_rule, markers={ACTIVE_RULE}, direction="R", continuation_label=next_iter)
+                back_to_rule = draft.local(f"back_to_rule_{local_bit}_{index}")
+                draft.add(EmitOp(global_read, local_bit, back_to_rule, local_bit, S))
+                _seek(draft, back_to_rule, markers={ACTIVE_RULE}, direction="R", target=next_iter)
             else:
-                match_seek = builder.fresh(f"cmp_gl_match_seek_{local_bit}_{index}")
-                cmp_true_state = builder.fresh(f"cmp_gl_true_cmp_{local_bit}_{index}")
-                after_true = builder.fresh(f"cmp_gl_after_true_{local_bit}_{index}")
-                builder.emit(global_read, local_bit, match_seek, local_bit, S)
-                lower_seek(builder, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_true_state)
-                write_cmp_flag(builder, cmp_true_state, bit="1", continuation_label=after_true)
-                lower_seek(builder, after_true, markers={ACTIVE_RULE}, direction="R", continuation_label=continuation_label)
-            builder.emit(global_read, "1" if local_bit == "0" else "0", mismatch_seek, "1" if local_bit == "0" else "0", S)
-            cmp_false_state = builder.fresh(f"cmp_gl_false_cmp_{local_bit}_{index}")
-            after_false = builder.fresh(f"cmp_gl_after_false_{local_bit}_{index}")
-            lower_seek(builder, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, continuation_label=cmp_false_state)
-            write_cmp_flag(builder, cmp_false_state, bit="0", continuation_label=after_false)
-            lower_seek(builder, after_false, markers={ACTIVE_RULE}, direction="R", continuation_label=continuation_label)
+                match_seek = draft.local(f"match_seek_{local_bit}_{index}")
+                cmp_true_state = draft.local(f"true_cmp_{local_bit}_{index}")
+                after_true = draft.local(f"after_true_{local_bit}_{index}")
+                draft.add(EmitOp(global_read, local_bit, match_seek, local_bit, S))
+                _seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+                _write_cmp_flag(draft, cmp_true_state, bit="1", target=after_true)
+                _seek(draft, after_true, markers={ACTIVE_RULE}, direction="R", target=cont)
+            mismatch_bit = "1" if local_bit == "0" else "0"
+            draft.add(EmitOp(global_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
+            cmp_false_state = draft.local(f"false_cmp_{local_bit}_{index}")
+            after_false = draft.local(f"after_false_{local_bit}_{index}")
+            _seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+            _write_cmp_flag(draft, cmp_false_state, bit="0", target=after_false)
+            _seek(draft, after_false, markers={ACTIVE_RULE}, direction="R", target=cont)
         if next_iter is not None:
             current = next_iter
+    return draft.build()
 
 
-def lower_instruction(builder: TMBuilder, instruction: Instruction, *, state: str, continuation_label: str) -> None:
-    """Lower one small Meta-ASM instruction into raw TM transitions.
+def _branch_cmp_routine(state: Label, cont: Label, label_equal: Label, label_not_equal: Label) -> Routine:
+    draft = RoutineDraft("branch_cmp", entry=state, exit=cont, requires=HeadAtOneOf((CMP_FLAG, ACTIVE_RULE)), ensures=HeadOnRuntimeTape())
+    active_seek_cmp = draft.local("active_seek_cmp")
+    active_read_cmp = draft.local("active_read_cmp")
+    active_bit = draft.local("active_bit")
+    active_seek_eq = draft.local("active_seek_eq")
+    active_seek_neq = draft.local("active_seek_neq")
+    draft.add(EmitOp(state, ACTIVE_RULE, active_seek_cmp, ACTIVE_RULE, L))
+    _seek(draft, active_seek_cmp, markers={CMP_FLAG}, direction="L", target=active_read_cmp)
+    draft.add(EmitOp(active_read_cmp, CMP_FLAG, active_bit, CMP_FLAG, R))
+    draft.add(EmitOp(active_bit, "1", active_seek_eq, "1", L))
+    draft.add(EmitOp(active_bit, "0", active_seek_neq, "0", L))
+    _seek(draft, active_seek_eq, markers={ACTIVE_RULE}, direction="R", target=label_equal)
+    _seek(draft, active_seek_neq, markers={ACTIVE_RULE}, direction="R", target=label_not_equal)
+    read_cmp = draft.local("read")
+    draft.add(EmitOp(state, CMP_FLAG, read_cmp, CMP_FLAG, R))
+    draft.add(EmitOp(read_cmp, "1", label_equal, "1", S))
+    draft.add(EmitOp(read_cmp, "0", label_not_equal, "0", S))
+    return draft.build()
 
-    Current fragment contracts:
-    - `HALT`: no precondition on head position.
-    - `GOTO`: no precondition on head position.
-    - `BRANCH_CMP`: head is on the `#CMP_FLAG` marker.
-    - `WRITE_GLOBAL`: head is on the target global marker.
-    - `SEEK` / `SEEK_ONE_OF`: head is somewhere on the runtime tape.
-    - `FIND_FIRST_RULE`: head is somewhere on the runtime tape.
-    - `FIND_NEXT_RULE`: head is on the current `#RULE`.
-    - `FIND_HEAD_CELL`: head is somewhere on the runtime tape.
-    """
 
+def _write_global_routine(state: Label, cont: Label, global_marker: str, literal_bits: tuple[str, ...]) -> Routine:
+    draft = RoutineDraft("write_global", entry=state, exit=cont, requires=HeadAt(global_marker), ensures=HeadOnRuntimeTape())
+    bit_states = [draft.local(f"bit_{index}") for index in range(len(literal_bits))]
+    draft.add(EmitOp(state, global_marker, bit_states[0] if bit_states else cont, global_marker, R if bit_states else S))
+    for index, bit in enumerate(literal_bits):
+        next_state = bit_states[index + 1] if index + 1 < len(bit_states) else cont
+        _write_current_bit(draft, bit_states[index], bit=bit, target=next_state, move=R if index + 1 < len(bit_states) else S)
+    return draft.build()
+
+
+def lower_instruction_to_routine(instruction: Instruction, *, state: Label, cont: Label) -> Routine:
     match instruction:
         case Halt():
-            builder.emit_all(state, builder.halt_state, move=S)
+            return _halt_routine(state, cont)
         case Goto(label):
-            builder.emit_all(state, builder.label_state(label), move=S)
+            return _goto_routine(state, cont, label)
         case Seek(marker, direction):
-            lower_seek(builder, state, markers={marker}, direction=direction, continuation_label=continuation_label)
+            return _seek_routine(state, cont, marker, direction)
         case SeekOneOf(markers, direction):
-            lower_seek(builder, state, markers=set(markers), direction=direction, continuation_label=continuation_label)
+            return _seek_one_of_routine(state, cont, markers, direction)
         case FindFirstRule():
-            seek_regs = builder.fresh("find_first_rule_seek_regs")
-            seek_rules = builder.fresh("find_first_rule_seek_rules")
-            seek_rule = builder.fresh("find_first_rule_seek_rule")
-            mark_rule = builder.fresh("find_first_rule_mark_rule")
-            lower_seek(builder, seek_regs, markers={REGS}, direction="L", continuation_label=seek_rules)
-            lower_seek(builder, seek_rules, markers={RULES}, direction="R", continuation_label=seek_rule)
-            lower_seek(builder, seek_rule, markers={RULE, END_RULES}, direction="R", continuation_label=mark_rule)
-            builder.emit(mark_rule, RULE, builder.label_state(continuation_label), ACTIVE_RULE, S)
-            builder.emit(mark_rule, END_RULES, builder.label_state(continuation_label), END_RULES, S)
-            builder.emit_all(state, seek_regs, move=S)
+            return _find_first_rule_routine(state, cont)
         case FindNextRule():
-            seek_next = builder.fresh("find_next_rule_seek_next")
-            mark_rule = builder.fresh("find_next_rule_mark_rule")
-            builder.emit(state, ACTIVE_RULE, seek_next, RULE, R)
-            builder.emit(state, RULE, seek_next, RULE, R)
-            lower_seek(builder, seek_next, markers={RULE, END_RULES}, direction="R", continuation_label=mark_rule)
-            builder.emit(mark_rule, RULE, builder.label_state(continuation_label), ACTIVE_RULE, S)
-            builder.emit(mark_rule, END_RULES, builder.label_state(continuation_label), END_RULES, S)
+            return _find_next_rule_routine(state, cont)
         case FindHeadCell():
-            scan_cell = builder.fresh("find_head_cell_scan")
-            inspect_flag = builder.fresh("find_head_cell_flag")
-            return_cell = builder.fresh("find_head_cell_return")
-            builder.emit_all(state, scan_cell, move=S)
-            for symbol in builder.alphabet:
-                if symbol == CELL:
-                    builder.emit(scan_cell, symbol, inspect_flag, symbol, R)
-                else:
-                    builder.emit(scan_cell, symbol, scan_cell, symbol, R)
-            builder.emit(inspect_flag, HEAD, return_cell, HEAD, -1)
-            for symbol in builder.alphabet:
-                if symbol != HEAD:
-                    builder.emit(inspect_flag, symbol, scan_cell, symbol, R)
-            builder.emit(return_cell, CELL, builder.label_state(continuation_label), CELL, S)
+            return _find_head_cell_routine(state, cont)
         case BranchAt(marker, label_true, label_false):
-            for symbol in builder.alphabet:
-                builder.emit(state, symbol, builder.label_state(label_true if symbol == marker else label_false), symbol, S)
+            draft = RoutineDraft("branch_at", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadOnRuntimeTape())
+            draft.add(BranchAtOp(state, marker, label_true, label_false))
+            return draft.build()
         case BranchCmp(label_equal, label_not_equal):
-            active_seek_cmp = builder.fresh("branch_cmp_active_seek_cmp")
-            active_read_cmp = builder.fresh("branch_cmp_active_read_cmp")
-            active_bit = builder.fresh("branch_cmp_active_bit")
-            active_seek_eq = builder.fresh("branch_cmp_active_seek_eq")
-            active_seek_neq = builder.fresh("branch_cmp_active_seek_neq")
-            builder.emit(state, ACTIVE_RULE, active_seek_cmp, ACTIVE_RULE, L)
-            lower_seek(builder, active_seek_cmp, markers={CMP_FLAG}, direction="L", continuation_label=active_read_cmp)
-            builder.emit(active_read_cmp, CMP_FLAG, active_bit, CMP_FLAG, R)
-            builder.emit(active_bit, "1", active_seek_eq, "1", L)
-            builder.emit(active_bit, "0", active_seek_neq, "0", L)
-            lower_seek(builder, active_seek_eq, markers={ACTIVE_RULE}, direction="R", continuation_label=label_equal)
-            lower_seek(builder, active_seek_neq, markers={ACTIVE_RULE}, direction="R", continuation_label=label_not_equal)
-            read_cmp = builder.fresh("branch_cmp_read")
-            builder.emit(state, CMP_FLAG, read_cmp, CMP_FLAG, R)
-            builder.emit(read_cmp, "1", builder.label_state(label_equal), "1", S)
-            builder.emit(read_cmp, "0", builder.label_state(label_not_equal), "0", S)
+            return _branch_cmp_routine(state, cont, label_equal, label_not_equal)
         case CompareGlobalLiteral(global_marker, literal_bits):
-            lower_compare_global_literal(builder, state, global_marker=global_marker, literal_bits=literal_bits, continuation_label=continuation_label)
+            return _compare_global_literal_routine(state, cont, global_marker, literal_bits)
         case CompareGlobalLocal(global_marker, local_marker, width):
-            lower_compare_global_local(builder, state, global_marker=global_marker, local_marker=local_marker, width=width, continuation_label=continuation_label)
+            return _compare_global_local_routine(state, cont, global_marker, local_marker, width)
         case CopyGlobalGlobal(src_marker, dst_marker, width):
-            lower_copy_global_global(builder, state, src_marker=src_marker, dst_marker=dst_marker, width=width, continuation_label=continuation_label)
+            return _copy_global_global_routine(state, cont, src_marker, dst_marker, width)
         case CopyLocalGlobal(local_marker, global_marker, width):
-            lower_copy_local_global(builder, state, local_marker=local_marker, global_marker=global_marker, width=width, continuation_label=continuation_label)
+            return _copy_local_global_routine(state, cont, local_marker, global_marker, width)
         case CopyHeadSymbolTo(global_marker, width):
-            lower_copy_head_symbol_to(builder, state, global_marker=global_marker, width=width, continuation_label=continuation_label)
+            return _copy_head_symbol_to_routine(state, cont, global_marker, width)
         case CopyGlobalToHeadSymbol(global_marker, width):
-            lower_copy_global_to_head_symbol(builder, state, global_marker=global_marker, width=width, continuation_label=continuation_label)
+            return _copy_global_to_head_symbol_routine(state, cont, global_marker, width)
         case WriteGlobal(global_marker, literal_bits):
-            bit_states = [builder.fresh(f"write_global_bit_{index}") for index in range(len(literal_bits))]
-            builder.emit(state, global_marker, bit_states[0] if bit_states else builder.label_state(continuation_label), global_marker, R if bit_states else S)
-            for index, bit in enumerate(literal_bits):
-                next_state = bit_states[index + 1] if index + 1 < len(bit_states) else builder.label_state(continuation_label)
-                for read_bit in ("0", "1"):
-                    builder.emit(bit_states[index], read_bit, next_state, bit, R if index + 1 < len(bit_states) else S)
+            return _write_global_routine(state, cont, global_marker, literal_bits)
         case MoveSimHeadLeft():
-            lower_move_sim_head_left(builder, state, continuation_label=continuation_label)
+            return _move_sim_head_left_routine(state, cont)
         case MoveSimHeadRight():
-            lower_move_sim_head_right(builder, state, continuation_label=continuation_label)
+            return _move_sim_head_right_routine(state, cont)
         case _:
             raise NotImplementedError(f"lowering not implemented for {instruction!r}")
-
-
-def lower_instruction_sequence(
-    builder: TMBuilder,
-    instructions: tuple[Instruction, ...] | list[Instruction],
-    *,
-    start_state: str,
-    exit_label: str,
-) -> None:
-    """Lower a small straight-line Meta-ASM instruction sequence.
-
-    This helper is for block-level composition tests. It assumes any branching
-    instruction appears as the last instruction in the sequence.
-    """
-
-    current_state = start_state
-    instructions = tuple(instructions)
-    for index, instruction in enumerate(instructions):
-        continuation_label = exit_label if index + 1 == len(instructions) else builder.fresh(f"{start_state}_cont_{index}")
-        lower_instruction(builder, instruction, state=current_state, continuation_label=continuation_label)
-        current_state = continuation_label
 
 
 def block_entry_setup(block: Block) -> Instruction | None:
@@ -430,38 +819,131 @@ def block_entry_setup(block: Block) -> Instruction | None:
     return None
 
 
-def lower_block(builder: TMBuilder, block: Block) -> None:
-    start_state = builder.label_state(block.label)
+def instruction_sequence_to_routines(
+    instructions: tuple[Instruction, ...] | list[Instruction],
+    *,
+    start_state: Label,
+    exit_label: Label,
+    names: NameSupply,
+) -> tuple[Routine, ...]:
+    routines: list[Routine] = []
+    current_state = start_state
+    instructions = tuple(instructions)
+    for index, instruction in enumerate(instructions):
+        cont = exit_label if index + 1 == len(instructions) else names.fresh(f"{start_state}_cont_{index}")
+        routines.append(lower_instruction_to_routine(instruction, state=current_state, cont=cont))
+        current_state = cont
+    return tuple(routines)
+
+
+def block_to_routines(block: Block, names: NameSupply) -> tuple[Routine, ...]:
+    routines: list[Routine] = []
+    start_state = block.label
     setup = block_entry_setup(block)
     body_start = start_state
     if setup is not None:
-        body_start = builder.fresh(f"{block.label}_body")
-        lower_instruction(builder, setup, state=start_state, continuation_label=body_start)
+        body_start = names.fresh(f"{block.label}_body")
+        routines.append(lower_instruction_to_routine(setup, state=start_state, cont=body_start))
     if block.label != "MATCHED_RULE":
-        lower_instruction_sequence(builder, block.instructions, start_state=body_start, exit_label=builder.fresh(f"{block.label}_exit"))
-        return
-    copied_fields = builder.fresh("matched_rule_copied_fields")
-    resume = builder.fresh("matched_rule_resume")
-    lower_instruction_sequence(builder, block.instructions[:3], start_state=body_start, exit_label=copied_fields)
-    lower_deactivate_active_rule(builder, copied_fields, continuation_label=resume)
-    lower_instruction_sequence(builder, block.instructions[3:], start_state=resume, exit_label=builder.fresh("MATCHED_RULE_exit"))
+        routines.extend(
+            instruction_sequence_to_routines(
+                block.instructions,
+                start_state=body_start,
+                exit_label=names.fresh(f"{block.label}_exit"),
+                names=names,
+            )
+        )
+        return tuple(routines)
+
+    copied_fields = names.fresh("matched_rule_copied_fields")
+    resume = names.fresh("matched_rule_resume")
+    routines.extend(
+        instruction_sequence_to_routines(
+            block.instructions[:3],
+            start_state=body_start,
+            exit_label=copied_fields,
+            names=names,
+        )
+    )
+    routines.append(_deactivate_active_rule_routine(copied_fields, resume))
+    routines.extend(
+        instruction_sequence_to_routines(
+            block.instructions[3:],
+            start_state=resume,
+            exit_label=names.fresh("MATCHED_RULE_exit"),
+            names=names,
+        )
+    )
+    return tuple(routines)
 
 
-def lower_program(builder: TMBuilder, program: Program) -> None:
+def program_to_routines(program: Program, names: NameSupply | None = None) -> tuple[Routine, ...]:
+    names = NameSupply("program") if names is None else names
+    routines: list[Routine] = []
     for block in program.blocks:
-        lower_block(builder, block)
+        routines.extend(block_to_routines(block, names))
+    return tuple(routines)
+
+
+def assemble_program(builder: TMBuilder, program: Program) -> None:
+    program_names = NameSupply("program")
+    for index, routine in enumerate(program_to_routines(program, program_names)):
+        cfg = compile_routine(
+            routine,
+            builder.alphabet,
+            NameSupply(f"routine_{index}_{routine.name}"),
+            halt_state=builder.halt_state,
+        )
+        validate_cfg(cfg, builder.alphabet)
+        assemble_cfg(builder, cfg)
 
 
 def lower_program_to_raw_tm(
     program: Program,
-    alphabet: list[str] | tuple[str, ...],
+    alphabet: Iterable[str],
     *,
     halt_state: str = "U_HALT",
     blank: str = "_RUNTIME_BLANK",
 ) -> TMTransitionProgram:
     builder = TMBuilder([*alphabet, ACTIVE_RULE], halt_state=halt_state, blank=blank)
-    lower_program(builder, program)
+    assemble_program(builder, program)
     return builder.build(program.entry_label)
 
 
-__all__ = ["lower_block", "lower_instruction", "lower_instruction_sequence", "lower_program", "lower_program_to_raw_tm"]
+__all__ = [
+    "ACTIVE_RULE",
+    "BranchAtOp",
+    "BranchOnBitOp",
+    "CFGTransition",
+    "EmitAllOp",
+    "EmitAnyExceptOp",
+    "EmitOp",
+    "HeadAnywhere",
+    "HeadAt",
+    "HeadAtOneOf",
+    "HeadOnRuntimeTape",
+    "KeepWrite",
+    "MoveStepsOp",
+    "NameSupply",
+    "ReadAny",
+    "ReadAnyExcept",
+    "ReadSet",
+    "ReadSymbol",
+    "ReadSymbols",
+    "Routine",
+    "RoutineCFG",
+    "SeekOp",
+    "WriteAction",
+    "WriteBitOp",
+    "WriteSymbolAction",
+    "assemble_cfg",
+    "assemble_program",
+    "block_to_routines",
+    "compile_routine",
+    "global_direction",
+    "instruction_sequence_to_routines",
+    "lower_instruction_to_routine",
+    "lower_program_to_raw_tm",
+    "program_to_routines",
+    "validate_cfg",
+]

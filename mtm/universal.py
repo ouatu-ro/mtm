@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from .lowering import ACTIVE_RULE
 from .meta_asm import Program, build_universal_meta_asm
@@ -30,7 +31,7 @@ class UniversalInterpreter:
 
     def lower(
         self,
-        alphabet: list[str] | tuple[str, ...],
+        alphabet: Iterable[str],
         *,
         target_abi=None,
         minimal_abi=None,

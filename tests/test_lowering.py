@@ -1,11 +1,28 @@
 from mtm import load_fixture
-from mtm.lowering import ACTIVE_RULE
-from mtm.lowering import lower_instruction, lower_instruction_sequence, lower_program_to_raw_tm
-from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo
+from mtm.lowering import (
+    ACTIVE_RULE,
+    CFGTransition,
+    HeadAt,
+    KeepWrite,
+    NameSupply,
+    ReadAny,
+    ReadAnyExcept,
+    ReadSymbol,
+    RoutineCFG,
+    ReadSymbols,
+    SeekOp,
+    assemble_cfg,
+    compile_routine,
+    instruction_sequence_to_routines,
+    lower_instruction_to_routine,
+    lower_program_to_raw_tm,
+    validate_cfg,
+)
+from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo, Seek
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
-from tests.lowering_checks import lowering_smoke_rows
-from mtm.utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, materialize_runtime_tape, split_runtime_tape
+from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
+from mtm.utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, RULES, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -31,6 +48,20 @@ def _set_global_bits_on_runtime_tape(band, runtime_tape, marker: str, bits: str)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
     return materialize_runtime_tape(left_band, right_band)
+
+
+def _assemble_sequence(builder: TMBuilder, instructions, *, start_state: str, exit_label: str) -> None:
+    for index, routine in enumerate(
+        instruction_sequence_to_routines(
+            instructions,
+            start_state=start_state,
+            exit_label=exit_label,
+            names=NameSupply("test_sequence"),
+        )
+    ):
+        cfg = compile_routine(routine, builder.alphabet, NameSupply(f"test_sequence_{index}"), halt_state=builder.halt_state)
+        validate_cfg(cfg, builder.alphabet)
+        assemble_cfg(builder, cfg)
 
 
 def test_first_lowered_fragments_smoke() -> None:
@@ -87,7 +118,7 @@ def test_lowered_start_step_matches_host_block() -> None:
         prepared_tape = _set_global_bits(band, CUR_STATE, cur_state_bits)
         host = run_meta_asm_block_runtime(program, band.encoding, prepared_tape, label="START_STEP", max_steps=10)
         builder = TMBuilder(alphabet)
-        lower_instruction_sequence(builder, start_block.instructions, start_state="START_STEP", exit_label="DONE")
+        _assemble_sequence(builder, start_block.instructions, start_state="START_STEP", exit_label="DONE")
         result = run_raw_tm(builder.build("START_STEP"), prepared_tape, head=cur_state_head, max_steps=200)
         final_left_band, _ = split_runtime_tape(result["tape"])
         cmp_index = final_left_band.index(CMP_FLAG)
@@ -103,7 +134,7 @@ def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
     alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _set_head_cell(band, 4)
-    lower_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 4 * (3 + band.encoding.symbol_width), max_steps=1000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
@@ -119,13 +150,84 @@ def test_copy_global_to_head_symbol_matches_later_cell() -> None:
     alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _set_global_bits_on_runtime_tape(band, _set_head_cell(band, 3), CUR_SYMBOL, "00")
-    lower_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 3 * (3 + band.encoding.symbol_width), max_steps=1500)
     _, final_right_band = split_runtime_tape(result["tape"])
 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
     assert "".join(final_right_band[18:20]) == "00"
+
+
+def test_lower_instruction_to_routine_is_inspectable() -> None:
+    routine = lower_instruction_to_routine(Seek(RULES, "L"), state="start", cont="DONE")
+
+    assert routine.name == "seek"
+    assert routine.entry == "start"
+    assert routine.exit == "DONE"
+    assert routine.requires.__class__.__name__ == "HeadOnRuntimeTape"
+    assert routine.ensures == HeadAt(RULES)
+    assert routine.ops == (SeekOp("start", "DONE", frozenset({RULES}), "L"),)
+
+
+def test_compile_routine_keeps_seek_cfg_structured() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    routine = lower_instruction_to_routine(Seek(RULES, "L"), state="start", cont="DONE")
+    cfg = compile_routine(routine, alphabet, NameSupply("seek_test"))
+    builder = TMBuilder(alphabet)
+
+    validate_cfg(cfg, alphabet)
+    assemble_cfg(builder, cfg)
+    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=0, max_steps=300)
+
+    assert cfg.entry == "start"
+    assert cfg.exit == "DONE"
+    assert len(cfg.transitions) == 2
+    assert isinstance(cfg.transitions[0].reads, ReadSymbols)
+    assert isinstance(cfg.transitions[1].reads, ReadAnyExcept)
+    assert not any(isinstance(transition.reads, ReadAny) for transition in cfg.transitions)
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert result["head"] == -128
+
+
+def test_validate_cfg_rejects_duplicate_read_coverage() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exit="done",
+        states=("start", "done"),
+        transitions=(
+            CFGTransition("start", ReadAny(), "done", KeepWrite(), 0),
+            CFGTransition("start", ReadSymbol("0"), "done", KeepWrite(), 0),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0", "1"))
+    except ValueError as exc:
+        assert "duplicate CFG transition" in str(exc)
+    else:
+        raise AssertionError("expected duplicate CFG coverage to be rejected")
+
+
+def test_validate_cfg_rejects_empty_read_sets() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exit="done",
+        states=("start", "done"),
+        transitions=(
+            CFGTransition("start", ReadSymbols(frozenset({"missing"})), "done", KeepWrite(), 0),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0", "1"))
+    except ValueError as exc:
+        assert "empty read set" in str(exc)
+    else:
+        raise AssertionError("expected empty CFG read set to be rejected")
 
 
 def test_lowered_incrementer_matches_host_run() -> None:

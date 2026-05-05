@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, TypeAlias
+from typing import Callable, Iterable, TypeAlias
 
 from .utm_band_layout import CUR_STATE, CUR_SYMBOL, END_RULES, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL
 from .source_encoding import Encoding, L, R, encode_direction, encode_state
@@ -120,7 +120,7 @@ class Program:
 
     def lower(
         self,
-        alphabet: list[str] | tuple[str, ...],
+        alphabet: Iterable[str],
         *,
         halt_state: str = "U_HALT",
         blank: str = "_RUNTIME_BLANK",
@@ -136,7 +136,7 @@ class Program:
 
     def to_artifact(
         self,
-        alphabet: list[str] | tuple[str, ...],
+        alphabet: Iterable[str],
         *,
         halt_state: str = "U_HALT",
         blank: str = "_RUNTIME_BLANK",
