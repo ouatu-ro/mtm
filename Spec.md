@@ -145,9 +145,9 @@ states:
   qFindMargin  -> 00000010
 
 symbols:
-  "0" -> 00000000
-  "1" -> 00000001
-  "_" -> 00000010
+  "_" -> 00000000
+  "0" -> 00000001
+  "1" -> 00000010
 
 directions:
   L -> 0
@@ -159,6 +159,10 @@ Required property:
 ```text
 decode(encode(x)) = x
 ```
+
+The blank symbol is always assigned id `0`, so its encoded bitstring is all
+zeroes at the selected symbol width. The lowerer relies on this when it
+constructs fresh blank cells at either simulated tape boundary.
 
 ## 5. Semantic UTM Object
 

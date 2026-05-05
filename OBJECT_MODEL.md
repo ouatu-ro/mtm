@@ -135,7 +135,9 @@ Responsibilities:
 - encode and decode directions
 - preserve the property `decode(encode(x)) == x`
 
-Dense interning is the default assignment strategy.
+Dense interning is the default assignment strategy. The blank symbol is always
+assigned id `0`, so its encoded bitstring is all zeroes at the selected symbol
+width.
 
 ## 3. Semantic UTM Object
 
