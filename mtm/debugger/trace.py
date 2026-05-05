@@ -1,4 +1,12 @@
-"""Single-step tracing for raw transition-machine programs."""
+"""Reversible tracing for raw transition-machine programs.
+
+The core object is ``RawTraceRunner``. It always executes concrete raw TM rows,
+and it can optionally layer on:
+
+- lowering source metadata for "where did this row come from?"
+- grouped stepping across routine/instruction/block/source-step boundaries
+- semantic decode of an encoded UTM band for teaching-facing inspection
+"""
 
 from __future__ import annotations
 
@@ -91,7 +99,7 @@ class RawTraceView:
 class RawTraceRunner:
     """Step a raw transition program forward and backward using full snapshots."""
 
-    SOURCE_STEP_BLOCK_LABEL = "START_STEP"
+    DEFAULT_SOURCE_STEP_BLOCK_LABEL = "START_STEP"
 
     def __init__(
         self,
@@ -101,9 +109,11 @@ class RawTraceRunner:
         head: int = 0,
         state: str | None = None,
         source_map: TransitionSourceMap | None = None,
+        source_step_block_label: str = DEFAULT_SOURCE_STEP_BLOCK_LABEL,
     ) -> None:
         self.program = program
         self.source_map = source_map
+        self.source_step_block_label = source_step_block_label
         start_state = program.start_state if state is None else state
         self._snapshots = [self._freeze_snapshot(dict(tape), head=head, state=start_state, steps=0)]
         self._history: list[RawTraceTransition] = []
@@ -377,7 +387,7 @@ class RawTraceRunner:
                 raw_steps=0,
             )
 
-        left_current_boundary = source.block_label != self.SOURCE_STEP_BLOCK_LABEL
+        left_current_boundary = source.block_label != self.source_step_block_label
         raw_steps = 0
         while True:
             step_result = self.step()
@@ -392,7 +402,7 @@ class RawTraceRunner:
             if source is None:
                 status = "halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped"
                 return RawTraceGroupStepResult(status=status, snapshot=self.current, raw_steps=raw_steps)
-            if source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+            if source.block_label != self.source_step_block_label:
                 left_current_boundary = True
                 continue
             if left_current_boundary:
@@ -415,10 +425,10 @@ class RawTraceRunner:
     def _find_previous_source_step_boundary_index(self) -> int | None:
         for snapshot_index in range(len(self._snapshots) - 2, -1, -1):
             source = self._source_for_snapshot_index(snapshot_index)
-            if source is None or source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+            if source is None or source.block_label != self.source_step_block_label:
                 continue
             previous_source = None if snapshot_index == 0 else self._source_for_snapshot_index(snapshot_index - 1)
-            if previous_source is None or previous_source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+            if previous_source is None or previous_source.block_label != self.source_step_block_label:
                 return snapshot_index
         return None
 

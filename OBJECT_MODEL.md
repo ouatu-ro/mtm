@@ -368,7 +368,52 @@ Responsibilities:
 - report the simulated source head
 - expose decoded source-level tape cells and transition rules
 
-## 6. Compiler and Interpreter Objects
+## 6. Debugger Objects
+
+### `TransitionSourceMap`
+
+Lookup table from a concrete raw row `(state, read_symbol)` to
+`RawTransitionSource`.
+
+Responsibilities:
+
+- preserve where a lowered raw row came from
+- support debugger projections from raw execution back to source structure
+
+### `RawTraceRunner`
+
+Reversible debugger over a `TMTransitionProgram`.
+
+Responsibilities:
+
+- step and rewind one raw TM row at a time
+- expose the next raw row and the last executed raw row
+- use `TransitionSourceMap` for source-aware stepping when available
+- group raw execution into routine, instruction, block, or source-step moves
+
+### `RawTraceView`
+
+Teaching-facing projection of a `RawTraceRunner`.
+
+Fields:
+
+- `snapshot`
+- `next_raw_transition_key`
+- `next_raw_transition_row`
+- `next_raw_transition_source`
+- `last_transition`
+- `last_transition_source`
+- `decoded_view`
+- `decode_error`
+
+Meaning:
+
+- raw fields explain the concrete interpreter state
+- source fields explain which lowered source structure the row belongs to
+- `decoded_view` explains the simulated source-machine state when the runtime
+  tape can be decoded under an `Encoding`
+
+## 7. Compiler and Interpreter Objects
 
 ### `Compiler`
 
@@ -428,7 +473,7 @@ asm.run_host(band_artifact, fuel=...) -> RunResult
 asm.lower() -> TMTransitionProgram
 ```
 
-## 7. Primary Workflow
+## 8. Primary Workflow
 
 ```python
 instance = TMInstance(program, band)
@@ -448,7 +493,7 @@ result = program_artifact.run(band_artifact, fuel=100_000)
 view = result.decode(encoded.encoding)
 ```
 
-## 8. Object Responsibilities
+## 9. Object Responsibilities
 
 Short mapping:
 
@@ -464,3 +509,6 @@ Short mapping:
 - `TMTransitionProgram` = generic ordinary transition table
 - `TMRunConfig` = runner-facing tape/head/state
 - `DecodedBandView` = semantic inspection view
+- `TransitionSourceMap` = raw-row-to-lowered-source lookup
+- `RawTraceRunner` = reversible raw debugger with grouped stepping
+- `RawTraceView` = debugger projection for raw plus semantic inspection

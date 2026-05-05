@@ -313,6 +313,31 @@ def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> Non
     assert runner.current_transition_source.block_label == "START_STEP"
 
 
+def test_raw_trace_grouped_source_step_uses_configured_boundary_label() -> None:
+    program = Program(
+        blocks=(
+            Block("CYCLE", (Seek(RULES, "R"), Goto("OTHER"))),
+            Block("OTHER", (Goto("CYCLE"),)),
+        ),
+        entry_label="CYCLE",
+    )
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: RULES},
+        head=0,
+        state="CYCLE",
+        source_map=lowered.source_map,
+        source_step_block_label="CYCLE",
+    )
+
+    forward = runner.step_to_next_source_step()
+
+    assert forward.status == "stepped"
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "CYCLE"
+
+
 def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
     band = load_fixture("incrementer").build_band()
     program = build_universal_meta_asm(band.encoding)
