@@ -10,15 +10,19 @@ from mtm.lowering import (
     ReadSymbol,
     RoutineCFG,
     ReadSymbols,
+    Routine,
     SeekOp,
+    WriteSymbolAction,
     assemble_cfg,
     compile_routine,
     instruction_sequence_to_routines,
     lower_instruction_to_routine,
     lower_program_to_raw_tm,
+    program_to_cfgs,
     validate_cfg,
+    validate_program_cfgs,
 )
-from mtm.meta_asm import CopyGlobalToHeadSymbol, CopyHeadSymbolTo, Seek
+from mtm.meta_asm import BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, Goto, Seek
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
@@ -59,7 +63,7 @@ def _assemble_sequence(builder: TMBuilder, instructions, *, start_state: str, ex
             names=NameSupply("test_sequence"),
         )
     ):
-        cfg = compile_routine(routine, builder.alphabet, NameSupply(f"test_sequence_{index}"), halt_state=builder.halt_state)
+        cfg = compile_routine(routine, NameSupply(f"test_sequence_{index}"), halt_state=builder.halt_state)
         validate_cfg(cfg, builder.alphabet)
         assemble_cfg(builder, cfg)
 
@@ -164,7 +168,8 @@ def test_lower_instruction_to_routine_is_inspectable() -> None:
 
     assert routine.name == "seek"
     assert routine.entry == "start"
-    assert routine.exit == "DONE"
+    assert routine.exits == ("DONE",)
+    assert routine.falls_through
     assert routine.requires.__class__.__name__ == "HeadOnRuntimeTape"
     assert routine.ensures == HeadAt(RULES)
     assert routine.ops == (SeekOp("start", "DONE", frozenset({RULES}), "L"),)
@@ -175,7 +180,7 @@ def test_compile_routine_keeps_seek_cfg_structured() -> None:
     band = fixture.build_band()
     alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
     routine = lower_instruction_to_routine(Seek(RULES, "L"), state="start", cont="DONE")
-    cfg = compile_routine(routine, alphabet, NameSupply("seek_test"))
+    cfg = compile_routine(routine, NameSupply("seek_test"))
     builder = TMBuilder(alphabet)
 
     validate_cfg(cfg, alphabet)
@@ -183,7 +188,7 @@ def test_compile_routine_keeps_seek_cfg_structured() -> None:
     result = run_raw_tm(builder.build("start"), band.runtime_tape, head=0, max_steps=300)
 
     assert cfg.entry == "start"
-    assert cfg.exit == "DONE"
+    assert cfg.exits == ("DONE",)
     assert len(cfg.transitions) == 2
     assert isinstance(cfg.transitions[0].reads, ReadSymbols)
     assert isinstance(cfg.transitions[1].reads, ReadAnyExcept)
@@ -196,8 +201,8 @@ def test_compile_routine_keeps_seek_cfg_structured() -> None:
 def test_validate_cfg_rejects_duplicate_read_coverage() -> None:
     cfg = RoutineCFG(
         entry="start",
-        exit="done",
-        states=("start", "done"),
+        exits=("done",),
+        internal_states=("start",),
         transitions=(
             CFGTransition("start", ReadAny(), "done", KeepWrite(), 0),
             CFGTransition("start", ReadSymbol("0"), "done", KeepWrite(), 0),
@@ -215,8 +220,8 @@ def test_validate_cfg_rejects_duplicate_read_coverage() -> None:
 def test_validate_cfg_rejects_empty_read_sets() -> None:
     cfg = RoutineCFG(
         entry="start",
-        exit="done",
-        states=("start", "done"),
+        exits=("done",),
+        internal_states=("start",),
         transitions=(
             CFGTransition("start", ReadSymbols(frozenset({"missing"})), "done", KeepWrite(), 0),
         ),
@@ -225,9 +230,167 @@ def test_validate_cfg_rejects_empty_read_sets() -> None:
     try:
         validate_cfg(cfg, ("0", "1"))
     except ValueError as exc:
-        assert "empty read set" in str(exc)
+        assert "outside alphabet" in str(exc)
     else:
-        raise AssertionError("expected empty CFG read set to be rejected")
+        raise AssertionError("expected missing CFG read symbol to be rejected")
+
+
+def test_validate_cfg_rejects_writes_outside_alphabet() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exits=("done",),
+        internal_states=("start",),
+        transitions=(
+            CFGTransition("start", ReadSymbol("0"), "done", WriteSymbolAction("missing"), 0),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0", "1"))
+    except ValueError as exc:
+        assert "writes symbols outside alphabet" in str(exc)
+    else:
+        raise AssertionError("expected missing CFG write symbol to be rejected")
+
+
+def test_terminal_routines_expose_real_exits() -> None:
+    goto = lower_instruction_to_routine(Goto("TARGET"), state="start", cont="NEXT")
+    branch = lower_instruction_to_routine(BranchCmp("EQ", "NEQ"), state="start", cont="NEXT")
+
+    assert goto.exits == ("TARGET",)
+    assert not goto.falls_through
+    assert branch.exits == ("EQ", "NEQ")
+    assert not branch.falls_through
+
+
+def test_instruction_sequence_rejects_terminal_instruction_before_end() -> None:
+    try:
+        instruction_sequence_to_routines(
+            (Goto("TARGET"), Seek(RULES, "L")),
+            start_state="start",
+            exit_label="DONE",
+            names=NameSupply("bad_sequence"),
+        )
+    except ValueError as exc:
+        assert "terminal instruction before end of block" in str(exc)
+    else:
+        raise AssertionError("expected terminal instruction placement to be rejected")
+
+
+def test_name_supply_named_does_not_consume_ids_for_existing_labels() -> None:
+    names = NameSupply("name")
+
+    first = names.named("@loop")
+    second = names.named("@loop")
+    fresh = names.fresh("loop")
+
+    assert first == second
+    assert fresh == "name_loop_1"
+
+
+def test_compile_routine_rejects_bad_direction() -> None:
+    routine = Routine(
+        name="bad_seek",
+        entry="start",
+        exits=("done",),
+        falls_through=True,
+        ops=(SeekOp("start", "done", frozenset({"0"}), "sideways"),),
+    )
+
+    try:
+        compile_routine(routine, NameSupply("bad_direction"))
+    except ValueError as exc:
+        assert "unsupported direction" in str(exc)
+    else:
+        raise AssertionError("expected bad direction to be rejected")
+
+
+def test_validate_cfg_rejects_bad_move() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exits=("done",),
+        internal_states=("start",),
+        transitions=(
+            CFGTransition("start", ReadSymbol("0"), "done", KeepWrite(), 99),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0",))
+    except ValueError as exc:
+        assert "invalid move" in str(exc)
+    else:
+        raise AssertionError("expected invalid move to be rejected")
+
+
+def test_validate_cfg_rejects_exit_sources() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exits=("done",),
+        internal_states=("start",),
+        transitions=(
+            CFGTransition("start", ReadSymbol("0"), "done", KeepWrite(), 0),
+            CFGTransition("done", ReadSymbol("1"), "start", KeepWrite(), 0),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0", "1"))
+    except ValueError as exc:
+        assert "exit states have outgoing transitions" in str(exc)
+    else:
+        raise AssertionError("expected exit source transition to be rejected")
+
+
+def test_validate_cfg_rejects_internal_exit_overlap() -> None:
+    cfg = RoutineCFG(
+        entry="start",
+        exits=("done",),
+        internal_states=("start", "done"),
+        transitions=(
+            CFGTransition("start", ReadSymbol("0"), "done", KeepWrite(), 0),
+        ),
+    )
+
+    try:
+        validate_cfg(cfg, ("0",))
+    except ValueError as exc:
+        assert "both internal and exits" in str(exc)
+    else:
+        raise AssertionError("expected internal/exit overlap to be rejected")
+
+
+def test_validate_program_cfgs_rejects_cross_routine_duplicate_coverage() -> None:
+    cfgs = (
+        RoutineCFG(
+            entry="start",
+            exits=("done_a",),
+            internal_states=("start",),
+            transitions=(CFGTransition("start", ReadSymbol("0"), "done_a", KeepWrite(), 0),),
+        ),
+        RoutineCFG(
+            entry="start",
+            exits=("done_b",),
+            internal_states=("start",),
+            transitions=(CFGTransition("start", ReadSymbol("0"), "done_b", KeepWrite(), 0),),
+        ),
+    )
+
+    try:
+        validate_program_cfgs(cfgs, ("0",))
+    except ValueError as exc:
+        assert "duplicate program CFG transition" in str(exc)
+    else:
+        raise AssertionError("expected cross-routine duplicate transition to be rejected")
+
+
+def test_program_to_cfgs_returns_inspectable_cfgs_before_assembly() -> None:
+    fixture = load_fixture("incrementer")
+    program = build_universal_meta_asm(fixture.build_band().encoding)
+    cfgs = program_to_cfgs(program)
+
+    assert cfgs
+    assert all(cfg.transitions for cfg in cfgs)
 
 
 def test_lowered_incrementer_matches_host_run() -> None:

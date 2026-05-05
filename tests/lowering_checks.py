@@ -31,7 +31,7 @@ from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 def assemble_instruction(builder: TMBuilder, instruction, *, state: str, continuation_label: str) -> None:
     routine = lower_instruction_to_routine(instruction, state=state, cont=continuation_label)
-    cfg = compile_routine(routine, builder.alphabet, NameSupply(f"test_{routine.name}"), halt_state=builder.halt_state)
+    cfg = compile_routine(routine, NameSupply(f"test_{routine.name}"), halt_state=builder.halt_state)
     validate_cfg(cfg, builder.alphabet)
     assemble_cfg(builder, cfg)
 

@@ -581,15 +581,25 @@ transition rows. It returns a `Routine`:
 class Routine:
     name: str
     entry: str
-    exit: str
+    exits: tuple[str, ...]
+    falls_through: bool
     ops: tuple[Op, ...]
     requires: HeadContract = HeadAnywhere()
     ensures: HeadContract = HeadAnywhere()
 ```
 
-`Routine.entry` and `Routine.exit` are labels supplied by the caller. Any
+`Routine.entry` and `Routine.exits` are labels supplied by the caller. Any
 internal labels in the routine are symbolic; concrete internal state names are
-allocated later by `compile_routine`.
+allocated later by `compile_routine`. Fallthrough routines usually have one
+exit: the continuation label. Branching or terminal routines name their real
+control exits instead:
+
+```python
+Goto(label)    -> exits=(label,), falls_through=False
+Halt()         -> exits=("__HALT__",), falls_through=False
+BranchCmp(a,b) -> exits=(a, b), falls_through=False
+Seek(...)      -> exits=(cont,), falls_through=True
+```
 
 Routine operations are composable lowering IR nodes such as:
 
@@ -609,22 +619,31 @@ EmitAnyExceptOp(...)
 @dataclass(frozen=True)
 class RoutineCFG:
     entry: str
-    exit: str
-    states: tuple[str, ...]
+    exits: tuple[str, ...]
+    internal_states: tuple[str, ...]
     transitions: tuple[CFGTransition, ...]
 ```
 
-`CFGTransition` is still structured. It uses `ReadSet` and `WriteAction`
-objects so wide alphabet cases like "all symbols except marker X" remain
-inspectable until the final assembly boundary.
+`CFGTransition` is still structured. It uses the closed `ReadSet` and
+`WriteAction` IR unions so wide alphabet cases like "all symbols except marker
+X" remain inspectable until the final assembly boundary.
 
 Only final assembly calls `TMBuilder.emit`:
 
 ```python
 routine = lower_instruction_to_routine(instruction, state=entry, cont=exit)
-cfg = compile_routine(routine, alphabet, NameSupply(routine.name))
+cfg = compile_routine(routine, NameSupply(routine.name))
 validate_cfg(cfg, alphabet)
 assemble_cfg(builder, cfg)
+```
+
+Program lowering follows the same inspect-before-mutate rule:
+
+```python
+cfgs = program_to_cfgs(program)
+validate_program_cfgs(cfgs, alphabet)
+for cfg in cfgs:
+    assemble_cfg(builder, cfg)
 ```
 
 Every routine defines:
@@ -636,8 +655,9 @@ Every routine defines:
 - continuation behavior
 
 `validate_cfg` checks the generated control graph before raw transition rows
-exist. It rejects duplicate `(state, read)` coverage, transitions out of the
-routine exit state, unknown transition states, and unreachable internal states.
+exist. It rejects duplicate `(state, read)` coverage, transitions out of any
+routine exit state, unknown transition states, unreachable internal states,
+empty read sets, and read/write symbols outside the alphabet.
 
 The final output is:
 

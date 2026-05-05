@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Protocol, TypeAlias
+from typing import Iterable, TypeAlias
 
 from .meta_asm import (
     Block,
@@ -52,6 +52,7 @@ Symbol: TypeAlias = str
 
 GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
 ACTIVE_RULE = "#ACTIVE_RULE"
+VALID_MOVES = {L, S, R}
 
 
 @dataclass(frozen=True)
@@ -74,12 +75,7 @@ class HeadAtOneOf:
     markers: tuple[str, ...]
 
 
-HeadContract: TypeAlias = HeadAnywhere | HeadOnRuntimeTape | HeadAt | HeadAtOneOf | str
-
-
-class ReadSet(Protocol):
-    def expand(self, alphabet: tuple[str, ...]) -> tuple[str, ...]:
-        ...
+HeadContract: TypeAlias = HeadAnywhere | HeadOnRuntimeTape | HeadAt | HeadAtOneOf
 
 
 @dataclass(frozen=True)
@@ -113,9 +109,7 @@ class ReadAnyExcept:
         return tuple(symbol for symbol in alphabet if symbol not in self.symbols)
 
 
-class WriteAction(Protocol):
-    def resolve(self, read: str) -> str:
-        ...
+ReadSet: TypeAlias = ReadAny | ReadSymbol | ReadSymbols | ReadAnyExcept
 
 
 @dataclass(frozen=True)
@@ -133,6 +127,17 @@ class WriteSymbolAction:
         return self.symbol
 
 
+WriteAction: TypeAlias = KeepWrite | WriteSymbolAction
+Bit: TypeAlias = str
+BIT_VALUES: tuple[Bit, Bit] = ("0", "1")
+
+
+@dataclass(frozen=True)
+class BitBranch:
+    state: Label
+    bit: Bit
+
+
 @dataclass(frozen=True)
 class CFGTransition:
     source: State
@@ -145,9 +150,13 @@ class CFGTransition:
 @dataclass(frozen=True)
 class RoutineCFG:
     entry: State
-    exit: State
-    states: tuple[State, ...]
+    exits: tuple[State, ...]
+    internal_states: tuple[State, ...]
     transitions: tuple[CFGTransition, ...]
+
+    @property
+    def states(self) -> tuple[State, ...]:
+        return tuple(sorted(set(self.internal_states) | set(self.exits)))
 
 
 @dataclass(frozen=True)
@@ -221,7 +230,8 @@ Op: TypeAlias = EmitOp | EmitAllOp | SeekOp | MoveStepsOp | BranchOnBitOp | Writ
 class Routine:
     name: str
     entry: Label
-    exit: Label
+    exits: tuple[Label, ...]
+    falls_through: bool
     ops: tuple[Op, ...]
     requires: HeadContract = HeadAnywhere()
     ensures: HeadContract = HeadAnywhere()
@@ -240,8 +250,10 @@ class NameSupply:
         return f"{self.prefix}_{clean_hint}_{next_id}"
 
     def named(self, local_label: str) -> str:
-        clean_label = local_label.replace("@", "").replace("#", "").replace(" ", "_")
-        return self._named.setdefault(local_label, self.fresh(clean_label))
+        if local_label not in self._named:
+            clean_label = local_label.replace("@", "").replace("#", "").replace(" ", "_")
+            self._named[local_label] = self.fresh(clean_label)
+        return self._named[local_label]
 
 
 class RoutineDraft:
@@ -250,13 +262,15 @@ class RoutineDraft:
         name: str,
         *,
         entry: Label,
-        exit: Label,
+        exits: tuple[Label, ...],
+        falls_through: bool = True,
         requires: HeadContract = HeadAnywhere(),
         ensures: HeadContract = HeadAnywhere(),
     ):
         self.name = name
         self.entry = entry
-        self.exit = exit
+        self.exits = exits
+        self.falls_through = falls_through
         self.requires = requires
         self.ensures = ensures
         self.ops: list[Op] = []
@@ -274,7 +288,8 @@ class RoutineDraft:
         return Routine(
             name=self.name,
             entry=self.entry,
-            exit=self.exit,
+            exits=self.exits,
+            falls_through=self.falls_through,
             ops=tuple(self.ops),
             requires=self.requires,
             ensures=self.ensures,
@@ -282,8 +297,7 @@ class RoutineDraft:
 
 
 class CFGCompiler:
-    def __init__(self, *, alphabet: tuple[str, ...], names: NameSupply, halt_state: str):
-        self.alphabet = alphabet
+    def __init__(self, *, names: NameSupply, halt_state: str):
         self.names = names
         self.halt_state = halt_state
         self.transitions: list[CFGTransition] = []
@@ -308,14 +322,16 @@ class CFGCompiler:
             case EmitAllOp(source, target, move):
                 self.add(source, ReadAny(), target, KeepWrite(), move)
             case SeekOp(source, target, markers, direction):
-                move = R if direction == "R" else L
+                move = _move_for_direction(direction)
                 self.add(source, ReadSymbols(markers), target, KeepWrite(), S)
                 self.add(source, ReadAnyExcept(markers), source, KeepWrite(), move)
             case MoveStepsOp(source, target, steps, direction):
+                if steps < 0:
+                    raise ValueError(f"move steps must be non-negative: {steps!r}")
                 if steps == 0:
                     self.add(source, ReadAny(), target, KeepWrite(), S)
                     return
-                move = R if direction == "R" else L
+                move = _move_for_direction(direction)
                 current = self.state(source)
                 for index in range(steps):
                     next_state = self.state(target) if index + 1 == steps else self.fresh(f"{source}_move_{index}")
@@ -334,26 +350,36 @@ class CFGCompiler:
                 self.add(source, ReadAnyExcept(frozenset({except_symbol})), target, KeepWrite(), move)
 
     def cfg(self, routine: Routine) -> RoutineCFG:
-        states = {self.state(routine.entry), self.state(routine.exit)}
+        exits = tuple(self.state(exit_label) for exit_label in routine.exits)
+        exit_set = set(exits)
+        internal_states = {self.state(routine.entry)}
         for transition in self.transitions:
-            states.add(transition.source)
-            states.add(transition.target)
+            internal_states.add(transition.source)
+            if transition.target not in exit_set:
+                internal_states.add(transition.target)
         return RoutineCFG(
             entry=self.state(routine.entry),
-            exit=self.state(routine.exit),
-            states=tuple(sorted(states)),
+            exits=exits,
+            internal_states=tuple(sorted(internal_states)),
             transitions=tuple(self.transitions),
         )
 
 
+def _move_for_direction(direction: str) -> int:
+    if direction == "R":
+        return R
+    if direction == "L":
+        return L
+    raise ValueError(f"unsupported direction: {direction!r}")
+
+
 def compile_routine(
     routine: Routine,
-    alphabet: Iterable[str],
     names: NameSupply,
     *,
     halt_state: str = "U_HALT",
 ) -> RoutineCFG:
-    compiler = CFGCompiler(alphabet=tuple(alphabet), names=names, halt_state=halt_state)
+    compiler = CFGCompiler(names=names, halt_state=halt_state)
     for op in routine.ops:
         compiler.compile_op(op)
     return compiler.cfg(routine)
@@ -361,21 +387,44 @@ def compile_routine(
 
 def validate_cfg(cfg: RoutineCFG, alphabet: Iterable[str]) -> None:
     alphabet = tuple(alphabet)
+    alphabet_set = set(alphabet)
     known_states = set(cfg.states)
+    internal_states = set(cfg.internal_states)
+    exit_states = set(cfg.exits)
     seen: set[tuple[str, str]] = set()
     outgoing: dict[str, set[str]] = {}
+
+    if cfg.entry not in internal_states:
+        raise ValueError(f"CFG entry must be an internal state: {cfg.entry!r}")
+    overlapping_states = internal_states & exit_states
+    if overlapping_states:
+        raise ValueError(f"CFG states cannot be both internal and exits: {sorted(overlapping_states)!r}")
+    exit_sources = exit_states & {transition.source for transition in cfg.transitions}
+    if exit_sources:
+        raise ValueError(f"CFG exit states have outgoing transitions: {sorted(exit_sources)!r}")
 
     for transition in cfg.transitions:
         if transition.source not in known_states:
             raise ValueError(f"unknown CFG transition source: {transition.source!r}")
         if transition.target not in known_states:
             raise ValueError(f"unknown CFG transition target: {transition.target!r}")
-        if transition.source == cfg.exit:
-            raise ValueError(f"CFG exit state has outgoing transition: {cfg.exit!r}")
+        if transition.move not in VALID_MOVES:
+            raise ValueError(f"CFG transition has invalid move: {transition.move!r}")
+        missing_read_refs = _explicit_read_symbols(transition.reads) - alphabet_set
+        if missing_read_refs:
+            raise ValueError(f"CFG transition reads symbols outside alphabet: {sorted(missing_read_refs)!r}")
+        missing_write_refs = _explicit_write_symbols(transition.write) - alphabet_set
+        if missing_write_refs:
+            raise ValueError(f"CFG transition writes symbols outside alphabet: {sorted(missing_write_refs)!r}")
         reads = transition.reads.expand(alphabet)
         if not reads:
             raise ValueError(f"CFG transition has empty read set: {transition!r}")
         for read in reads:
+            if read not in alphabet_set:
+                raise ValueError(f"CFG transition reads symbol outside alphabet: {read!r}")
+            write = transition.write.resolve(read)
+            if write not in alphabet_set:
+                raise ValueError(f"CFG transition writes symbol outside alphabet: {write!r}")
             key = (transition.source, read)
             if key in seen:
                 raise ValueError(f"duplicate CFG transition for {key!r}")
@@ -398,6 +447,30 @@ def validate_cfg(cfg: RoutineCFG, alphabet: Iterable[str]) -> None:
     }
     if unreachable:
         raise ValueError(f"unreachable CFG states: {sorted(unreachable)!r}")
+
+
+def _explicit_read_symbols(reads: ReadSet) -> set[str]:
+    match reads:
+        case ReadSymbol(symbol):
+            return {symbol}
+        case ReadSymbols(symbols):
+            return set(symbols)
+        case ReadAnyExcept(symbols):
+            return set(symbols)
+        case ReadAny():
+            return set()
+        case _:
+            raise TypeError(f"unsupported ReadSet: {reads!r}")
+
+
+def _explicit_write_symbols(write: WriteAction) -> set[str]:
+    match write:
+        case WriteSymbolAction(symbol):
+            return {symbol}
+        case KeepWrite():
+            return set()
+        case _:
+            raise TypeError(f"unsupported WriteAction: {write!r}")
 
 
 def assemble_cfg(builder: TMBuilder, cfg: RoutineCFG) -> None:
@@ -428,8 +501,94 @@ def _branch_on_bit(draft: RoutineDraft, source: Label, *, zero_label: Label, one
     draft.add(BranchOnBitOp(source, zero_label, one_label, move))
 
 
+def _branch_bit_at_offset(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    offset: int,
+    move_after_read: int,
+    prefix: str,
+    index: int,
+) -> tuple[BitBranch, BitBranch]:
+    read_state = draft.local(f"{prefix}_read_{index}")
+    zero_state = draft.local(f"{prefix}_bit0_{index}")
+    one_state = draft.local(f"{prefix}_bit1_{index}")
+    _move_steps(draft, source, steps=offset, direction="R", target=read_state)
+    _branch_on_bit(draft, read_state, zero_label=zero_state, one_label=one_state, move=move_after_read)
+    return (BitBranch(zero_state, "0"), BitBranch(one_state, "1"))
+
+
+def _emit_expected_bit_branch(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    expected: Bit,
+    match_target: Label,
+    mismatch_target: Label,
+    match_move: int,
+    mismatch_move: int,
+) -> None:
+    if expected not in BIT_VALUES:
+        raise ValueError(f"expected bit must be 0 or 1: {expected!r}")
+    mismatch = "1" if expected == "0" else "0"
+    draft.add(EmitOp(source, expected, match_target, expected, match_move))
+    draft.add(EmitOp(source, mismatch, mismatch_target, mismatch, mismatch_move))
+
+
 def _write_current_bit(draft: RoutineDraft, source: Label, *, bit: str, target: Label, move: int) -> None:
     draft.add(WriteBitOp(source, target, bit, move))
+
+
+def _write_bit_at_offset(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    bit: Bit,
+    offset: int,
+    target: Label,
+    write_move: int,
+    prefix: str,
+    index: int,
+) -> None:
+    write_state = draft.local(f"{prefix}_write_{bit}_{index}")
+    _move_steps(draft, source, steps=offset, direction="R", target=write_state)
+    _write_current_bit(draft, write_state, bit=bit, target=target, move=write_move)
+
+
+def _seek_then_write_bit_at_offset(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    marker: str,
+    seek_direction: str,
+    bit: Bit,
+    offset: int,
+    target: Label,
+    write_move: int,
+    prefix: str,
+    index: int,
+) -> None:
+    marker_state = draft.local(f"{prefix}_marker_{bit}_{index}")
+    _seek(draft, source, markers={marker}, direction=seek_direction, target=marker_state)
+    _write_bit_at_offset(
+        draft,
+        marker_state,
+        bit=bit,
+        offset=offset,
+        target=target,
+        write_move=write_move,
+        prefix=prefix,
+        index=index,
+    )
+
+
+def _seek_active_rule(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    _seek(draft, source, markers={ACTIVE_RULE}, direction="R", target=target)
+
+
+def _activate_rule_at_head(draft: RoutineDraft, source: Label, *, target: Label) -> None:
+    draft.add(EmitOp(source, RULE, target, ACTIVE_RULE, S))
+    draft.add(EmitOp(source, ACTIVE_RULE, target, ACTIVE_RULE, S))
 
 
 def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Label) -> None:
@@ -439,31 +598,33 @@ def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Lab
 
 
 def _halt_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("halt", entry=state, exit=cont)
+    del cont
+    draft = RoutineDraft("halt", entry=state, exits=("__HALT__",), falls_through=False)
     draft.add(EmitAllOp(state, "__HALT__", S))
     return draft.build()
 
 
 def _goto_routine(state: Label, cont: Label, label: Label) -> Routine:
-    draft = RoutineDraft("goto", entry=state, exit=cont)
+    del cont
+    draft = RoutineDraft("goto", entry=state, exits=(label,), falls_through=False)
     draft.add(EmitAllOp(state, label, S))
     return draft.build()
 
 
 def _seek_routine(state: Label, cont: Label, marker: str, direction: str) -> Routine:
-    draft = RoutineDraft("seek", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(marker))
+    draft = RoutineDraft("seek", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(marker))
     _seek(draft, state, markers={marker}, direction=direction, target=cont)
     return draft.build()
 
 
 def _seek_one_of_routine(state: Label, cont: Label, markers: tuple[str, ...], direction: str) -> Routine:
-    draft = RoutineDraft("seek_one_of", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf(markers))
+    draft = RoutineDraft("seek_one_of", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf(markers))
     _seek(draft, state, markers=set(markers), direction=direction, target=cont)
     return draft.build()
 
 
 def _find_first_rule_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("find_first_rule", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf((RULE, END_RULES)))
+    draft = RoutineDraft("find_first_rule", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAtOneOf((RULE, END_RULES)))
     seek_regs = draft.local("seek_regs")
     seek_rules = draft.local("seek_rules")
     seek_rule = draft.local("seek_rule")
@@ -478,7 +639,7 @@ def _find_first_rule_routine(state: Label, cont: Label) -> Routine:
 
 
 def _find_next_rule_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("find_next_rule", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAtOneOf((RULE, END_RULES)))
+    draft = RoutineDraft("find_next_rule", entry=state, exits=(cont,), requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAtOneOf((RULE, END_RULES)))
     seek_next = draft.local("seek_next")
     mark_rule = draft.local("mark_rule")
     draft.add(EmitOp(state, ACTIVE_RULE, seek_next, RULE, R))
@@ -490,7 +651,7 @@ def _find_next_rule_routine(state: Label, cont: Label) -> Routine:
 
 
 def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("find_head_cell", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
+    draft = RoutineDraft("find_head_cell", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
     scan_cell = draft.local("scan")
     inspect_flag = draft.local("flag")
     return_cell = draft.local("return")
@@ -504,7 +665,7 @@ def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
 
 
 def _move_sim_head_right_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("move_sim_head_right", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    draft = RoutineDraft("move_sim_head_right", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     scan_next = draft.local("scan_next")
     mark_head = draft.local("mark_head")
@@ -519,7 +680,7 @@ def _move_sim_head_right_routine(state: Label, cont: Label) -> Routine:
 
 
 def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("move_sim_head_left", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    draft = RoutineDraft("move_sim_head_left", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     leave_current = draft.local("leave_current")
     scan_prev = draft.local("scan_prev")
@@ -536,35 +697,57 @@ def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
 
 
 def _deactivate_active_rule_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("deactivate_active_rule", entry=state, exit=cont, requires=HeadAtOneOf((ACTIVE_RULE, RULE)), ensures=HeadAt(RULE))
+    draft = RoutineDraft("deactivate_active_rule", entry=state, exits=(cont,), requires=HeadAtOneOf((ACTIVE_RULE, RULE)), ensures=HeadAt(RULE))
     draft.add(EmitOp(state, ACTIVE_RULE, cont, RULE, S))
     draft.add(EmitOp(state, RULE, cont, RULE, S))
     return draft.build()
 
 
 def _copy_global_global_routine(state: Label, cont: Label, src_marker: str, dst_marker: str, width: int) -> Routine:
-    draft = RoutineDraft("copy_global_global", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadOnRuntimeTape())
+    draft = RoutineDraft("copy_global_global", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadOnRuntimeTape())
     to_dst, to_src = global_direction(src_marker, dst_marker), global_direction(dst_marker, src_marker)
     current = draft.local("seek_src")
     seek_regs = draft.local("seek_regs")
     _seek(draft, state, markers={REGS}, direction="L", target=seek_regs)
     _seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
     for index in range(width):
-        src_read = draft.local(f"src_{index}")
-        _move_steps(draft, current, steps=index + 1, direction="R", target=src_read)
-        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
-        _branch_on_bit(draft, src_read, zero_label=bit0, one_label=bit1, move=R if to_dst == "R" else L)
+        branches = _branch_bit_at_offset(
+            draft,
+            current,
+            offset=index + 1,
+            move_after_read=R if to_dst == "R" else L,
+            prefix="src",
+            index=index,
+        )
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            dst_marker_state = draft.local(f"dst_marker_{bit}_{index}")
-            _seek(draft, bit_state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
-            dst_write = draft.local(f"dst_write_{bit}_{index}")
-            _move_steps(draft, dst_marker_state, steps=index + 1, direction="R", target=dst_write)
+        for branch in branches:
             if index + 1 == width:
-                _write_current_bit(draft, dst_write, bit=bit, target=cont, move=S)
+                _seek_then_write_bit_at_offset(
+                    draft,
+                    branch.state,
+                    marker=dst_marker,
+                    seek_direction=to_dst,
+                    bit=branch.bit,
+                    offset=index + 1,
+                    target=cont,
+                    write_move=S,
+                    prefix="dst",
+                    index=index,
+                )
             else:
-                back_to_src = draft.local(f"back_to_src_{bit}_{index}")
-                _write_current_bit(draft, dst_write, bit=bit, target=back_to_src, move=R if to_src == "R" else L)
+                back_to_src = draft.local(f"back_to_src_{branch.bit}_{index}")
+                _seek_then_write_bit_at_offset(
+                    draft,
+                    branch.state,
+                    marker=dst_marker,
+                    seek_direction=to_dst,
+                    bit=branch.bit,
+                    offset=index + 1,
+                    target=back_to_src,
+                    write_move=R if to_src == "R" else L,
+                    prefix="dst",
+                    index=index,
+                )
                 _seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
         if next_iter is not None:
             current = next_iter
@@ -572,52 +755,84 @@ def _copy_global_global_routine(state: Label, cont: Label, src_marker: str, dst_
 
 
 def _copy_local_global_routine(state: Label, cont: Label, local_marker: str, global_marker: str, width: int) -> Routine:
-    draft = RoutineDraft("copy_local_global", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
+    draft = RoutineDraft("copy_local_global", entry=state, exits=(cont,), requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
     activate_rule = draft.local("activate_rule")
     current = activate_rule
-    draft.add(EmitOp(state, RULE, activate_rule, ACTIVE_RULE, S))
-    draft.add(EmitOp(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S))
+    _activate_rule_at_head(draft, state, target=activate_rule)
     for index in range(width):
         local_marker_state = draft.local(f"local_marker_{index}")
         _seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
-        local_read = draft.local(f"local_read_{index}")
-        _move_steps(draft, local_marker_state, steps=index + 1, direction="R", target=local_read)
-        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
-        _branch_on_bit(draft, local_read, zero_label=bit0, one_label=bit1, move=L)
+        branches = _branch_bit_at_offset(
+            draft,
+            local_marker_state,
+            offset=index + 1,
+            move_after_read=L,
+            prefix="local",
+            index=index,
+        )
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            global_marker_state = draft.local(f"global_marker_{bit}_{index}")
-            _seek(draft, bit_state, markers={global_marker}, direction="L", target=global_marker_state)
-            global_write = draft.local(f"global_write_{bit}_{index}")
-            _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_write)
-            back_to_rule = draft.local(f"back_to_rule_{bit}_{index}")
-            _write_current_bit(draft, global_write, bit=bit, target=back_to_rule, move=S)
-            _seek(draft, back_to_rule, markers={ACTIVE_RULE}, direction="R", target=cont if index + 1 == width else next_iter)
+        for branch in branches:
+            back_to_rule = draft.local(f"back_to_rule_{branch.bit}_{index}")
+            _seek_then_write_bit_at_offset(
+                draft,
+                branch.state,
+                marker=global_marker,
+                seek_direction="L",
+                bit=branch.bit,
+                offset=index + 1,
+                target=back_to_rule,
+                write_move=S,
+                prefix="global",
+                index=index,
+            )
+            _seek_active_rule(draft, back_to_rule, target=cont if index + 1 == width else next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()
 
 
 def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
-    draft = RoutineDraft("copy_head_symbol_to", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
+    draft = RoutineDraft("copy_head_symbol_to", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
     for index in range(width):
-        head_read = draft.local(f"head_read_{index}")
-        _move_steps(draft, current, steps=index + 2, direction="R", target=head_read)
-        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
-        _branch_on_bit(draft, head_read, zero_label=bit0, one_label=bit1, move=L)
+        branches = _branch_bit_at_offset(
+            draft,
+            current,
+            offset=index + 2,
+            move_after_read=L,
+            prefix="head",
+            index=index,
+        )
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            global_marker_state = draft.local(f"global_marker_{bit}_{index}")
-            _seek(draft, bit_state, markers={global_marker}, direction="L", target=global_marker_state)
-            global_write = draft.local(f"global_write_{bit}_{index}")
-            _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_write)
+        for branch in branches:
             if index + 1 == width:
-                _write_current_bit(draft, global_write, bit=bit, target=cont, move=S)
+                _seek_then_write_bit_at_offset(
+                    draft,
+                    branch.state,
+                    marker=global_marker,
+                    seek_direction="L",
+                    bit=branch.bit,
+                    offset=index + 1,
+                    target=cont,
+                    write_move=S,
+                    prefix="global",
+                    index=index,
+                )
             else:
-                back_to_head = draft.local(f"back_to_head_{bit}_{index}")
-                back_to_cell = draft.local(f"back_to_cell_{bit}_{index}")
-                _write_current_bit(draft, global_write, bit=bit, target=back_to_head, move=S)
+                back_to_head = draft.local(f"back_to_head_{branch.bit}_{index}")
+                back_to_cell = draft.local(f"back_to_cell_{branch.bit}_{index}")
+                _seek_then_write_bit_at_offset(
+                    draft,
+                    branch.state,
+                    marker=global_marker,
+                    seek_direction="L",
+                    bit=branch.bit,
+                    offset=index + 1,
+                    target=back_to_head,
+                    write_move=S,
+                    prefix="global",
+                    index=index,
+                )
                 _seek(draft, back_to_head, markers={HEAD}, direction="R", target=back_to_cell)
                 draft.add(EmitOp(back_to_cell, HEAD, next_iter, HEAD, L))
         if next_iter is not None:
@@ -626,28 +841,48 @@ def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, 
 
 
 def _copy_global_to_head_symbol_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
-    draft = RoutineDraft("copy_global_to_head_symbol", entry=state, exit=cont, requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
+    draft = RoutineDraft("copy_global_to_head_symbol", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
     for index in range(width):
         global_marker_state = draft.local(f"global_marker_{index}")
         _seek(draft, current, markers={global_marker}, direction="L", target=global_marker_state)
-        global_read = draft.local(f"global_read_{index}")
-        _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
-        bit0, bit1 = draft.local(f"bit0_{index}"), draft.local(f"bit1_{index}")
-        _branch_on_bit(draft, global_read, zero_label=bit0, one_label=bit1, move=R)
+        branches = _branch_bit_at_offset(
+            draft,
+            global_marker_state,
+            offset=index + 1,
+            move_after_read=R,
+            prefix="global",
+            index=index,
+        )
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for bit_state, bit in ((bit0, "0"), (bit1, "1")):
-            head_flag_state = draft.local(f"head_flag_{bit}_{index}")
-            cell_state = draft.local(f"cell_state_{bit}_{index}")
-            _seek(draft, bit_state, markers={HEAD}, direction="R", target=head_flag_state)
+        for branch in branches:
+            head_flag_state = draft.local(f"head_flag_{branch.bit}_{index}")
+            cell_state = draft.local(f"cell_state_{branch.bit}_{index}")
+            _seek(draft, branch.state, markers={HEAD}, direction="R", target=head_flag_state)
             draft.add(EmitOp(head_flag_state, HEAD, cell_state, HEAD, L))
-            head_write = draft.local(f"head_write_{bit}_{index}")
-            _move_steps(draft, cell_state, steps=index + 2, direction="R", target=head_write)
             if index + 1 == width:
-                _write_current_bit(draft, head_write, bit=bit, target=cont, move=S)
+                _write_bit_at_offset(
+                    draft,
+                    cell_state,
+                    bit=branch.bit,
+                    offset=index + 2,
+                    target=cont,
+                    write_move=S,
+                    prefix="head",
+                    index=index,
+                )
             else:
-                back_to_cell = draft.local(f"back_to_cell_{bit}_{index}")
-                _write_current_bit(draft, head_write, bit=bit, target=back_to_cell, move=L)
+                back_to_cell = draft.local(f"back_to_cell_{branch.bit}_{index}")
+                _write_bit_at_offset(
+                    draft,
+                    cell_state,
+                    bit=branch.bit,
+                    offset=index + 2,
+                    target=back_to_cell,
+                    write_move=L,
+                    prefix="head",
+                    index=index,
+                )
                 _seek(draft, back_to_cell, markers={CELL}, direction="L", target=next_iter)
         if next_iter is not None:
             current = next_iter
@@ -655,7 +890,7 @@ def _copy_global_to_head_symbol_routine(state: Label, cont: Label, global_marker
 
 
 def _compare_global_literal_routine(state: Label, cont: Label, global_marker: str, literal_bits: tuple[str, ...]) -> Routine:
-    draft = RoutineDraft("compare_global_literal", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadAt(CMP_FLAG))
+    draft = RoutineDraft("compare_global_literal", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(CMP_FLAG))
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
     seek_regs = draft.local("seek_regs")
     marker_state = draft.local("marker")
@@ -670,12 +905,15 @@ def _compare_global_literal_routine(state: Label, cont: Label, global_marker: st
         expected_target = next_read if next_read else seek_true
         expected_move = R if next_read else (R if dir_to_cmp == "R" else L)
         mismatch_move = R if dir_to_cmp == "R" else L
-        if expected == "0":
-            draft.add(EmitOp(current, "0", expected_target, "0", expected_move))
-            draft.add(EmitOp(current, "1", seek_false, "1", mismatch_move))
-        else:
-            draft.add(EmitOp(current, "1", expected_target, "1", expected_move))
-            draft.add(EmitOp(current, "0", seek_false, "0", mismatch_move))
+        _emit_expected_bit_branch(
+            draft,
+            current,
+            expected=expected,
+            match_target=expected_target,
+            mismatch_target=seek_false,
+            match_move=expected_move,
+            mismatch_move=mismatch_move,
+        )
         cmp_false_state = draft.local(f"false_cmp_{index}")
         _seek(draft, seek_false, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
         if seek_true is not None:
@@ -688,52 +926,63 @@ def _compare_global_literal_routine(state: Label, cont: Label, global_marker: st
 
 
 def _compare_global_local_routine(state: Label, cont: Label, global_marker: str, local_marker: str, width: int) -> Routine:
-    draft = RoutineDraft("compare_global_local", entry=state, exit=cont, requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
+    draft = RoutineDraft("compare_global_local", entry=state, exits=(cont,), requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
     activate_rule = draft.local("activate_rule")
     current = activate_rule
-    draft.add(EmitOp(state, RULE, activate_rule, ACTIVE_RULE, S))
-    draft.add(EmitOp(state, ACTIVE_RULE, activate_rule, ACTIVE_RULE, S))
+    _activate_rule_at_head(draft, state, target=activate_rule)
     for index in range(width):
         local_marker_state = draft.local(f"local_marker_{index}")
         _seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
-        local_read = draft.local(f"local_read_{index}")
-        _move_steps(draft, local_marker_state, steps=index + 1, direction="R", target=local_read)
+        branches = _branch_bit_at_offset(
+            draft,
+            local_marker_state,
+            offset=index + 1,
+            move_after_read=L,
+            prefix="local",
+            index=index,
+        )
         next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for local_bit in ("0", "1"):
-            global_seek = draft.local(f"seek_global_{local_bit}_{index}")
-            draft.add(EmitOp(local_read, local_bit, global_seek, local_bit, L))
-            global_marker_state = draft.local(f"global_marker_{local_bit}_{index}")
-            _seek(draft, global_seek, markers={global_marker}, direction="L", target=global_marker_state)
-            global_read = draft.local(f"global_read_{local_bit}_{index}")
+        for branch in branches:
+            global_marker_state = draft.local(f"global_marker_{branch.bit}_{index}")
+            _seek(draft, branch.state, markers={global_marker}, direction="L", target=global_marker_state)
+            global_read = draft.local(f"global_read_{branch.bit}_{index}")
             _move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
-            mismatch_seek = draft.local(f"mismatch_seek_{local_bit}_{index}")
-            if next_iter is not None:
-                back_to_rule = draft.local(f"back_to_rule_{local_bit}_{index}")
-                draft.add(EmitOp(global_read, local_bit, back_to_rule, local_bit, S))
-                _seek(draft, back_to_rule, markers={ACTIVE_RULE}, direction="R", target=next_iter)
-            else:
-                match_seek = draft.local(f"match_seek_{local_bit}_{index}")
-                cmp_true_state = draft.local(f"true_cmp_{local_bit}_{index}")
-                after_true = draft.local(f"after_true_{local_bit}_{index}")
-                draft.add(EmitOp(global_read, local_bit, match_seek, local_bit, S))
-                _seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
-                _write_cmp_flag(draft, cmp_true_state, bit="1", target=after_true)
-                _seek(draft, after_true, markers={ACTIVE_RULE}, direction="R", target=cont)
-            mismatch_bit = "1" if local_bit == "0" else "0"
+            mismatch_bit = "1" if branch.bit == "0" else "0"
+            mismatch_seek = draft.local(f"mismatch_seek_{branch.bit}_{index}")
             draft.add(EmitOp(global_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
-            cmp_false_state = draft.local(f"false_cmp_{local_bit}_{index}")
-            after_false = draft.local(f"after_false_{local_bit}_{index}")
+            cmp_false_state = draft.local(f"false_cmp_{branch.bit}_{index}")
+            after_false = draft.local(f"after_false_{branch.bit}_{index}")
             _seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
             _write_cmp_flag(draft, cmp_false_state, bit="0", target=after_false)
-            _seek(draft, after_false, markers={ACTIVE_RULE}, direction="R", target=cont)
+            _seek_active_rule(draft, after_false, target=cont)
+            if next_iter is not None:
+                back_to_rule = draft.local(f"back_to_rule_{branch.bit}_{index}")
+                draft.add(EmitOp(global_read, branch.bit, back_to_rule, branch.bit, S))
+                _seek_active_rule(draft, back_to_rule, target=next_iter)
+            else:
+                match_seek = draft.local(f"match_seek_{branch.bit}_{index}")
+                cmp_true_state = draft.local(f"true_cmp_{branch.bit}_{index}")
+                after_true = draft.local(f"after_true_{branch.bit}_{index}")
+                draft.add(EmitOp(global_read, branch.bit, match_seek, branch.bit, S))
+                _seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+                _write_cmp_flag(draft, cmp_true_state, bit="1", target=after_true)
+                _seek_active_rule(draft, after_true, target=cont)
         if next_iter is not None:
             current = next_iter
     return draft.build()
 
 
 def _branch_cmp_routine(state: Label, cont: Label, label_equal: Label, label_not_equal: Label) -> Routine:
-    draft = RoutineDraft("branch_cmp", entry=state, exit=cont, requires=HeadAtOneOf((CMP_FLAG, ACTIVE_RULE)), ensures=HeadOnRuntimeTape())
+    del cont
+    draft = RoutineDraft(
+        "branch_cmp",
+        entry=state,
+        exits=(label_equal, label_not_equal),
+        falls_through=False,
+        requires=HeadAtOneOf((CMP_FLAG, ACTIVE_RULE)),
+        ensures=HeadOnRuntimeTape(),
+    )
     active_seek_cmp = draft.local("active_seek_cmp")
     active_read_cmp = draft.local("active_read_cmp")
     active_bit = draft.local("active_bit")
@@ -754,7 +1003,7 @@ def _branch_cmp_routine(state: Label, cont: Label, label_equal: Label, label_not
 
 
 def _write_global_routine(state: Label, cont: Label, global_marker: str, literal_bits: tuple[str, ...]) -> Routine:
-    draft = RoutineDraft("write_global", entry=state, exit=cont, requires=HeadAt(global_marker), ensures=HeadOnRuntimeTape())
+    draft = RoutineDraft("write_global", entry=state, exits=(cont,), requires=HeadAt(global_marker), ensures=HeadOnRuntimeTape())
     bit_states = [draft.local(f"bit_{index}") for index in range(len(literal_bits))]
     draft.add(EmitOp(state, global_marker, bit_states[0] if bit_states else cont, global_marker, R if bit_states else S))
     for index, bit in enumerate(literal_bits):
@@ -780,7 +1029,15 @@ def lower_instruction_to_routine(instruction: Instruction, *, state: Label, cont
         case FindHeadCell():
             return _find_head_cell_routine(state, cont)
         case BranchAt(marker, label_true, label_false):
-            draft = RoutineDraft("branch_at", entry=state, exit=cont, requires=HeadOnRuntimeTape(), ensures=HeadOnRuntimeTape())
+            del cont
+            draft = RoutineDraft(
+                "branch_at",
+                entry=state,
+                exits=(label_true, label_false),
+                falls_through=False,
+                requires=HeadOnRuntimeTape(),
+                ensures=HeadOnRuntimeTape(),
+            )
             draft.add(BranchAtOp(state, marker, label_true, label_false))
             return draft.build()
         case BranchCmp(label_equal, label_not_equal):
@@ -831,7 +1088,10 @@ def instruction_sequence_to_routines(
     instructions = tuple(instructions)
     for index, instruction in enumerate(instructions):
         cont = exit_label if index + 1 == len(instructions) else names.fresh(f"{start_state}_cont_{index}")
-        routines.append(lower_instruction_to_routine(instruction, state=current_state, cont=cont))
+        routine = lower_instruction_to_routine(instruction, state=current_state, cont=cont)
+        if not routine.falls_through and index + 1 < len(instructions):
+            raise ValueError(f"terminal instruction before end of block: {instruction!r}")
+        routines.append(routine)
         current_state = cont
     return tuple(routines)
 
@@ -885,16 +1145,40 @@ def program_to_routines(program: Program, names: NameSupply | None = None) -> tu
     return tuple(routines)
 
 
-def assemble_program(builder: TMBuilder, program: Program) -> None:
+def program_to_cfgs(program: Program, *, halt_state: str = "U_HALT") -> tuple[RoutineCFG, ...]:
     program_names = NameSupply("program")
+    cfgs: list[RoutineCFG] = []
     for index, routine in enumerate(program_to_routines(program, program_names)):
-        cfg = compile_routine(
-            routine,
-            builder.alphabet,
-            NameSupply(f"routine_{index}_{routine.name}"),
-            halt_state=builder.halt_state,
+        cfgs.append(
+            compile_routine(
+                routine,
+                NameSupply(f"routine_{index}_{routine.name}"),
+                halt_state=halt_state,
+            )
         )
-        validate_cfg(cfg, builder.alphabet)
+    return tuple(cfgs)
+
+
+def validate_program_cfgs(cfgs: tuple[RoutineCFG, ...], alphabet: Iterable[str]) -> None:
+    alphabet = tuple(alphabet)
+    seen: dict[tuple[str, str], int] = {}
+    for cfg_index, cfg in enumerate(cfgs):
+        validate_cfg(cfg, alphabet)
+        for transition in cfg.transitions:
+            for read in transition.reads.expand(alphabet):
+                key = (transition.source, read)
+                if key in seen:
+                    raise ValueError(
+                        f"duplicate program CFG transition for {key!r} "
+                        f"in routine CFG {cfg_index}; first seen in routine CFG {seen[key]}"
+                    )
+                seen[key] = cfg_index
+
+
+def assemble_program(builder: TMBuilder, program: Program) -> None:
+    cfgs = program_to_cfgs(program, halt_state=builder.halt_state)
+    validate_program_cfgs(cfgs, builder.alphabet)
+    for cfg in cfgs:
         assemble_cfg(builder, cfg)
 
 
@@ -945,5 +1229,7 @@ __all__ = [
     "lower_instruction_to_routine",
     "lower_program_to_raw_tm",
     "program_to_routines",
+    "program_to_cfgs",
     "validate_cfg",
+    "validate_program_cfgs",
 ]
