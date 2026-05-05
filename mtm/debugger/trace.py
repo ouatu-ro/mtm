@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
+from typing import Callable, Mapping
 
 from ..lowering.source_map import RawTransitionSource, TransitionSourceMap
 from ..raw_transition_tm import TMTransitionProgram, Transition, TransitionKey
+from ..semantic_objects import DecodedBandView, decoded_view_from_encoded_band
+from ..source_encoding import Encoding
+from ..utm_band_layout import EncodedBand
 
 
 @dataclass(frozen=True)
@@ -62,8 +65,33 @@ class RawTraceRunResult:
     steps_executed: int
 
 
+@dataclass(frozen=True)
+class RawTraceGroupStepResult:
+    """Result of stepping across one source-level boundary."""
+
+    status: str
+    snapshot: RawTraceSnapshot
+    raw_steps: int
+
+
+@dataclass(frozen=True)
+class RawTraceView:
+    """Projection of the runner's current state for teaching-facing inspection."""
+
+    snapshot: RawTraceSnapshot
+    next_raw_transition_key: TransitionKey | None
+    next_raw_transition_row: Transition | None
+    next_raw_transition_source: RawTransitionSource | None
+    last_transition: RawTraceTransition | None
+    last_transition_source: RawTransitionSource | None
+    decoded_view: DecodedBandView | None
+    decode_error: str | None
+
+
 class RawTraceRunner:
     """Step a raw transition program forward and backward using full snapshots."""
+
+    SOURCE_STEP_BLOCK_LABEL = "START_STEP"
 
     def __init__(
         self,
@@ -217,6 +245,68 @@ class RawTraceRunner:
             status = "fuel_exhausted"
         return RawTraceRunResult(status=status, snapshot=self.current, steps_executed=self.current.steps - start_steps)
 
+    def step_to_next_routine(self) -> RawTraceGroupStepResult:
+        """Advance until the next routine boundary."""
+
+        return self._step_to_next_group(lambda source: source.routine_index)
+
+    def step_to_next_instruction(self) -> RawTraceGroupStepResult:
+        """Advance until the next instruction boundary."""
+
+        return self._step_to_next_group(lambda source: (source.block_label, source.instruction_index))
+
+    def step_to_next_block(self) -> RawTraceGroupStepResult:
+        """Advance until the next block boundary."""
+
+        return self._step_to_next_group(lambda source: source.block_label)
+
+    def step_to_next_source_step(self) -> RawTraceGroupStepResult:
+        """Advance until the next universal-machine source-step boundary."""
+
+        return self._step_to_next_source_step_boundary()
+
+    def back_to_previous_routine(self) -> RawTraceGroupStepResult:
+        """Rewind to the previous routine boundary."""
+
+        return self._back_to_previous_group(lambda source: source.routine_index)
+
+    def back_to_previous_instruction(self) -> RawTraceGroupStepResult:
+        """Rewind to the previous instruction boundary."""
+
+        return self._back_to_previous_group(lambda source: (source.block_label, source.instruction_index))
+
+    def back_to_previous_block(self) -> RawTraceGroupStepResult:
+        """Rewind to the previous block boundary."""
+
+        return self._back_to_previous_group(lambda source: source.block_label)
+
+    def back_to_previous_source_step(self) -> RawTraceGroupStepResult:
+        """Rewind to the previous universal-machine source-step boundary."""
+
+        return self._back_to_previous_source_step_boundary()
+
+    def current_view(self, *, encoding: Encoding | None = None) -> RawTraceView:
+        """Return the current raw view plus an optional semantic decode."""
+
+        decoded_view = None
+        decode_error = None
+        if encoding is not None:
+            try:
+                band = EncodedBand.from_runtime_tape(encoding, self.current.tape_dict())
+                decoded_view = decoded_view_from_encoded_band(band)
+            except Exception as exc:  # pragma: no cover - exercised through public fields
+                decode_error = f"{type(exc).__name__}: {exc}"
+        return RawTraceView(
+            snapshot=self.current,
+            next_raw_transition_key=self.current_transition_key,
+            next_raw_transition_row=self.current_transition,
+            next_raw_transition_source=self.current_transition_source,
+            last_transition=self.last_transition,
+            last_transition_source=self.last_transition_source,
+            decoded_view=decoded_view,
+            decode_error=decode_error,
+        )
+
     def _freeze_snapshot(self, tape: dict[int, str], *, head: int, state: str, steps: int) -> RawTraceSnapshot:
         return RawTraceSnapshot(tape=MappingProxyType(dict(tape)), head=head, state=state, steps=steps)
 
@@ -225,11 +315,133 @@ class RawTraceRunner:
             return None
         return self.source_map.lookup(state, read_symbol)
 
+    def _step_to_next_group(self, group_for_source: Callable[[RawTransitionSource], object]) -> RawTraceGroupStepResult:
+        source = self.current_transition_source
+        if source is None:
+            return RawTraceGroupStepResult(
+                status="halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped",
+                snapshot=self.current,
+                raw_steps=0,
+            )
+        start_group = group_for_source(source)
+        raw_steps = 0
+        while True:
+            step_result = self.step()
+            if step_result.status != "stepped":
+                return RawTraceGroupStepResult(
+                    status=step_result.status,
+                    snapshot=step_result.snapshot,
+                    raw_steps=raw_steps,
+                )
+            raw_steps += 1
+            source = self.current_transition_source
+            if source is None:
+                status = "halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped"
+                return RawTraceGroupStepResult(status=status, snapshot=self.current, raw_steps=raw_steps)
+            if group_for_source(source) != start_group:
+                return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
+
+    def _back_to_previous_group(self, group_for_source: Callable[[RawTransitionSource], object]) -> RawTraceGroupStepResult:
+        source = self.current_transition_source
+        current_group = None if source is None else group_for_source(source)
+        raw_steps = 0
+        while True:
+            previous_source = self._source_for_previous_snapshot()
+            if previous_source is None:
+                return RawTraceGroupStepResult(
+                    status="at_start",
+                    snapshot=self.current,
+                    raw_steps=raw_steps,
+                )
+            previous_group = group_for_source(previous_source)
+            if current_group is None or previous_group != current_group:
+                break
+            self.back()
+            raw_steps += 1
+
+        self.back()
+        raw_steps += 1
+        while True:
+            prior_source = self._source_for_snapshot_index(-2)
+            if prior_source is None or group_for_source(prior_source) != previous_group:
+                return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
+            self.back()
+            raw_steps += 1
+
+    def _step_to_next_source_step_boundary(self) -> RawTraceGroupStepResult:
+        source = self.current_transition_source
+        if source is None:
+            return RawTraceGroupStepResult(
+                status="halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped",
+                snapshot=self.current,
+                raw_steps=0,
+            )
+
+        left_current_boundary = source.block_label != self.SOURCE_STEP_BLOCK_LABEL
+        raw_steps = 0
+        while True:
+            step_result = self.step()
+            if step_result.status != "stepped":
+                return RawTraceGroupStepResult(
+                    status=step_result.status,
+                    snapshot=step_result.snapshot,
+                    raw_steps=raw_steps,
+                )
+            raw_steps += 1
+            source = self.current_transition_source
+            if source is None:
+                status = "halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped"
+                return RawTraceGroupStepResult(status=status, snapshot=self.current, raw_steps=raw_steps)
+            if source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+                left_current_boundary = True
+                continue
+            if left_current_boundary:
+                return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
+
+    def _back_to_previous_source_step_boundary(self) -> RawTraceGroupStepResult:
+        if len(self._snapshots) == 1:
+            return RawTraceGroupStepResult(status="at_start", snapshot=self.current, raw_steps=0)
+
+        target_index = self._find_previous_source_step_boundary_index()
+        if target_index is None:
+            return RawTraceGroupStepResult(status="at_start", snapshot=self.current, raw_steps=0)
+
+        raw_steps = 0
+        while len(self._snapshots) - 1 > target_index:
+            self.back()
+            raw_steps += 1
+        return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
+
+    def _find_previous_source_step_boundary_index(self) -> int | None:
+        for snapshot_index in range(len(self._snapshots) - 2, -1, -1):
+            source = self._source_for_snapshot_index(snapshot_index)
+            if source is None or source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+                continue
+            previous_source = None if snapshot_index == 0 else self._source_for_snapshot_index(snapshot_index - 1)
+            if previous_source is None or previous_source.block_label != self.SOURCE_STEP_BLOCK_LABEL:
+                return snapshot_index
+        return None
+
+    def _source_for_previous_snapshot(self) -> RawTransitionSource | None:
+        return self._source_for_snapshot_index(-2)
+
+    def _source_for_snapshot_index(self, index: int) -> RawTransitionSource | None:
+        try:
+            snapshot = self._snapshots[index]
+        except IndexError:
+            return None
+        return self._lookup_source(snapshot.state, self._read_symbol_for_snapshot(snapshot))
+
+    def _read_symbol_for_snapshot(self, snapshot: RawTraceSnapshot) -> str:
+        return snapshot.tape.get(snapshot.head, self.program.blank)
+
 
 __all__ = [
+    "RawTraceGroupStepResult",
     "RawTraceRunResult",
     "RawTraceRunner",
     "RawTraceSnapshot",
     "RawTraceStepResult",
     "RawTraceTransition",
+    "RawTraceView",
 ]

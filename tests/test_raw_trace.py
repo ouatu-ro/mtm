@@ -1,8 +1,12 @@
+from mtm import load_fixture
 from mtm.debugger import RawTraceRunner
 from mtm.lowering import lower_program_with_source_map
+from mtm.lowering.constants import ACTIVE_RULE
 from mtm.meta_asm import Block, Goto, Program, Seek, format_instruction
 from mtm.raw_transition_tm import R, S, TMBuilder
-from mtm.utm_band_layout import RULES
+from mtm.semantic_objects import start_head_from_encoded_band
+from mtm.utm_band_layout import CUR_STATE, RULES
+from mtm.meta_asm import build_universal_meta_asm
 
 
 def test_raw_trace_step_executes_one_transition_and_exposes_next_row() -> None:
@@ -120,3 +124,233 @@ def test_raw_trace_source_map_attaches_to_last_and_current_transition() -> None:
     assert next_source.routine_name == "goto"
     assert runner.current_transition_key == (next_source.state, next_source.read_symbol)
     assert next_source.state == goto_cfg.entry
+
+
+def test_raw_trace_grouped_routine_step_and_back_follow_source_boundaries() -> None:
+    program = Program(
+        blocks=(
+            Block("ENTRY", (Seek(RULES, "R"), Goto("SECOND"))),
+            Block("SECOND", (Goto("DONE"),)),
+        ),
+        entry_label="ENTRY",
+    )
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: "0", 2: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.step_to_next_routine()
+
+    assert forward.status == "stepped"
+    assert forward.raw_steps == 3
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "ENTRY"
+    assert runner.current_transition_source.instruction_index == 1
+    assert runner.current_transition_source.routine_name == "goto"
+
+    backward = runner.back_to_previous_routine()
+
+    assert backward.status == "stepped"
+    assert backward.raw_steps == 3
+    assert runner.current.state == "ENTRY"
+    assert runner.current.head == 0
+    assert runner.current.steps == 0
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.instruction_index == 0
+    assert runner.current_transition_source.routine_name == "seek"
+
+
+def test_raw_trace_grouped_instruction_step_and_back_follow_source_boundaries() -> None:
+    program = Program(
+        blocks=(Block("ENTRY", (Seek(RULES, "R"), Goto("DONE"))),),
+        entry_label="ENTRY",
+    )
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: "0", 2: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.step_to_next_instruction()
+
+    assert forward.status == "stepped"
+    assert forward.raw_steps == 3
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.instruction_index == 1
+    assert runner.current_transition_source.instruction == Goto("DONE")
+
+    backward = runner.back_to_previous_instruction()
+
+    assert backward.status == "stepped"
+    assert backward.raw_steps == 3
+    assert runner.current.state == "ENTRY"
+    assert runner.current.steps == 0
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.instruction_index == 0
+    assert runner.current_transition_source.instruction == Seek(RULES, "R")
+
+
+def test_raw_trace_grouped_block_step_and_back_follow_source_boundaries() -> None:
+    program = Program(
+        blocks=(
+            Block("ENTRY", (Seek(RULES, "R"), Goto("SECOND"))),
+            Block("SECOND", (Seek(RULES, "L"), Goto("DONE"))),
+        ),
+        entry_label="ENTRY",
+    )
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: "0", 2: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.step_to_next_block()
+
+    assert forward.status == "stepped"
+    assert forward.raw_steps == 4
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "SECOND"
+    assert runner.current_transition_source.instruction_index == 0
+
+    backward = runner.back_to_previous_block()
+
+    assert backward.status == "stepped"
+    assert backward.raw_steps == 4
+    assert runner.current.state == "ENTRY"
+    assert runner.current.steps == 0
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "ENTRY"
+
+
+def test_raw_trace_grouped_source_step_advances_to_next_utm_cycle_boundary() -> None:
+    band = load_fixture("incrementer").build_band()
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lowered = lower_program_with_source_map(program, alphabet)
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        band.runtime_tape,
+        head=start_head_from_encoded_band(band),
+        state=program.entry_label,
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.step_to_next_source_step()
+
+    assert forward.status == "stepped"
+    assert forward.raw_steps > 0
+    assert runner.current.steps == forward.raw_steps
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "START_STEP"
+    assert runner.current.state == "START_STEP"
+
+
+def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_boundary() -> None:
+    band = load_fixture("incrementer").build_band()
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lowered = lower_program_with_source_map(program, alphabet)
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        band.runtime_tape,
+        head=start_head_from_encoded_band(band),
+        state=program.entry_label,
+        source_map=lowered.source_map,
+    )
+
+    first_boundary = runner.step_to_next_source_step()
+    expected_tape = runner.current.tape_dict()
+    expected_head = runner.current.head
+    expected_state = runner.current.state
+    expected_steps = runner.current.steps
+
+    stepped = runner.step()
+    backward = runner.back_to_previous_source_step()
+
+    assert first_boundary.status == "stepped"
+    assert stepped.status == "stepped"
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "START_STEP"
+    assert runner.current.tape_dict() == expected_tape
+    assert runner.current.head == expected_head
+    assert runner.current.state == expected_state
+    assert runner.current.steps == expected_steps
+    assert backward.status == "stepped"
+    assert backward.raw_steps == 1
+
+
+def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> None:
+    band = load_fixture("incrementer").build_band()
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lowered = lower_program_with_source_map(program, alphabet)
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        band.runtime_tape,
+        head=start_head_from_encoded_band(band),
+        state=program.entry_label,
+        source_map=lowered.source_map,
+    )
+
+    runner.step()
+    backward = runner.back_to_previous_source_step()
+
+    assert backward.status == "stepped"
+    assert backward.raw_steps == 1
+    assert runner.current.steps == 0
+    assert runner.current.state == "START_STEP"
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "START_STEP"
+
+
+def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
+    band = load_fixture("incrementer").build_band()
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lowered = lower_program_with_source_map(program, alphabet)
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        band.runtime_tape,
+        head=start_head_from_encoded_band(band),
+        state=program.entry_label,
+        source_map=lowered.source_map,
+    )
+
+    view = runner.current_view(encoding=band.encoding)
+
+    assert view.snapshot == runner.current
+    assert view.next_raw_transition_key == runner.current_transition_key
+    assert view.next_raw_transition_row == runner.current_transition
+    assert view.next_raw_transition_source == runner.current_transition_source
+    assert view.last_transition is None
+    assert view.last_transition_source is None
+    assert view.decoded_view is not None
+    assert view.decoded_view.current_state == "qFindMargin"
+    assert view.decoded_view.simulated_head == 0
+    assert view.decode_error is None
+
+
+def test_raw_trace_current_view_reports_decode_error_for_incoherent_runtime_tape() -> None:
+    band = load_fixture("incrementer").build_band()
+    start_head = start_head_from_encoded_band(band)
+    builder = TMBuilder(sorted(set(band.linear()) | {"0", "1"}), blank=band.encoding.blank)
+    builder.emit("start", CUR_STATE, builder.halt_state, "0", S)
+    runner = RawTraceRunner(builder.build("start"), band.runtime_tape, head=start_head)
+
+    stepped = runner.step()
+    view = runner.current_view(encoding=band.encoding)
+
+    assert stepped.status == "stepped"
+    assert view.decoded_view is None
+    assert view.decode_error is not None
+    assert "CUR_STATE" in view.decode_error
