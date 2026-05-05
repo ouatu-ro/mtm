@@ -1,11 +1,10 @@
 """Teaching-facing debugger helpers layered over raw transition execution.
 
-The package surface is intentionally small:
+The package surface is split across three levels:
 
-- ``RawTraceRunner`` provides reversible raw stepping
-- source maps connect raw rows back to lowered instructions
-- grouped stepping moves by routine, instruction, block, or UTM source step
-- renderers format the current raw and semantic view for text output
+- ``RawTraceRunner`` provides reversible raw stepping and grouped boundaries
+- ``DebuggerSession`` formats status, where/view output, and step/back actions
+- ``DebuggerShell`` exposes the fixture-mode REPL as a thin ``cmd.Cmd`` adapter
 """
 
 from .render import format_group_step_result, format_source_location, format_trace_view

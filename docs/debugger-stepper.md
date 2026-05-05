@@ -1,12 +1,13 @@
 # Debugger Stepper Layers
 
-The debugger surface is easiest to teach if you treat it as four stacked
+The debugger surface is easiest to teach if you treat it as five stacked
 layers:
 
 1. raw TM stepping
 2. source-map lookup
 3. grouped stepping
 4. semantic band decode
+5. session/shell presentation
 
 Each layer adds context without changing the underlying execution model.
 
@@ -70,6 +71,15 @@ the current runtime tape is a coherent encoded UTM band.
 This is the teaching-friendly "show me both the raw interpreter state and the
 simulated source-machine state" layer.
 
+## 5. Session and shell presentation
+
+`DebuggerSession` turns runner state into the compact `status`, `where`,
+`view`, `step`, and `back` text shapes used by the REPL.
+
+`DebuggerShell` is a thin `cmd.Cmd` adapter over the session. It owns command
+parsing, aliases, help text, and `set max-raw`, but it does not reimplement
+debugger semantics.
+
 ## Recommended teaching sequence
 
 For demos and UI wiring, the simplest progression is:
@@ -79,6 +89,8 @@ For demos and UI wiring, the simplest progression is:
 3. switch controls to grouped stepping when raw rows become too fine-grained
 4. pass `encoding` to `current_view(...)` when you want to show decoded
    registers and simulated tape
+5. wrap the runner in `DebuggerSession` / `DebuggerShell` when you want the
+   spec-aligned fixture REPL
 
 That order keeps the mental model stable: every richer view is still grounded
 in the same reversible raw trace.
