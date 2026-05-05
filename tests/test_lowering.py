@@ -1,10 +1,10 @@
 from mtm import load_fixture
 from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, program_to_cfgs, validate_cfg, validate_program_cfgs
-from mtm.meta_asm import BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, Goto, Seek
+from mtm.meta_asm import BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Seek
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
-from mtm.utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, RULES, materialize_runtime_tape, split_runtime_tape
+from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, RULES, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -23,6 +23,15 @@ def _set_head_cell(band, cell_index: int):
             right_band[index] = NO_HEAD
     right_band[1 + cell_index * span + 1] = HEAD
     return materialize_runtime_tape(band.left_band, right_band)
+
+
+def _runtime_tape_with_no_head(band):
+    right_band = [NO_HEAD if token == HEAD else token for token in band.right_band]
+    return materialize_runtime_tape(band.left_band, right_band)
+
+
+def _cell_address(band, cell_index: int) -> int:
+    return [index for index, token in enumerate(band.right_band) if token == CELL][cell_index]
 
 
 def _set_global_bits_on_runtime_tape(band, runtime_tape, marker: str, bits: str):
@@ -139,6 +148,47 @@ def test_copy_global_to_head_symbol_matches_later_cell() -> None:
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
     assert "".join(final_right_band[18:20]) == "00"
+
+
+def test_find_head_cell_branches_to_stuck_at_end_tape_boundary() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    assemble_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
+
+    result = run_raw_tm(builder.build("start"), _runtime_tape_with_no_head(band), head=0, max_steps=500)
+
+    assert result["status"] == "stuck"
+    assert result["state"] == "STUCK"
+
+
+def test_move_sim_head_right_branches_to_stuck_at_end_tape_boundary() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    last_cell = len([token for token in band.right_band if token == CELL]) - 1
+    prepared_tape = _set_head_cell(band, last_cell)
+    assemble_instruction(builder, MoveSimHeadRight(), state="start", continuation_label="DONE")
+
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(band, last_cell), max_steps=500)
+
+    assert result["status"] == "stuck"
+    assert result["state"] == "STUCK"
+
+
+def test_move_sim_head_left_branches_to_stuck_at_tape_boundary() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    assemble_instruction(builder, MoveSimHeadLeft(), state="start", continuation_label="DONE")
+
+    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_cell_address(band, 0), max_steps=500)
+
+    assert result["status"] == "stuck"
+    assert result["state"] == "STUCK"
 
 
 def test_lower_instruction_to_routine_is_inspectable() -> None:

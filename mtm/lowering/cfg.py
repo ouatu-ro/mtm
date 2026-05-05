@@ -13,7 +13,7 @@ from typing import Iterable, TypeAlias
 
 from ..raw_transition_tm import TMBuilder
 from .constants import Label, S, State, VALID_MOVES, move_for_direction
-from .ops import BranchAtOp, BranchOnBitOp, EmitAllOp, EmitAnyExceptOp, EmitOp, MoveStepsOp, Op, SeekOp, WriteBitOp
+from .ops import BranchAtOp, BranchOnBitOp, EmitAllOp, EmitAnyExceptOp, EmitOp, MoveStepsOp, Op, SeekOp, SeekUntilOneOfOp, WriteBitOp
 from .routines import NameSupply, Routine
 
 
@@ -154,6 +154,18 @@ class CFGCompiler:
                 move = move_for_direction(direction)
                 self.add(source, ReadSymbols(markers), target, KeepWrite(), S)
                 self.add(source, ReadAnyExcept(markers), source, KeepWrite(), move)
+            case SeekUntilOneOfOp(source, found, boundary, found_target, boundary_target, direction):
+                if not found:
+                    raise ValueError("bounded seek requires at least one found marker")
+                if not boundary:
+                    raise ValueError("bounded seek requires at least one boundary marker")
+                overlap = found & boundary
+                if overlap:
+                    raise ValueError(f"bounded seek markers cannot be both found and boundary: {sorted(overlap)!r}")
+                move = move_for_direction(direction)
+                self.add(source, ReadSymbols(found), found_target, KeepWrite(), S)
+                self.add(source, ReadSymbols(boundary), boundary_target, KeepWrite(), S)
+                self.add(source, ReadAnyExcept(found | boundary), source, KeepWrite(), move)
             case MoveStepsOp(source, target, steps, direction):
                 if steps < 0:
                     raise ValueError(f"move steps must be non-negative: {steps!r}")

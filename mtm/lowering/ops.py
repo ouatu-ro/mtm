@@ -44,6 +44,18 @@ class SeekOp:
 
 
 @dataclass(frozen=True)
+class SeekUntilOneOfOp:
+    """Scan until a success marker or boundary marker is under the head."""
+
+    source: Label
+    found: frozenset[str]
+    boundary: frozenset[str]
+    found_target: Label
+    boundary_target: Label
+    direction: str
+
+
+@dataclass(frozen=True)
 class MoveStepsOp:
     """Move a fixed number of cells while preserving every symbol."""
 
@@ -93,7 +105,7 @@ class EmitAnyExceptOp:
     move: int
 
 
-Op: TypeAlias = EmitOp | EmitAllOp | SeekOp | MoveStepsOp | BranchOnBitOp | WriteBitOp | BranchAtOp | EmitAnyExceptOp
+Op: TypeAlias = EmitOp | EmitAllOp | SeekOp | SeekUntilOneOfOp | MoveStepsOp | BranchOnBitOp | WriteBitOp | BranchAtOp | EmitAnyExceptOp
 
 __all__ = [
     "BranchAtOp",
@@ -104,5 +116,6 @@ __all__ = [
     "MoveStepsOp",
     "Op",
     "SeekOp",
+    "SeekUntilOneOfOp",
     "WriteBitOp",
 ]

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 from .constants import Label
-from .ops import BranchOnBitOp, EmitOp, MoveStepsOp, SeekOp, WriteBitOp
+from .ops import BranchOnBitOp, EmitOp, MoveStepsOp, SeekOp, SeekUntilOneOfOp, WriteBitOp
 from .routines import RoutineDraft
 
 Bit: TypeAlias = str
@@ -31,6 +31,21 @@ def seek(draft: RoutineDraft, source: Label, *, markers: set[str], direction: st
     """Append a scan-until-marker operation to a draft."""
 
     draft.add(SeekOp(source, target, frozenset(markers), direction))
+
+
+def seek_until_one_of(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    found: set[str],
+    boundary: set[str],
+    direction: str,
+    on_found: Label,
+    on_boundary: Label,
+) -> None:
+    """Append a bounded scan with separate found and boundary targets."""
+
+    draft.add(SeekUntilOneOfOp(source, frozenset(found), frozenset(boundary), on_found, on_boundary, direction))
 
 
 def move_steps(draft: RoutineDraft, source: Label, *, steps: int, direction: str, target: Label) -> None:
@@ -156,6 +171,7 @@ __all__ = [
     "move_steps",
     "require_bit",
     "seek",
+    "seek_until_one_of",
     "seek_then_write_bit_at_offset",
     "write_bit_at_offset",
     "write_current_bit",

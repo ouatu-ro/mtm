@@ -9,8 +9,8 @@ TMBuilder.
 from __future__ import annotations
 
 from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
-from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, WRITE_SYMBOL
-from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
+from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, TAPE, WRITE_SYMBOL
+from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_until_one_of, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
 from .constants import ACTIVE_RULE, L, Label, R, S, global_direction
 from .contracts import HeadAt, HeadAtOneOf, HeadOnRuntimeTape
 from .ops import EmitAllOp, EmitAnyExceptOp, EmitOp, BranchAtOp
@@ -92,13 +92,14 @@ def _find_next_rule_routine(state: Label, cont: Label) -> Routine:
 
 
 def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("find_head_cell", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
+    draft = RoutineDraft("find_head_cell", entry=state, exits=(cont, "STUCK"), requires=HeadOnRuntimeTape(), ensures=HeadAt(CELL))
     scan_cell = draft.local("scan")
+    found_cell = draft.local("found_cell")
     inspect_flag = draft.local("flag")
     return_cell = draft.local("return")
     draft.add(EmitAllOp(state, scan_cell, S))
-    draft.add(EmitOp(scan_cell, CELL, inspect_flag, CELL, R))
-    draft.add(EmitAnyExceptOp(scan_cell, CELL, scan_cell, R))
+    seek_until_one_of(draft, scan_cell, found={CELL}, boundary={END_TAPE}, direction="R", on_found=found_cell, on_boundary="STUCK")
+    draft.add(EmitOp(found_cell, CELL, inspect_flag, CELL, R))
     draft.add(EmitOp(inspect_flag, HEAD, return_cell, HEAD, L))
     draft.add(EmitAnyExceptOp(inspect_flag, HEAD, scan_cell, R))
     draft.add(EmitOp(return_cell, CELL, cont, CELL, S))
@@ -106,32 +107,34 @@ def _find_head_cell_routine(state: Label, cont: Label) -> Routine:
 
 
 def _move_sim_head_right_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("move_sim_head_right", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    draft = RoutineDraft("move_sim_head_right", entry=state, exits=(cont, "STUCK"), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     scan_next = draft.local("scan_next")
+    next_cell = draft.local("next_cell")
     mark_head = draft.local("mark_head")
     draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
     draft.add(EmitOp(clear_flag, HEAD, scan_next, NO_HEAD, R))
     draft.add(EmitOp(clear_flag, NO_HEAD, scan_next, NO_HEAD, R))
-    draft.add(EmitOp(scan_next, CELL, mark_head, CELL, R))
-    draft.add(EmitAnyExceptOp(scan_next, CELL, scan_next, R))
+    seek_until_one_of(draft, scan_next, found={CELL}, boundary={END_TAPE}, direction="R", on_found=next_cell, on_boundary="STUCK")
+    draft.add(EmitOp(next_cell, CELL, mark_head, CELL, R))
     draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
     draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
     return draft.build()
 
 
 def _move_sim_head_left_routine(state: Label, cont: Label) -> Routine:
-    draft = RoutineDraft("move_sim_head_left", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadAt(CELL))
+    draft = RoutineDraft("move_sim_head_left", entry=state, exits=(cont, "STUCK"), requires=HeadAt(CELL), ensures=HeadAt(CELL))
     clear_flag = draft.local("clear_flag")
     leave_current = draft.local("leave_current")
     scan_prev = draft.local("scan_prev")
+    prev_cell = draft.local("prev_cell")
     mark_head = draft.local("mark_head")
     draft.add(EmitOp(state, CELL, clear_flag, CELL, R))
     draft.add(EmitOp(clear_flag, HEAD, leave_current, NO_HEAD, L))
     draft.add(EmitOp(clear_flag, NO_HEAD, leave_current, NO_HEAD, L))
     draft.add(EmitOp(leave_current, CELL, scan_prev, CELL, L))
-    draft.add(EmitOp(scan_prev, CELL, mark_head, CELL, R))
-    draft.add(EmitAnyExceptOp(scan_prev, CELL, scan_prev, L))
+    seek_until_one_of(draft, scan_prev, found={CELL}, boundary={TAPE}, direction="L", on_found=prev_cell, on_boundary="STUCK")
+    draft.add(EmitOp(prev_cell, CELL, mark_head, CELL, R))
     draft.add(EmitOp(mark_head, HEAD, cont, HEAD, L))
     draft.add(EmitOp(mark_head, NO_HEAD, cont, HEAD, L))
     return draft.build()
