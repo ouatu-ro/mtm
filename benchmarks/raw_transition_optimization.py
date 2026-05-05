@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mtm.compiler import Compiler
-from mtm.raw_transition_optimization import prune_unreachable_transitions
+from mtm.raw_transition_optimization import merge_identical_transition_states, prune_unreachable_transitions
 from mtm.raw_transition_tm import TMTransitionProgram, run_raw_tm
 from mtm.source_file import load_python_tm_instance
 from mtm.universal import UniversalInterpreter
@@ -70,6 +70,8 @@ def benchmark_rows() -> list[BenchmarkRow]:
     variants: tuple[tuple[str, Callable[[TMTransitionProgram], TMTransitionProgram]], ...] = (
         ("none", lambda program: program),
         ("reachable", prune_unreachable_transitions),
+        ("merged", merge_identical_transition_states),
+        ("reachable+merged", lambda program: merge_identical_transition_states(prune_unreachable_transitions(program))),
     )
     return [
         _measure(name, optimize(baseline), baseline_transitions, tape, head)
