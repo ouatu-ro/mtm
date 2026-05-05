@@ -262,9 +262,22 @@ def test_raw_guest_encoding_infers_states_symbols_and_stay_direction() -> None:
     assert minimal == TMAbi(2, 2, 2, "mtm-v1", "raw-min[Wq=2,Ws=2,Wd=2]")
     assert encoding.state_ids.keys() >= {"current", "start", "stay", "halt"}
     assert encoding.symbol_ids.keys() >= {program.blank, "0", "X", "Y"}
-    assert encoding.direction_ids == {-1: 0, 0: 1, 1: 2}
+    assert encoding.direction_ids == {-1: 0, 1: 1, 0: 2}
     assert encoding.direction_width == 2
     assert encoding.initial_state == "current"
+
+
+def test_raw_guest_encoding_rejects_unsupported_raw_move() -> None:
+    builder = TMBuilder(["0"], halt_state="halt")
+    builder.emit("start", "0", "halt", "0", 2)
+    instance = RawTMInstance(program=builder.build("start"), tape={0: "0"}, head=0, state="start")
+
+    try:
+        build_raw_guest_encoding(instance)
+    except ValueError as exc:
+        assert "unsupported raw move direction" in str(exc)
+    else:
+        raise AssertionError("expected unsupported raw move to be rejected")
 
 
 def test_universal_dispatch_treats_non_left_non_right_direction_as_stay() -> None:
@@ -276,7 +289,7 @@ def test_universal_dispatch_treats_non_left_non_right_direction_as_stay() -> Non
 
     check_right = next(block for block in program.blocks if block.label == "CHECK_RIGHT")
 
-    assert encoding.direction_ids == {-1: 0, 0: 1, 1: 2}
+    assert encoding.direction_ids == {-1: 0, 1: 1, 0: 2}
     assert check_right.instructions[-1].label_equal == "MOVE_RIGHT"
     assert check_right.instructions[-1].label_not_equal == "START_STEP"
 

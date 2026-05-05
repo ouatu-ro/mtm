@@ -108,6 +108,7 @@ Out of scope:
 - 2026-05-05 19:54 EEST: Completed S5. Added `TMTransitionProgram.transitions` as a read-only conceptual alias over `prog` and covered it in semantic object tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 19:58 EEST: Completed S6. Added `SourceArtifact`, safe `.mtm.source` read/write helpers, `.py` source artifact emission, and CLI `emit-source`. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 20:00 EEST: Completed S8. Added raw-guest ABI inference and `build_raw_guest_encoding(...)` with `S` move support, plus a dispatch test documenting that non-left/non-right moves stay put. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
+- 2026-05-05 20:02 EEST: Tightened S8. Preserved existing raw `L`/`R` direction IDs when `S` is present and added unsupported raw move rejection coverage. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 
 ## Findings / Debt
 

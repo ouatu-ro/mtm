@@ -423,7 +423,7 @@ def _raw_guest_directions(instance: RawTMInstance) -> list[int]:
         if move_direction not in {RAW_L, RAW_S, RAW_R}:
             raise ValueError(f"unsupported raw move direction {move_direction!r}; expected L, S, or R")
         directions.add(move_direction)
-    return [direction for direction in (RAW_L, RAW_S, RAW_R) if direction in directions]
+    return [direction for direction in (RAW_L, RAW_R, RAW_S) if direction in directions]
 
 
 def infer_raw_guest_minimal_abi(instance: RawTMInstance) -> TMAbi:
