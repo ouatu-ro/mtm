@@ -1,5 +1,5 @@
 from mtm import load_fixture
-from mtm.debugger import RawTraceRunner
+from mtm.debugger import RawTraceRunner, format_group_step_result, format_source_location, format_trace_view
 from mtm.lowering import lower_program_with_source_map
 from mtm.lowering.constants import ACTIVE_RULE
 from mtm.meta_asm import Block, Goto, Program, Seek, format_instruction
@@ -354,3 +354,89 @@ def test_raw_trace_current_view_reports_decode_error_for_incoherent_runtime_tape
     assert view.decoded_view is None
     assert view.decode_error is not None
     assert "CUR_STATE" in view.decode_error
+
+
+def test_format_trace_view_renders_raw_snapshot_transitions_and_status() -> None:
+    builder = TMBuilder(["0", "1"])
+    builder.emit("start", "0", "scan", "1", R)
+    builder.emit("scan", "1", builder.halt_state, "1", S)
+    runner = RawTraceRunner(builder.build("start"), {0: "0", 1: "1"}, head=0)
+
+    initial = format_trace_view(runner.current_view(), raw_window=1)
+    runner.step()
+    stepped = format_trace_view(runner.current_view(), raw_window=1)
+
+    assert initial == "\n".join([
+        "snapshot: step=0 state='start' head=0",
+        "raw tape: -1:'.' [0:'0'] 1:'1'",
+        "next raw: ('start', '0') -> ('scan', '1', R)",
+        "source: <unmapped>",
+        "last raw: <none>",
+        "semantic: <not requested>",
+    ])
+    assert stepped == "\n".join([
+        "snapshot: step=1 state='scan' head=1",
+        "raw tape: 0:'1' [1:'1'] 2:'.'",
+        "next raw: ('scan', '1') -> ('U_HALT', '1', S)",
+        "source: <unmapped>",
+        "last raw: ('start', '0') -> ('scan', '1', R)",
+        "semantic: <not requested>",
+    ])
+
+
+def test_format_source_location_and_group_step_result_render_lowered_location() -> None:
+    program = Program(blocks=(Block("ENTRY", (Seek(RULES, "L"), Goto("DONE"))),), entry_label="ENTRY")
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    source = runner.current_transition_source
+    result = runner.step_to_next_instruction()
+
+    assert source is not None
+    assert format_source_location(source) == "\n".join([
+        "source: block=ENTRY instruction=0 routine=0:seek op=0",
+        "row: state='ENTRY' read='#RULES'",
+        "instruction: SEEK #RULES L",
+    ])
+    assert format_group_step_result(result, source=runner.current_transition_source) == "\n".join([
+        "group step: status=stepped raw_steps=1",
+        f"snapshot: step={result.snapshot.steps} state={result.snapshot.state!r} head={result.snapshot.head}",
+        "source: block=ENTRY instruction=1 routine=1:goto op=0",
+        f"row: state={runner.current_transition_source.state!r} read={runner.current_transition_source.read_symbol!r}",
+        "instruction: GOTO DONE",
+    ])
+
+
+def test_format_trace_view_renders_semantic_summary_for_decoded_band() -> None:
+    band = load_fixture("incrementer").build_band()
+    program = build_universal_meta_asm(band.encoding)
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    lowered = lower_program_with_source_map(program, alphabet)
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        band.runtime_tape,
+        head=start_head_from_encoded_band(band),
+        state=program.entry_label,
+        source_map=lowered.source_map,
+    )
+
+    rendered = format_trace_view(runner.current_view(encoding=band.encoding), raw_window=1, semantic_window=2)
+
+    assert rendered == "\n".join([
+        "snapshot: step=0 state='START_STEP' head=-155",
+        "raw tape: -156:'#REGS' [-155:'#CUR_STATE'] -154:'1'",
+        "next raw: ('START_STEP', '#CUR_STATE') -> ('program_START_STEP_body_0', '#CUR_STATE', S)",
+        "source: block=START_STEP instruction=? routine=0:seek op=0",
+        "row: state='START_STEP' read='#CUR_STATE'",
+        "instruction: SEEK #CUR_STATE L",
+        "last raw: <none>",
+        "semantic: state='qFindMargin' head=0",
+        "semantic tape: -2:'_' -1:'_' [0:'1'] 1:'0' 2:'1'",
+        "registers: cur='qFindMargin' read='_' write='_' next='qFindMargin' move=L cmp='0' tmp='00'",
+    ])
