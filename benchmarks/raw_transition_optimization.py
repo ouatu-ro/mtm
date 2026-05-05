@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import sys
+from argparse import ArgumentParser
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,9 +35,9 @@ class BenchmarkRow:
     l1_input_band_width: int
     direct_raw_steps: int
     direct_status: str
-    encoded_guest_band_width: int
-    l2_first_source_raw_steps: int
-    l2_first_source_status: str
+    encoded_guest_band_width: int | None
+    l2_first_source_raw_steps: int | None
+    l2_first_source_status: str | None
 
 
 def _initial_band_width(tape: dict[int, str]) -> int:
@@ -59,16 +60,23 @@ def _measure(
     baseline_transitions: int,
     tape: dict[int, str],
     head: int,
+    *,
+    expensive: bool,
 ) -> BenchmarkRow:
     direct_result = run_raw_tm(program, tape, head=head, max_steps=FUEL)
-    encoded_guest = compile_raw_guest(RawTMInstance(
-        program=program,
-        tape=tape,
-        head=head,
-        state=program.start_state,
-    ))
-    encoded_guest_band = encoded_guest.to_band_artifact()
-    l2_first_source_status, l2_first_source_raw_steps = _l2_first_source_step(encoded_guest, encoded_guest_band)
+    encoded_guest_band_width = None
+    l2_first_source_status = None
+    l2_first_source_raw_steps = None
+    if expensive:
+        encoded_guest = compile_raw_guest(RawTMInstance(
+            program=program,
+            tape=tape,
+            head=head,
+            state=program.start_state,
+        ))
+        encoded_guest_band = encoded_guest.to_band_artifact()
+        encoded_guest_band_width = _initial_band_width(encoded_guest_band.to_runtime_tape())
+        l2_first_source_status, l2_first_source_raw_steps = _l2_first_source_step(encoded_guest, encoded_guest_band)
     return BenchmarkRow(
         name=name,
         transitions=len(program.prog),
@@ -76,7 +84,7 @@ def _measure(
         l1_input_band_width=_initial_band_width(tape),
         direct_raw_steps=int(direct_result["steps"]),
         direct_status=str(direct_result["status"]),
-        encoded_guest_band_width=_initial_band_width(encoded_guest_band.to_runtime_tape()),
+        encoded_guest_band_width=encoded_guest_band_width,
         l2_first_source_raw_steps=l2_first_source_raw_steps,
         l2_first_source_status=l2_first_source_status,
     )
@@ -99,7 +107,7 @@ def _l2_first_source_step(encoded_guest, encoded_guest_band) -> tuple[str, int]:
     return result.status, result.raw_steps
 
 
-def benchmark_rows() -> list[BenchmarkRow]:
+def benchmark_rows(*, expensive: bool = False) -> list[BenchmarkRow]:
     baseline, tape, head = _compile_incrementer()
     baseline_transitions = len(baseline.prog)
     variants: tuple[tuple[str, Callable[[TMTransitionProgram], TMTransitionProgram]], ...] = (
@@ -110,12 +118,24 @@ def benchmark_rows() -> list[BenchmarkRow]:
         ("merged+reachable", lambda program: prune_unreachable_transitions(merge_identical_transition_states(program))),
     )
     return [
-        _measure(name, optimize(baseline), baseline_transitions, tape, head)
+        _measure(name, optimize(baseline), baseline_transitions, tape, head, expensive=expensive)
         for name, optimize in variants
     ]
 
 
-def main() -> int:
+def _optional(value: object | None) -> object:
+    return "" if value is None else value
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = ArgumentParser(description="Benchmark raw transition simplification passes on the incrementer UTM.")
+    parser.add_argument(
+        "--expensive",
+        action="store_true",
+        help="include encoded raw-guest band width and first L2 source-step measurements",
+    )
+    args = parser.parse_args(argv)
+
     writer = csv.writer(sys.stdout)
     writer.writerow([
         "optimization",
@@ -128,7 +148,7 @@ def main() -> int:
         "l2_first_source_raw_steps",
         "l2_first_source_status",
     ])
-    for row in benchmark_rows():
+    for row in benchmark_rows(expensive=args.expensive):
         writer.writerow([
             row.name,
             row.transitions,
@@ -136,9 +156,9 @@ def main() -> int:
             row.l1_input_band_width,
             row.direct_raw_steps,
             row.direct_status,
-            row.encoded_guest_band_width,
-            row.l2_first_source_raw_steps,
-            row.l2_first_source_status,
+            _optional(row.encoded_guest_band_width),
+            _optional(row.l2_first_source_raw_steps),
+            _optional(row.l2_first_source_status),
         ])
     return 0
 
