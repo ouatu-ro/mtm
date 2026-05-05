@@ -68,7 +68,7 @@ Out of scope:
   Deliverables: read-only `transitions` alias over `prog`.
   Validation: existing raw transition tests still pass; docs can refer to `transitions` without lying.
 
-- [ ] S6: Introduce a serializable source artifact.
+- [x] S6: Introduce a serializable source artifact.
   Deliverables: safe literal-assignment `*.mtm.source` artifact containing `TMProgram`, `TMBand`, `initial_state`, `halt_state`, and optional `name` / `note`; parser uses literal evaluation and no `run_path`; CLI can emit source artifact from `.py`.
   Validation: source artifact read/write round-trip test; CLI source emission test.
 
@@ -106,6 +106,7 @@ Out of scope:
 - 2026-05-05 19:51 EEST: Completed S3. Fixed compiler endpoint fallback order, added source blank mismatch rejection, and made selected ABI validation reject grammar-version mismatches. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 19:53 EEST: Completed S4. Added runtime artifact ABI compatibility checks, changed CLI `run` to preserve program-side `.tm` metadata, and covered compatible, incompatible, missing metadata, and CLI regression paths. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 19:54 EEST: Completed S5. Added `TMTransitionProgram.transitions` as a read-only conceptual alias over `prog` and covered it in semantic object tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
+- 2026-05-05 19:58 EEST: Completed S6. Added `SourceArtifact`, safe `.mtm.source` read/write helpers, `.py` source artifact emission, and CLI `emit-source`. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 
 ## Findings / Debt
 

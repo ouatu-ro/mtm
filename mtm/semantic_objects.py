@@ -97,6 +97,39 @@ class TMInstance:
 
 
 @dataclass(frozen=True)
+class SourceArtifact:
+    """Serializable source-level TM input artifact."""
+
+    program: TMProgram
+    band: TMBand
+    initial_state: str
+    halt_state: str
+    name: str | None = None
+    note: str | None = None
+
+    def to_instance(self) -> TMInstance:
+        """Return the compiler-facing source instance."""
+
+        return TMInstance(
+            program=self.program,
+            band=self.band,
+            initial_state=self.initial_state,
+            halt_state=self.halt_state,
+        )
+
+    def write(self, path: str | "Path") -> None:
+        from .artifacts import write_source_artifact
+
+        write_source_artifact(path, self)
+
+    @classmethod
+    def read(cls, path: str | "Path") -> "SourceArtifact":
+        from .artifacts import read_source_artifact
+
+        return read_source_artifact(path)
+
+
+@dataclass(frozen=True)
 class UTMRegisters:
     """Decoded register values used by the universal interpreter."""
 
@@ -447,7 +480,7 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
     )
 
 
-__all__ = ["DecodedBandView", "RawTMInstance", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
+__all__ = ["DecodedBandView", "RawTMInstance", "SourceArtifact", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
            "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact", "infer_minimal_abi",
            "start_head_from_encoded_band", "utm_artifact_from_band", "utm_encoded_from_band"]

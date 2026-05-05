@@ -5,7 +5,7 @@ from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import RawTMInstance, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
+from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
@@ -184,6 +184,30 @@ def test_primary_artifact_class_methods_round_trip(tmp_path) -> None:
     assert loaded == artifact
     assert loaded.to_encoded_band() == band
     assert loaded.to_runtime_tape() == band.runtime_tape
+
+
+def test_source_artifact_round_trip(tmp_path) -> None:
+    fixture = load_fixture("incrementer")
+    source = SourceArtifact(
+        program=fixture.tm_program,
+        band=fixture.band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+        name=fixture.name,
+        note=fixture.note,
+    )
+    path = tmp_path / "incrementer.mtm.source"
+
+    source.write(path)
+    loaded = SourceArtifact.read(path)
+
+    assert loaded == source
+    assert loaded.to_instance() == TMInstance(
+        program=fixture.tm_program,
+        band=fixture.band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
 
 
 def test_primary_tm_program_names_and_io(tmp_path) -> None:
@@ -575,6 +599,7 @@ def test_public_boundary_is_small() -> None:
     expected = {
         "L",
         "R",
+        "SourceArtifact",
         "TMProgram",
         "TMBand",
         "TMInstance",

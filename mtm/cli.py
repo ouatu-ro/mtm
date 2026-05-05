@@ -13,7 +13,7 @@ from .utm_band_layout import EncodedBand, split_runtime_tape
 from .meta_asm import format_program
 from . import load_fixture
 from .pretty import pretty_registers, pretty_tape
-from .source_file import load_python_tm_instance
+from .source_file import load_python_tm_instance, source_artifact_from_python
 from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact, start_head_from_encoded_band
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
@@ -110,6 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     tm_parser.add_argument("-o", "--output", required=True)
     _add_abi_args(tm_parser)
 
+    source_parser = sub.add_parser("emit-source", help="Emit a safe .mtm.source artifact from a Python TM file.")
+    source_parser.add_argument("input")
+    source_parser.add_argument("-o", "--output", required=True)
+
     run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact.")
     run_parser.add_argument("tm_file")
     run_parser.add_argument("input", nargs="?")
@@ -139,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "emit-tm":
         _encoded, _band_artifact, _interpreter, program_artifact = _compile_from_py(args.input, abi=abi)
         program_artifact.write(args.output)
+        return 0
+
+    if args.command == "emit-source":
+        source_artifact_from_python(args.input).write(args.output)
         return 0
 
     if args.command == "dbg":

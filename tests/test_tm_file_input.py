@@ -4,10 +4,10 @@ import pytest
 
 from mtm.cli import main as cli_main
 from examples.demo import main
-from mtm.artifacts import read_utm_artifact
+from mtm.artifacts import read_source_artifact, read_utm_artifact
 from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
-from mtm.source_file import load_python_tm, load_python_tm_instance
+from mtm.source_file import load_python_tm, load_python_tm_instance, source_artifact_from_python
 from mtm.raw_transition_tm import TMTransitionProgram
 from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
 from mtm.source_encoding import R, TMAbi, TMProgram
@@ -73,6 +73,37 @@ def test_load_python_tm_instance(tmp_path: Path) -> None:
     assert instance.band.blank == "_"
     assert instance.band.head == 0
     assert instance.band.cells[:4] == tuple("1011")
+
+
+def test_source_artifact_from_python_round_trips_without_execution(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    source_path = tmp_path / "incrementer.mtm.source"
+
+    source_artifact_from_python(tm_path).write(source_path)
+    loaded = read_source_artifact(source_path)
+
+    assert loaded.name == "incrementer_tm"
+    assert loaded.initial_state == "qFindMargin"
+    assert loaded.halt_state == "qDone"
+    assert loaded.program == load_python_tm(tm_path).tm_program
+    assert loaded.band == TMBand(right_band=tuple("1011____"), head=0, blank="_")
+
+
+def test_source_artifact_reader_rejects_executable_code(tmp_path: Path) -> None:
+    marker = tmp_path / "executed"
+    source_path = tmp_path / "evil.mtm.source"
+    source_path.write_text(f"""\
+format = 'mtm-source-v1'
+tm_program = __import__('pathlib').Path({str(marker)!r}).write_text('bad')
+band = {{}}
+initial_state = 'start'
+halt_state = 'halt'
+""")
+
+    with pytest.raises(ValueError, match="tm_program.*literal"):
+        read_source_artifact(source_path)
+
+    assert not marker.exists()
 
 
 def test_demo_tm_file_emit_and_run(tmp_path: Path, capsys) -> None:
@@ -146,6 +177,18 @@ def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
     assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
     tm = TMTransitionProgram.read(raw_tm_path)
     assert tm.halt_state == "U_HALT"
+
+
+def test_cli_emit_source_from_example_file(tmp_path: Path) -> None:
+    source_path = tmp_path / "incrementer.mtm.source"
+
+    assert cli_main(["emit-source", "examples/incrementer_tm.py", "-o", str(source_path)]) == 0
+    loaded = read_source_artifact(source_path)
+
+    assert loaded.name == "incrementer_tm"
+    assert loaded.initial_state == "qFindMargin"
+    assert loaded.halt_state == "qDone"
+    assert len(loaded.program) == 6
 
 
 def test_utm_artifact_roundtrip(tmp_path: Path) -> None:

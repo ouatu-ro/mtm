@@ -11,11 +11,12 @@ import ast
 from pathlib import Path
 
 from .raw_transition_tm import TMTransitionProgram
-from .semantic_objects import TMAbi, UTMBandArtifact, UTMProgramArtifact
-from .source_encoding import Encoding, abi_from_literal, abi_to_literal
+from .semantic_objects import SourceArtifact, TMAbi, TMBand, UTMBandArtifact, UTMProgramArtifact
+from .source_encoding import Encoding, TMProgram, abi_from_literal, abi_to_literal
 
 UTM_BAND_FORMAT = "mtm-utm-band-v1"
 RAW_TM_FORMAT = "mtm-raw-tm-v1"
+SOURCE_FORMAT = "mtm-source-v1"
 
 
 def _literal(value) -> str:
@@ -119,6 +120,69 @@ def read_utm_artifact(path: str | Path) -> UTMBandArtifact:
     )
 
 
+def _program_literal(program: TMProgram) -> dict[str, object]:
+    return {
+        "transitions": dict(program.transitions),
+        "initial_state": program.initial_state,
+        "halt_state": program.halt_state,
+        "blank": program.blank,
+    }
+
+
+def _band_literal(band: TMBand) -> dict[str, object]:
+    return {
+        "left_band": list(band.left_band),
+        "right_band": list(band.right_band),
+        "head": band.head,
+        "blank": band.blank,
+    }
+
+
+def write_source_artifact(path: str | Path, artifact: SourceArtifact) -> None:
+    """Write a safe literal source artifact."""
+
+    path = Path(path)
+    fields = [
+        f"format = {SOURCE_FORMAT!r}",
+        f"tm_program = {_literal(_program_literal(artifact.program))}",
+        f"band = {_literal(_band_literal(artifact.band))}",
+        f"initial_state = {_literal(artifact.initial_state)}",
+        f"halt_state = {_literal(artifact.halt_state)}",
+    ]
+    if artifact.name is not None:
+        fields.append(f"name = {_literal(artifact.name)}")
+    if artifact.note is not None:
+        fields.append(f"note = {_literal(artifact.note)}")
+    path.write_text("\n".join(fields) + "\n")
+
+
+def read_source_artifact(path: str | Path) -> SourceArtifact:
+    """Read a source artifact without executing it."""
+
+    namespace = _read_literal_assignments(path)
+    _require_format(namespace, SOURCE_FORMAT)
+    program_data = namespace["tm_program"]
+    band_data = namespace["band"]
+    return SourceArtifact(
+        program=TMProgram(
+            program_data["transitions"],
+            initial_state=program_data.get("initial_state"),
+            halt_state=program_data.get("halt_state"),
+            blank=program_data.get("blank", "_"),
+        ),
+        band=TMBand.from_bands(
+            tuple(band_data["right_band"]),
+            left_band=tuple(band_data.get("left_band", ())),
+            head=band_data["head"],
+            blank=band_data["blank"],
+        ),
+        initial_state=namespace["initial_state"],
+        halt_state=namespace["halt_state"],
+        name=namespace.get("name"),
+        note=namespace.get("note"),
+    )
+
+
 def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
     """Write a raw universal-machine ``.tm`` artifact."""
 
@@ -186,9 +250,11 @@ def read_utm_program_artifact(path: str | Path) -> UTMProgramArtifact:
 
 
 __all__ = [
+    "read_source_artifact",
     "read_tm",
     "read_utm_artifact",
     "read_utm_program_artifact",
+    "write_source_artifact",
     "write_tm",
     "write_utm_artifact",
     "write_utm_program_artifact",
