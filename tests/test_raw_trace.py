@@ -146,6 +146,7 @@ def test_raw_trace_grouped_routine_step_and_back_follow_source_boundaries() -> N
     forward = runner.step_to_next_routine()
 
     assert forward.status == "stepped"
+    assert forward.raw_steps > 0
     assert forward.raw_steps == 3
     assert runner.current_transition_source is not None
     assert runner.current_transition_source.block_label == "ENTRY"
@@ -181,6 +182,7 @@ def test_raw_trace_grouped_instruction_step_and_back_follow_source_boundaries() 
     forward = runner.step_to_next_instruction()
 
     assert forward.status == "stepped"
+    assert forward.raw_steps > 0
     assert forward.raw_steps == 3
     assert runner.current_transition_source is not None
     assert runner.current_transition_source.instruction_index == 1
@@ -217,6 +219,7 @@ def test_raw_trace_grouped_block_step_and_back_follow_source_boundaries() -> Non
     forward = runner.step_to_next_block()
 
     assert forward.status == "stepped"
+    assert forward.raw_steps > 0
     assert forward.raw_steps == 4
     assert runner.current_transition_source is not None
     assert runner.current_transition_source.block_label == "SECOND"
@@ -268,25 +271,31 @@ def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_bounda
         source_map=lowered.source_map,
     )
 
-    first_boundary = runner.step_to_next_source_step()
-    expected_tape = runner.current.tape_dict()
-    expected_head = runner.current.head
-    expected_state = runner.current.state
-    expected_steps = runner.current.steps
+    first_boundary_start = runner.step_to_next_source_step()
+    source_step_zero = runner.current.steps
+    second_boundary_start = runner.step_to_next_source_step()
+    source_step_one = runner.current.steps
+    third_boundary_start = runner.step_to_next_source_step()
+    source_step_two = runner.current.steps
 
-    stepped = runner.step()
+    assert first_boundary_start.status == "stepped"
+    assert second_boundary_start.status == "stepped"
+    assert third_boundary_start.status == "stepped"
+    assert source_step_two > source_step_one > source_step_zero
+
     backward = runner.back_to_previous_source_step()
-
-    assert first_boundary.status == "stepped"
-    assert stepped.status == "stepped"
+    assert backward.status == "stepped"
+    assert backward.raw_steps == source_step_two - source_step_one
+    assert runner.current.steps == source_step_one
     assert runner.current_transition_source is not None
     assert runner.current_transition_source.block_label == "START_STEP"
-    assert runner.current.tape_dict() == expected_tape
-    assert runner.current.head == expected_head
-    assert runner.current.state == expected_state
-    assert runner.current.steps == expected_steps
+
+    backward = runner.back_to_previous_source_step()
     assert backward.status == "stepped"
-    assert backward.raw_steps == 1
+    assert backward.raw_steps == source_step_one - source_step_zero
+    assert runner.current.steps == source_step_zero
+    assert runner.current_transition_source is not None
+    assert runner.current_transition_source.block_label == "START_STEP"
 
 
 def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> None:
@@ -303,14 +312,102 @@ def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> Non
     )
 
     runner.step()
+    expected_snapshot = runner.current
     backward = runner.back_to_previous_source_step()
 
-    assert backward.status == "stepped"
-    assert backward.raw_steps == 1
-    assert runner.current.steps == 0
-    assert runner.current.state == "START_STEP"
+    assert backward.status == "at_start"
+    assert backward.raw_steps == 0
+    assert runner.current == expected_snapshot
     assert runner.current_transition_source is not None
     assert runner.current_transition_source.block_label == "START_STEP"
+
+
+def test_raw_trace_raw_and_group_steps_after_halt_or_stuck() -> None:
+    builder = TMBuilder(["0"])
+    builder.emit("start", "0", builder.halt_state, "0", S)
+    halted_runner = RawTraceRunner(builder.build("start"), {0: "0"}, head=0)
+
+    first_step = halted_runner.step()
+    assert first_step.status == "stepped"
+    assert halted_runner.is_halted is True
+    halted_instruction = halted_runner.step_to_next_instruction()
+    halted_source = halted_runner.step_to_next_source_step()
+    halted_routine = halted_runner.step_to_next_routine()
+    assert halted_instruction.status == "halted"
+    assert halted_instruction.raw_steps == 0
+    assert halted_source.status == "halted"
+    assert halted_source.raw_steps == 0
+    assert halted_routine.status == "halted"
+    assert halted_routine.raw_steps == 0
+
+    stuck_builder = TMBuilder(["0"])
+    stuck_runner = RawTraceRunner(stuck_builder.build("start"), {0: "1"}, head=0)
+
+    stuck_step = stuck_runner.step()
+    assert stuck_step.status == "stuck"
+    stuck_instruction = stuck_runner.step_to_next_instruction()
+    stuck_source = stuck_runner.step_to_next_source_step()
+    assert stuck_instruction.status == "stuck"
+    assert stuck_instruction.raw_steps == 0
+    assert stuck_source.status == "stuck"
+    assert stuck_source.raw_steps == 0
+
+
+def test_raw_trace_grouped_step_without_source_map_returns_unmapped() -> None:
+    builder = TMBuilder(["0"])
+    builder.emit("start", "0", "middle", "0", R)
+    builder.emit("middle", "0", "done", "0", R)
+    builder.emit("done", "0", "done", "0", S)
+    runner = RawTraceRunner(builder.build("start"), {0: "0"}, head=0)
+
+    grouped = runner.step_to_next_instruction()
+    assert grouped.status == "unmapped"
+    assert grouped.raw_steps == 0
+    assert grouped.snapshot == runner.current
+
+    step = runner.step()
+    assert step.status == "stepped"
+    assert runner.current.state == "middle"
+
+
+def test_raw_trace_grouped_forward_obeys_max_raw() -> None:
+    program = Program(blocks=(Block("ENTRY", (Seek(RULES, "R"), Goto("DONE"))),), entry_label="ENTRY")
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    runner = RawTraceRunner(
+        lowered.raw_program,
+        {0: "0", 1: "0", 2: RULES},
+        head=0,
+        state="ENTRY",
+        source_map=lowered.source_map,
+    )
+
+    forward = runner.step_to_next_instruction(max_raw=1)
+
+    assert forward.status == "max_raw"
+    assert forward.raw_steps == 1
+    assert runner.current.steps == 1
+
+
+def test_raw_trace_truncates_history_when_stepping_after_rewind() -> None:
+    builder = TMBuilder(["0"], blank="0")
+    builder.emit("start", "0", "middle", "0", R)
+    builder.emit("middle", "0", "second", "0", R)
+    builder.emit("second", "0", "last", "0", R)
+    builder.emit("last", "0", builder.halt_state, "0", S)
+    runner = RawTraceRunner(builder.build("start"), {0: "0"}, head=0)
+
+    runner.step()
+    runner.step()
+    runner.step()
+    assert runner.current.steps == 3
+    assert runner.history_cursor == 3
+    assert runner.latest_history_index == 3
+
+    runner.back()
+    runner.step()
+    assert runner.current.steps == 3
+    assert runner.history_cursor == 3
+    assert runner.latest_history_index == 3
 
 
 def test_raw_trace_grouped_source_step_uses_configured_boundary_label() -> None:

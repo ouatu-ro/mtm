@@ -117,20 +117,33 @@ class RawTraceRunner:
         start_state = program.start_state if state is None else state
         self._snapshots = [self._freeze_snapshot(dict(tape), head=head, state=start_state, steps=0)]
         self._history: list[RawTraceTransition] = []
+        self._cursor = 0
 
     @property
     def current(self) -> RawTraceSnapshot:
         """Return the active machine snapshot."""
 
-        return self._snapshots[-1]
+        return self._snapshots[self._cursor]
+
+    @property
+    def history_cursor(self) -> int:
+        """Return the active snapshot index in execution history."""
+
+        return self._cursor
+
+    @property
+    def latest_history_index(self) -> int:
+        """Return the newest stored snapshot index."""
+
+        return len(self._snapshots) - 1
 
     @property
     def last_transition(self) -> RawTraceTransition | None:
         """Return the most recently executed transition, if any."""
 
-        if not self._history:
+        if self._cursor == 0:
             return None
-        return self._history[-1]
+        return self._history[self._cursor - 1]
 
     @property
     def current_read_symbol(self) -> str:
@@ -186,6 +199,16 @@ class RawTraceRunner:
 
         return not self.is_halted and self.current_transition is None
 
+    @property
+    def run_status(self) -> str:
+        """Return the runner's current execution status."""
+
+        if self.is_halted:
+            return "halted"
+        if self.is_stuck:
+            return "stuck"
+        return "running"
+
     def step(self) -> RawTraceStepResult:
         """Execute one raw transition if possible."""
 
@@ -216,17 +239,20 @@ class RawTraceRunner:
             state=next_state,
             steps=snapshot.steps + 1,
         )
+        if self._cursor < self.latest_history_index:
+            self._snapshots = self._snapshots[:self._cursor + 1]
+            self._history = self._history[:self._cursor]
         self._history.append(executed)
         self._snapshots.append(next_snapshot)
+        self._cursor += 1
         return RawTraceStepResult(status="stepped", snapshot=next_snapshot, transition=executed)
 
     def back(self) -> bool:
         """Restore the previous snapshot if history exists."""
 
-        if len(self._snapshots) == 1:
+        if self._cursor == 0:
             return False
-        self._snapshots.pop()
-        self._history.pop()
+        self._cursor -= 1
         return True
 
     def run(self, max_steps: int) -> RawTraceRunResult:
@@ -255,25 +281,25 @@ class RawTraceRunner:
             status = "fuel_exhausted"
         return RawTraceRunResult(status=status, snapshot=self.current, steps_executed=self.current.steps - start_steps)
 
-    def step_to_next_routine(self) -> RawTraceGroupStepResult:
+    def step_to_next_routine(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until the next routine boundary."""
 
-        return self._step_to_next_group(lambda source: source.routine_index)
+        return self._step_to_next_group(lambda source: source.routine_index, max_raw=max_raw)
 
-    def step_to_next_instruction(self) -> RawTraceGroupStepResult:
+    def step_to_next_instruction(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until the next instruction boundary."""
 
-        return self._step_to_next_group(lambda source: (source.block_label, source.instruction_index))
+        return self._step_to_next_group(lambda source: (source.block_label, source.instruction_index), max_raw=max_raw)
 
-    def step_to_next_block(self) -> RawTraceGroupStepResult:
+    def step_to_next_block(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until the next block boundary."""
 
-        return self._step_to_next_group(lambda source: source.block_label)
+        return self._step_to_next_group(lambda source: source.block_label, max_raw=max_raw)
 
-    def step_to_next_source_step(self) -> RawTraceGroupStepResult:
+    def step_to_next_source_step(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
         """Advance until the next universal-machine source-step boundary."""
 
-        return self._step_to_next_source_step_boundary()
+        return self._step_to_next_source_step_boundary(max_raw=max_raw)
 
     def back_to_previous_routine(self) -> RawTraceGroupStepResult:
         """Rewind to the previous routine boundary."""
@@ -325,17 +351,26 @@ class RawTraceRunner:
             return None
         return self.source_map.lookup(state, read_symbol)
 
-    def _step_to_next_group(self, group_for_source: Callable[[RawTransitionSource], object]) -> RawTraceGroupStepResult:
+    def _step_to_next_group(
+        self,
+        group_for_source: Callable[[RawTransitionSource], object],
+        *,
+        max_raw: int | None = None,
+    ) -> RawTraceGroupStepResult:
+        if max_raw is not None and max_raw <= 0:
+            raise ValueError("max_raw must be positive")
         source = self.current_transition_source
         if source is None:
             return RawTraceGroupStepResult(
-                status="halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped",
+                status=self.run_status if self.run_status != "running" else "unmapped",
                 snapshot=self.current,
                 raw_steps=0,
             )
         start_group = group_for_source(source)
         raw_steps = 0
         while True:
+            if max_raw is not None and raw_steps >= max_raw:
+                return RawTraceGroupStepResult(status="max_raw", snapshot=self.current, raw_steps=raw_steps)
             step_result = self.step()
             if step_result.status != "stepped":
                 return RawTraceGroupStepResult(
@@ -346,43 +381,32 @@ class RawTraceRunner:
             raw_steps += 1
             source = self.current_transition_source
             if source is None:
-                status = "halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped"
-                return RawTraceGroupStepResult(status=status, snapshot=self.current, raw_steps=raw_steps)
+                return RawTraceGroupStepResult(
+                    status=self.run_status if self.run_status != "running" else "unmapped",
+                    snapshot=self.current,
+                    raw_steps=raw_steps,
+                )
             if group_for_source(source) != start_group:
                 return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
 
     def _back_to_previous_group(self, group_for_source: Callable[[RawTransitionSource], object]) -> RawTraceGroupStepResult:
-        source = self.current_transition_source
-        current_group = None if source is None else group_for_source(source)
-        raw_steps = 0
-        while True:
-            previous_source = self._source_for_previous_snapshot()
-            if previous_source is None:
-                return RawTraceGroupStepResult(
-                    status="at_start",
-                    snapshot=self.current,
-                    raw_steps=raw_steps,
-                )
-            previous_group = group_for_source(previous_source)
-            if current_group is None or previous_group != current_group:
-                break
-            self.back()
-            raw_steps += 1
+        segment_starts = self._find_group_segment_starts(group_for_source)
+        if segment_starts is None:
+            return RawTraceGroupStepResult(status="unmapped", snapshot=self.current, raw_steps=0)
+        if len(segment_starts) < 2:
+            return RawTraceGroupStepResult(status="at_start", snapshot=self.current, raw_steps=0)
+        target_index = segment_starts[-2]
+        raw_steps = self._cursor - target_index
+        self._cursor = target_index
+        return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
 
-        self.back()
-        raw_steps += 1
-        while True:
-            prior_source = self._source_for_snapshot_index(-2)
-            if prior_source is None or group_for_source(prior_source) != previous_group:
-                return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
-            self.back()
-            raw_steps += 1
-
-    def _step_to_next_source_step_boundary(self) -> RawTraceGroupStepResult:
+    def _step_to_next_source_step_boundary(self, *, max_raw: int | None = None) -> RawTraceGroupStepResult:
+        if max_raw is not None and max_raw <= 0:
+            raise ValueError("max_raw must be positive")
         source = self.current_transition_source
         if source is None:
             return RawTraceGroupStepResult(
-                status="halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped",
+                status=self.run_status if self.run_status != "running" else "unmapped",
                 snapshot=self.current,
                 raw_steps=0,
             )
@@ -390,6 +414,8 @@ class RawTraceRunner:
         left_current_boundary = source.block_label != self.source_step_block_label
         raw_steps = 0
         while True:
+            if max_raw is not None and raw_steps >= max_raw:
+                return RawTraceGroupStepResult(status="max_raw", snapshot=self.current, raw_steps=raw_steps)
             step_result = self.step()
             if step_result.status != "stepped":
                 return RawTraceGroupStepResult(
@@ -400,8 +426,11 @@ class RawTraceRunner:
             raw_steps += 1
             source = self.current_transition_source
             if source is None:
-                status = "halted" if self.is_halted else "stuck" if self.is_stuck else "unmapped"
-                return RawTraceGroupStepResult(status=status, snapshot=self.current, raw_steps=raw_steps)
+                return RawTraceGroupStepResult(
+                    status=self.run_status if self.run_status != "running" else "unmapped",
+                    snapshot=self.current,
+                    raw_steps=raw_steps,
+                )
             if source.block_label != self.source_step_block_label:
                 left_current_boundary = True
                 continue
@@ -409,38 +438,77 @@ class RawTraceRunner:
                 return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
 
     def _back_to_previous_source_step_boundary(self) -> RawTraceGroupStepResult:
-        if len(self._snapshots) == 1:
+        segment_starts = self._find_source_step_segment_starts()
+        if segment_starts is None:
+            return RawTraceGroupStepResult(status="unmapped", snapshot=self.current, raw_steps=0)
+        if len(segment_starts) < 2:
             return RawTraceGroupStepResult(status="at_start", snapshot=self.current, raw_steps=0)
-
-        target_index = self._find_previous_source_step_boundary_index()
-        if target_index is None:
-            return RawTraceGroupStepResult(status="at_start", snapshot=self.current, raw_steps=0)
-
-        raw_steps = 0
-        while len(self._snapshots) - 1 > target_index:
-            self.back()
-            raw_steps += 1
+        target_index = segment_starts[-2]
+        raw_steps = self._cursor - target_index
+        self._cursor = target_index
         return RawTraceGroupStepResult(status="stepped", snapshot=self.current, raw_steps=raw_steps)
-
-    def _find_previous_source_step_boundary_index(self) -> int | None:
-        for snapshot_index in range(len(self._snapshots) - 2, -1, -1):
-            source = self._source_for_snapshot_index(snapshot_index)
-            if source is None or source.block_label != self.source_step_block_label:
-                continue
-            previous_source = None if snapshot_index == 0 else self._source_for_snapshot_index(snapshot_index - 1)
-            if previous_source is None or previous_source.block_label != self.source_step_block_label:
-                return snapshot_index
-        return None
 
     def _source_for_previous_snapshot(self) -> RawTransitionSource | None:
         return self._source_for_snapshot_index(-2)
 
     def _source_for_snapshot_index(self, index: int) -> RawTransitionSource | None:
         try:
-            snapshot = self._snapshots[index]
+            snapshot = self._snapshots[self._resolve_snapshot_index(index)]
         except IndexError:
             return None
         return self._lookup_source(snapshot.state, self._read_symbol_for_snapshot(snapshot))
+
+    def _resolve_snapshot_index(self, index: int) -> int:
+        if index < 0:
+            resolved = self._cursor + 1 + index
+            if resolved < 0:
+                raise IndexError(index)
+            return resolved
+        return index
+
+    def _find_group_segment_starts(
+        self,
+        group_for_source: Callable[[RawTransitionSource], object],
+    ) -> list[int] | None:
+        segment_starts: list[int] = []
+        for snapshot_index in range(self._cursor + 1):
+            source = self._source_for_snapshot_index(snapshot_index)
+            if source is None:
+                if self._is_terminal_cursor_snapshot(snapshot_index):
+                    continue
+                return None
+            previous_source = None if snapshot_index == 0 else self._source_for_snapshot_index(snapshot_index - 1)
+            if snapshot_index == 0:
+                segment_starts.append(snapshot_index)
+                continue
+            if previous_source is None:
+                return None
+            if group_for_source(previous_source) != group_for_source(source):
+                segment_starts.append(snapshot_index)
+        return segment_starts
+
+    def _find_source_step_segment_starts(self) -> list[int] | None:
+        segment_starts: list[int] = []
+        for snapshot_index in range(self._cursor + 1):
+            source = self._source_for_snapshot_index(snapshot_index)
+            if source is None:
+                if self._is_terminal_cursor_snapshot(snapshot_index):
+                    continue
+                return None
+            if source.block_label != self.source_step_block_label:
+                continue
+            previous_source = None if snapshot_index == 0 else self._source_for_snapshot_index(snapshot_index - 1)
+            if snapshot_index == 0:
+                segment_starts.append(snapshot_index)
+                continue
+            if previous_source is None:
+                return None
+            if previous_source.block_label != self.source_step_block_label:
+                segment_starts.append(snapshot_index)
+        return segment_starts
+
+    def _is_terminal_cursor_snapshot(self, snapshot_index: int) -> bool:
+        return snapshot_index == self._cursor and self.run_status != "running"
 
     def _read_symbol_for_snapshot(self, snapshot: RawTraceSnapshot) -> str:
         return snapshot.tape.get(snapshot.head, self.program.blank)
