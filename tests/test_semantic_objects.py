@@ -4,8 +4,8 @@ from mtm.artifacts import read_utm_artifact, write_utm_artifact
 from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
-from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
+from mtm.raw_transition_tm import S, TMBuilder, TMTransitionProgram
+from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
@@ -247,6 +247,38 @@ def test_utm_program_artifact_reads_old_raw_tm_without_abi_metadata(tmp_path) ->
     assert loaded.minimal_abi is None
     assert "target_abi" not in path.read_text()
     assert "minimal_abi" not in path.read_text()
+
+
+def test_raw_guest_encoding_infers_states_symbols_and_stay_direction() -> None:
+    builder = TMBuilder(["0", "X"], halt_state="halt")
+    builder.emit("start", "0", "stay", "X", S)
+    builder.emit("stay", "X", "halt", "X", 1)
+    program = builder.build("start")
+    instance = RawTMInstance(program=program, tape={0: "0", 3: "Y"}, head=0, state="current")
+
+    minimal = infer_raw_guest_minimal_abi(instance)
+    encoding = build_raw_guest_encoding(instance)
+
+    assert minimal == TMAbi(2, 2, 2, "mtm-v1", "raw-min[Wq=2,Ws=2,Wd=2]")
+    assert encoding.state_ids.keys() >= {"current", "start", "stay", "halt"}
+    assert encoding.symbol_ids.keys() >= {program.blank, "0", "X", "Y"}
+    assert encoding.direction_ids == {-1: 0, 0: 1, 1: 2}
+    assert encoding.direction_width == 2
+    assert encoding.initial_state == "current"
+
+
+def test_universal_dispatch_treats_non_left_non_right_direction_as_stay() -> None:
+    builder = TMBuilder(["0"], halt_state="halt")
+    builder.emit("start", "0", "halt", "0", S)
+    instance = RawTMInstance(program=builder.build("start"), tape={0: "0"}, head=0, state="start")
+    encoding = build_raw_guest_encoding(instance)
+    program = build_universal_meta_asm(encoding)
+
+    check_right = next(block for block in program.blocks if block.label == "CHECK_RIGHT")
+
+    assert encoding.direction_ids == {-1: 0, 0: 1, 1: 2}
+    assert check_right.instructions[-1].label_equal == "MOVE_RIGHT"
+    assert check_right.instructions[-1].label_not_equal == "START_STEP"
 
 
 def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:

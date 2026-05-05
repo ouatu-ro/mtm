@@ -13,8 +13,8 @@ from typing import Mapping
 
 from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
 from .pretty import parse_left_tape, parse_registers, parse_rules, parse_tape
-from .raw_transition_tm import TMTransitionProgram, run_raw_tm
-from .source_encoding import Encoding, TMAbi, TMProgram, assert_abi_compatible, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi
+from .raw_transition_tm import L as RAW_L, R as RAW_R, S as RAW_S, TMTransitionProgram, run_raw_tm
+from .source_encoding import Encoding, TMAbi, TMProgram, assert_abi_compatible, assign_ids, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi, width_for
 
 
 @dataclass(frozen=True, init=False)
@@ -403,6 +403,79 @@ def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_sta
     )
 
 
+def _raw_guest_states(instance: RawTMInstance) -> list[str]:
+    states = {instance.program.start_state, instance.program.halt_state, instance.state}
+    for (state, _read_symbol), (next_state, _write_symbol, _move_direction) in instance.program.transitions.items():
+        states.update((state, next_state))
+    return sorted(states)
+
+
+def _raw_guest_symbols(instance: RawTMInstance) -> list[str]:
+    symbols = {instance.program.blank, *instance.program.alphabet, *instance.tape.values()}
+    for (_state, read_symbol), (_next_state, write_symbol, _move_direction) in instance.program.transitions.items():
+        symbols.update((read_symbol, write_symbol))
+    return [instance.program.blank, *(symbol for symbol in sorted(symbols) if symbol != instance.program.blank)]
+
+
+def _raw_guest_directions(instance: RawTMInstance) -> list[int]:
+    directions = {RAW_L, RAW_R}
+    for _transition_key, (_next_state, _write_symbol, move_direction) in instance.program.transitions.items():
+        if move_direction not in {RAW_L, RAW_S, RAW_R}:
+            raise ValueError(f"unsupported raw move direction {move_direction!r}; expected L, S, or R")
+        directions.add(move_direction)
+    return [direction for direction in (RAW_L, RAW_S, RAW_R) if direction in directions]
+
+
+def infer_raw_guest_minimal_abi(instance: RawTMInstance) -> TMAbi:
+    """Infer the smallest ABI needed to encode a raw guest instance."""
+
+    state_width = width_for(len(_raw_guest_states(instance)))
+    symbol_width = width_for(len(_raw_guest_symbols(instance)))
+    dir_width = width_for(len(_raw_guest_directions(instance)))
+    return TMAbi(
+        state_width=state_width,
+        symbol_width=symbol_width,
+        dir_width=dir_width,
+        family_label=f"raw-min[Wq={state_width},Ws={symbol_width},Wd={dir_width}]",
+    )
+
+
+def _validate_raw_guest_abi(required: TMAbi, abi: TMAbi) -> None:
+    errors = []
+    if abi.grammar_version != required.grammar_version:
+        errors.append(f"grammar_version requires {required.grammar_version!r}, ABI provides {abi.grammar_version!r}")
+    if required.state_width > abi.state_width:
+        errors.append(f"states require {required.state_width} bits, ABI provides {abi.state_width}")
+    if required.symbol_width > abi.symbol_width:
+        errors.append(f"symbols require {required.symbol_width} bits, ABI provides {abi.symbol_width}")
+    if required.dir_width > abi.dir_width:
+        errors.append(f"directions require {required.dir_width} bits, ABI provides {abi.dir_width}")
+    if errors:
+        if any(error.startswith(("states", "symbols", "directions")) for error in errors):
+            raise ValueError("selected ABI too small: " + "; ".join(errors))
+        raise ValueError("selected ABI incompatible: " + "; ".join(errors))
+
+
+def build_raw_guest_encoding(instance: RawTMInstance, *, abi: TMAbi | None = None) -> Encoding:
+    """Build a concrete encoding for an already-lowered raw guest."""
+
+    required = infer_raw_guest_minimal_abi(instance)
+    target = required if abi is None else abi
+    if abi is not None:
+        _validate_raw_guest_abi(required, abi)
+    return Encoding(
+        state_ids=assign_ids(_raw_guest_states(instance)),
+        symbol_ids=assign_ids(_raw_guest_symbols(instance)),
+        direction_ids=assign_ids(_raw_guest_directions(instance)),
+        state_width=target.state_width,
+        symbol_width=target.symbol_width,
+        direction_width=target.dir_width,
+        blank=instance.program.blank,
+        initial_state=instance.state,
+        halt_state=instance.program.halt_state,
+    )
+
+
 def start_head_from_encoded_band(band: EncodedBand) -> int:
     left_addresses = list(range(-len(band.left_band), 0))
     return left_addresses[band.left_band.index("#CUR_STATE")]
@@ -482,5 +555,6 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
 
 __all__ = ["DecodedBandView", "RawTMInstance", "SourceArtifact", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
-           "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact", "infer_minimal_abi",
-           "start_head_from_encoded_band", "utm_artifact_from_band", "utm_encoded_from_band"]
+           "build_raw_guest_encoding", "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact",
+           "infer_minimal_abi", "infer_raw_guest_minimal_abi", "start_head_from_encoded_band",
+           "utm_artifact_from_band", "utm_encoded_from_band"]

@@ -77,7 +77,7 @@ Out of scope:
   Validation: `uv run pytest -q`; `git diff --check`.
   Commit: `85d74c8`.
 
-- [ ] S8: Add raw-guest ABI and encoding inference.
+- [x] S8: Add raw-guest ABI and encoding inference.
   Deliverables: infer minimal `TMAbi` from `RawTMInstance.program.start_state`, `program.halt_state`, current `state`, all transition source/target states, program alphabet, program blank, transition read/write symbols, concrete tape symbols, and raw directions actually used; support raw directions including `S`; add a helper such as `build_raw_guest_encoding(...)`.
   Validation: raw-guest encoding tests with `S`; inferred `dir_width` tests when `S` is present; host dispatch test that intentionally treats neither `L` nor `R` as stay-put.
 
@@ -107,6 +107,7 @@ Out of scope:
 - 2026-05-05 19:53 EEST: Completed S4. Added runtime artifact ABI compatibility checks, changed CLI `run` to preserve program-side `.tm` metadata, and covered compatible, incompatible, missing metadata, and CLI regression paths. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 - 2026-05-05 19:54 EEST: Completed S5. Added `TMTransitionProgram.transitions` as a read-only conceptual alias over `prog` and covered it in semantic object tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 19:58 EEST: Completed S6. Added `SourceArtifact`, safe `.mtm.source` read/write helpers, `.py` source artifact emission, and CLI `emit-source`. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
+- 2026-05-05 20:00 EEST: Completed S8. Added raw-guest ABI inference and `build_raw_guest_encoding(...)` with `S` move support, plus a dispatch test documenting that non-left/non-right moves stay put. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 
 ## Findings / Debt
 
