@@ -194,6 +194,7 @@
     <section class="toolbar">
       <label>Meta JSON <input id="metaFile" type="file" accept=".json,application/json"></label>
       <label>Raw TSV <input id="traceFile" type="file" accept=".tsv,text/tab-separated-values,text/plain"></label>
+      <button id="fixtureBtn">Load Incrementer</button>
       <button id="resetBtn">Reset</button>
       <button id="playBtn" class="primary">Play</button>
       <button id="step1Btn">+1</button>
@@ -222,6 +223,7 @@
     </section>
   </main>
 
+  <script src="assets/incrementer-raw-trace.js"></script>
   <script>
     const state = {
       meta: null,
@@ -240,6 +242,7 @@
     const fields = {
       metaFile: document.getElementById("metaFile"),
       traceFile: document.getElementById("traceFile"),
+      fixtureBtn: document.getElementById("fixtureBtn"),
       resetBtn: document.getElementById("resetBtn"),
       playBtn: document.getElementById("playBtn"),
       step1Btn: document.getElementById("step1Btn"),
@@ -291,6 +294,13 @@
       state.index = 0;
       state.changedAddress = null;
       render({ center: true });
+    }
+
+    function loadTrace(metaText, traceText) {
+      stop();
+      state.meta = JSON.parse(metaText);
+      state.rows = parseTsv(traceText);
+      loadInitialState();
     }
 
     function cellCount() {
@@ -453,6 +463,17 @@
       if (!file) return;
       state.rows = parseTsv(await readFile(file));
       reset();
+    });
+
+    fields.fixtureBtn.addEventListener("click", () => {
+      const fixture = window.MTM_TRACE_FIXTURES?.incrementer;
+      if (!fixture) {
+        fields.transitionPanel.textContent = "Missing tools/assets/incrementer-raw-trace.js";
+        return;
+      }
+      fields.metaFile.value = "";
+      fields.traceFile.value = "";
+      loadTrace(fixture.meta, fixture.trace);
     });
 
     fields.resetBtn.addEventListener("click", reset);
