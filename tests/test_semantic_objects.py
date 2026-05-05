@@ -330,6 +330,41 @@ def test_wider_abi_incrementer_runs_end_to_end() -> None:
     assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
+def test_palindrome_compiles_with_wider_target_abis() -> None:
+    fixture = load_fixture("palindrome")
+    expected_minimal = TMAbi(3, 2, 1, "mtm-v1", "min[Wq=3,Ws=2,Wd=1]")
+    targets = (
+        TMAbi(4, 3, 2, "mtm-v1", "U[Wq=4,Ws=3,Wd=2]"),
+        TMAbi(5, 5, 3, "mtm-v1", "U[Wq=5,Ws=5,Wd=3]"),
+    )
+    instance = TMInstance(
+        program=fixture.tm_program,
+        band=fixture.band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+
+    for target in targets:
+        encoded = Compiler(target_abi=target).compile(instance)
+        band_artifact = encoded.to_band_artifact()
+        program_artifact = UniversalInterpreter.for_encoded(encoded).lower_for_band(band_artifact)
+        decoded = encoded.decoded_view()
+
+        assert encoded.minimal_abi == expected_minimal
+        assert encoded.target_abi == target
+        assert band_artifact.target_abi == target
+        assert program_artifact.target_abi == target
+        assert program_artifact.minimal_abi == expected_minimal
+        assert encoded.encoding.state_width == target.state_width
+        assert encoded.encoding.symbol_width == target.symbol_width
+        assert encoded.encoding.direction_width == target.dir_width
+        assert encoded.encoding.symbol_ids[fixture.band.blank] == 0
+        assert decoded.simulated_tape.left_band == ("1",)
+        assert decoded.simulated_tape.right_band == ("0", "1")
+        assert decoded.simulated_tape.head == -1
+        assert len(program_artifact.program.prog) > 0
+
+
 def test_compile_rejects_too_small_abi() -> None:
     fixture = load_fixture("incrementer")
     too_small = TMAbi(1, 1, 1, "mtm-v1", "too-small")
