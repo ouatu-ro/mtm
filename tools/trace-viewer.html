@@ -149,6 +149,10 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
+    .cell.blank {
+      opacity: 0.42;
+    }
+
     .cell.changed { background: var(--changed); }
     .cell.head { border-color: var(--head); box-shadow: inset 0 -3px 0 var(--head); }
 
@@ -166,6 +170,44 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 13px;
+      font-weight: 700;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      min-height: 31px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-width: 28px;
+      height: 20px;
+      border-radius: 5px;
+      padding: 0 5px;
+      color: #071113;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 700;
+    }
+
+    .legend-name {
+      max-width: 130px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .details {
@@ -217,6 +259,8 @@
       <div id="tape" class="tape"></div>
     </section>
 
+    <section id="legend" class="legend"></section>
+
     <section class="details">
       <pre id="transitionPanel">Load a trace meta JSON and raw TSV to begin.</pre>
       <pre id="sourcePanel"></pre>
@@ -258,8 +302,43 @@
       blankMetric: document.getElementById("blankMetric"),
       tapeViewport: document.getElementById("tapeViewport"),
       tape: document.getElementById("tape"),
+      legend: document.getElementById("legend"),
       transitionPanel: document.getElementById("transitionPanel"),
       sourcePanel: document.getElementById("sourcePanel"),
+    };
+
+    const SYMBOL_STYLE = {
+      "0": ["0", "#9fd0ff"],
+      "1": ["1", "#f7c873"],
+      "#REGS": ["REG", "#8fd19e"],
+      "#END_REGS": ["/REG", "#8fd19e"],
+      "#RULES": ["RLS", "#f39b6d"],
+      "#RULE": ["R", "#f39b6d"],
+      "#END_RULE": ["/R", "#f39b6d"],
+      "#END_RULES": ["/RLS", "#f39b6d"],
+      "#STATE": ["ST", "#c89cff"],
+      "#READ": ["RD", "#c89cff"],
+      "#WRITE": ["WR", "#c89cff"],
+      "#NEXT": ["NX", "#c89cff"],
+      "#MOVE": ["MV", "#c89cff"],
+      "#FIELD": ["FLD", "#b7c0c8"],
+      "#END_FIELD": ["/FLD", "#b7c0c8"],
+      "#CUR_STATE": ["CS", "#7ee0d1"],
+      "#CUR_SYMBOL": ["CY", "#7ee0d1"],
+      "#WRITE_SYMBOL": ["WS", "#7ee0d1"],
+      "#NEXT_STATE": ["NS", "#7ee0d1"],
+      "#MOVE_DIR": ["MD", "#7ee0d1"],
+      "#CMP_FLAG": ["CF", "#7ee0d1"],
+      "#TMP": ["TMP", "#7ee0d1"],
+      "#TAPE": ["T", "#8cb4ff"],
+      "#END_TAPE": ["/T", "#8cb4ff"],
+      "#TAPE_LEFT": ["TL", "#8cb4ff"],
+      "#END_TAPE_LEFT": ["/TL", "#8cb4ff"],
+      "#CELL": ["C", "#78d7a1"],
+      "#END_CELL": ["/C", "#78d7a1"],
+      "#HEAD": ["H", "#ff7b7b"],
+      "#NO_HEAD": ["N", "#b7c0c8"],
+      "#ACTIVE_RULE": ["AR", "#ffdd66"],
     };
 
     function readFile(file) {
@@ -286,7 +365,9 @@
     function loadInitialState() {
       state.tape = new Map();
       for (const [address, symbol] of Object.entries(state.meta?.initial_tape ?? {})) {
-        state.tape.set(Number(address), symbol);
+        if (symbol !== blankSymbol()) {
+          state.tape.set(Number(address), symbol);
+        }
       }
       state.head = Number(state.meta?.initial_head ?? 0);
       state.currentState = String(state.meta?.initial_state ?? "");
@@ -312,6 +393,14 @@
       return String(state.meta?.blank ?? "_");
     }
 
+    function symbolInfo(symbol) {
+      if (symbol === blankSymbol()) return { label: "·", color: "#65717b", full: symbol, blank: true };
+      const known = SYMBOL_STYLE[symbol];
+      if (known) return { label: known[0], color: known[1], full: symbol, blank: false };
+      if (symbol.startsWith("#")) return { label: symbol.replace(/^#/, "").slice(0, 4), color: "#d6a3ff", full: symbol, blank: false };
+      return { label: symbol, color: "#d9dde1", full: symbol, blank: false };
+    }
+
     function step(count) {
       if (!state.meta || !state.rows.length) {
         stop();
@@ -321,7 +410,11 @@
         const row = state.rows[state.index];
         const write = row.write ?? "";
         const beforeHead = state.head;
-        if (write !== "") state.tape.set(beforeHead, write);
+        if (write === blankSymbol()) {
+          state.tape.delete(beforeHead);
+        } else if (write !== "") {
+          state.tape.set(beforeHead, write);
+        }
         state.changedAddress = write === "" ? null : beforeHead;
         state.head = row.head_after === "" ? state.head : Number(row.head_after);
         state.currentState = row.next_state || row.state || state.currentState;
@@ -338,9 +431,10 @@
       if (state.changedAddress !== null) addresses.push(state.changedAddress);
       const low = Math.min(...addresses);
       const high = Math.max(...addresses);
+      const margin = Math.max(3, Math.ceil(count * 0.12));
       return {
-        start: low - count,
-        end: high + count,
+        start: low - margin,
+        end: high + margin,
       };
     }
 
@@ -416,6 +510,7 @@
       const range = renderedRange();
       state.renderedStart = range.start;
       state.renderedEnd = range.end;
+      const visibleSymbols = new Set();
       for (let address = range.start; address <= range.end; address += 1) {
         const cell = document.createElement("div");
         cell.className = "cell";
@@ -427,11 +522,17 @@
         addr.textContent = String(address);
         const sym = document.createElement("div");
         sym.className = "sym";
-        sym.title = state.tape.get(address) ?? blankSymbol();
-        sym.textContent = state.tape.get(address) ?? blankSymbol();
+        const symbol = state.tape.get(address) ?? blankSymbol();
+        const info = symbolInfo(symbol);
+        visibleSymbols.add(symbol);
+        if (info.blank) cell.classList.add("blank");
+        sym.title = info.full;
+        sym.textContent = info.label;
+        sym.style.color = info.color;
         cell.append(addr, sym);
         fields.tape.append(cell);
       }
+      renderLegend(visibleSymbols);
 
       const row = state.rows[Math.max(0, state.index - 1)];
       fields.transitionPanel.textContent = row
@@ -449,6 +550,26 @@
         if (options.center) centerHead();
         if (options.follow) followHeadInScroll();
       });
+    }
+
+    function renderLegend(symbols) {
+      fields.legend.replaceChildren();
+      for (const symbol of [...symbols].sort()) {
+        const info = symbolInfo(symbol);
+        if (info.blank) continue;
+        const item = document.createElement("span");
+        item.className = "legend-item";
+        const chip = document.createElement("span");
+        chip.className = "legend-chip";
+        chip.style.background = info.color;
+        chip.textContent = info.label;
+        const name = document.createElement("span");
+        name.className = "legend-name";
+        name.title = info.full;
+        name.textContent = info.full;
+        item.append(chip, name);
+        fields.legend.append(item);
+      }
     }
 
     fields.metaFile.addEventListener("change", async () => {
