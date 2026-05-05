@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 
+from .semantic_objects import RawTMInstance
+from .raw_transition_tm import R, S
 from .raw_transition_tm import TMTransitionProgram
 
 
@@ -86,6 +88,57 @@ def merge_identical_transition_states(tm: TMTransitionProgram) -> TMTransitionPr
     )
 
 
+def right_biased_raw_guest_state_order(instance: RawTMInstance, *, max_steps: int = 100_000) -> tuple[str, ...]:
+    """Order states by the observed run, then by graph edges preferring right moves."""
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(state: str) -> None:
+        if state not in seen:
+            seen.add(state)
+            ordered.append(state)
+
+    tape = dict(instance.tape)
+    head = instance.head
+    state = instance.state
+    for _step in range(max_steps):
+        add(state)
+        if state == instance.program.halt_state:
+            break
+        read = tape.get(head, instance.program.blank)
+        transition = instance.program.transitions.get((state, read))
+        if transition is None:
+            break
+        next_state, write, move = transition
+        tape[head] = write
+        head += move
+        state = next_state
+    add(instance.program.halt_state)
+
+    outgoing: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
+    for (source, read), (target, _write, move) in instance.program.transitions.items():
+        outgoing[source].append((target, read, move))
+
+    frontier = deque(ordered)
+    while frontier:
+        source = frontier.popleft()
+        for target, _read, _move in sorted(outgoing.get(source, ()), key=_right_biased_edge_key):
+            if target not in seen:
+                add(target)
+                frontier.append(target)
+
+    for state in sorted(_all_states(instance.program)):
+        add(state)
+    return tuple(ordered)
+
+
+def _right_biased_edge_key(edge: tuple[str, str, int]) -> tuple[int, str, str]:
+    target, read, move = edge
+    move_rank = {R: 0, S: 1}.get(move, 2)
+    return (move_rank, read, target)
+
+
 def _all_states(tm: TMTransitionProgram) -> set[str]:
     states = {tm.start_state, tm.halt_state}
     for (state, _), (next_state, _, _) in tm.prog.items():
@@ -102,4 +155,5 @@ __all__ = [
     "find_identical_transition_state_classes",
     "merge_identical_transition_states",
     "prune_unreachable_transitions",
+    "right_biased_raw_guest_state_order",
 ]

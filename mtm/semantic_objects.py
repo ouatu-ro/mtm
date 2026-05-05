@@ -8,6 +8,7 @@ layout mechanics first.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -403,11 +404,30 @@ def infer_minimal_abi(tm_program: TMProgram, source_band: TMBand, *, initial_sta
     )
 
 
-def _raw_guest_states(instance: RawTMInstance) -> list[str]:
+def _raw_guest_states(instance: RawTMInstance, *, state_order: Iterable[str] = ()) -> list[str]:
     states = {instance.program.start_state, instance.program.halt_state, instance.state}
     for (state, _read_symbol), (next_state, _write_symbol, _move_direction) in instance.program.transitions.items():
         states.update((state, next_state))
-    return sorted(states)
+    ordered = [state for state in dict.fromkeys(state_order) if state in states]
+    ordered_set = set(ordered)
+    return [*ordered, *(state for state in sorted(states) if state not in ordered_set)]
+
+
+def _assign_state_ids(states: list[str], *, width: int, scatter: bool = False) -> dict[str, int]:
+    if not scatter:
+        return assign_ids(states)
+    return {
+        state: _reverse_low_bits(index, width)
+        for index, state in enumerate(states)
+    }
+
+
+def _reverse_low_bits(value: int, width: int) -> int:
+    reversed_value = 0
+    for _index in range(width):
+        reversed_value = (reversed_value << 1) | (value & 1)
+        value >>= 1
+    return reversed_value
 
 
 def _raw_guest_symbols(instance: RawTMInstance) -> list[str]:
@@ -470,15 +490,22 @@ def _validate_raw_guest_abi(required: TMAbi, abi: TMAbi) -> None:
         raise ValueError("selected ABI incompatible: " + "; ".join(errors))
 
 
-def build_raw_guest_encoding(instance: RawTMInstance, *, abi: TMAbi | None = None) -> Encoding:
+def build_raw_guest_encoding(
+    instance: RawTMInstance,
+    *,
+    abi: TMAbi | None = None,
+    state_order: Iterable[str] = (),
+    scatter_state_ids: bool = False,
+) -> Encoding:
     """Build a concrete encoding for an already-lowered raw guest."""
 
     required = infer_raw_guest_minimal_abi(instance)
     target = required if abi is None else abi
     if abi is not None:
         _validate_raw_guest_abi(required, abi)
+    states = _raw_guest_states(instance, state_order=state_order)
     return Encoding(
-        state_ids=assign_ids(_raw_guest_states(instance)),
+        state_ids=_assign_state_ids(states, width=target.state_width, scatter=scatter_state_ids),
         symbol_ids=assign_ids(_raw_guest_symbols(instance)),
         direction_ids=assign_ids(_raw_guest_directions(instance)),
         state_width=target.state_width,
@@ -490,12 +517,43 @@ def build_raw_guest_encoding(instance: RawTMInstance, *, abi: TMAbi | None = Non
     )
 
 
-def compile_raw_guest(instance: RawTMInstance, *, abi: TMAbi | None = None) -> UTMEncoded:
+def _raw_guest_transition_items(
+    instance: RawTMInstance,
+    *,
+    state_order: Iterable[str] = (),
+):
+    items = tuple(instance.program.transitions.items())
+    state_rank = {state: index for index, state in enumerate(state_order)}
+    if not state_rank:
+        return items
+    original_rank = {item: index for index, item in enumerate(items)}
+    return tuple(sorted(
+        items,
+        key=lambda item: (
+            state_rank.get(item[0][0], len(state_rank)),
+            original_rank[item],
+        ),
+    ))
+
+
+def compile_raw_guest(
+    instance: RawTMInstance,
+    *,
+    abi: TMAbi | None = None,
+    state_order: Iterable[str] = (),
+    scatter_state_ids: bool = False,
+) -> UTMEncoded:
     """Compile an already-lowered raw guest into semantic UTM input."""
 
     minimal_abi = infer_raw_guest_minimal_abi(instance)
     target_abi = minimal_abi if abi is None else abi
-    encoding = build_raw_guest_encoding(instance, abi=target_abi)
+    state_order = tuple(state_order)
+    encoding = build_raw_guest_encoding(
+        instance,
+        abi=target_abi,
+        state_order=state_order,
+        scatter_state_ids=scatter_state_ids,
+    )
     simulated_tape = _raw_guest_tape(instance)
     return UTMEncoded(
         encoding=encoding,
@@ -516,7 +574,10 @@ def compile_raw_guest(instance: RawTMInstance, *, abi: TMAbi | None = None) -> U
                 write_symbol=write_symbol,
                 move_dir=move_direction,
             )
-            for (state, read_symbol), (next_state, write_symbol, move_direction) in instance.program.transitions.items()
+            for (state, read_symbol), (next_state, write_symbol, move_direction) in _raw_guest_transition_items(
+                instance,
+                state_order=state_order,
+            )
         ),
         simulated_tape=simulated_tape,
         minimal_abi=minimal_abi,

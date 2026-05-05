@@ -16,7 +16,11 @@ if str(ROOT) not in sys.path:
 from mtm.compiler import Compiler
 from mtm.debugger import RawTraceRunner
 from mtm.lowering import lower_program_with_source_map
-from mtm.raw_transition_optimization import merge_identical_transition_states, prune_unreachable_transitions
+from mtm.raw_transition_optimization import (
+    merge_identical_transition_states,
+    prune_unreachable_transitions,
+    right_biased_raw_guest_state_order,
+)
 from mtm.raw_transition_tm import TMTransitionProgram, run_raw_tm
 from mtm.semantic_objects import RawTMInstance, compile_raw_guest
 from mtm.source_file import load_python_tm_instance
@@ -36,8 +40,17 @@ class BenchmarkRow:
     direct_raw_steps: int
     direct_status: str
     encoded_guest_band_width: int | None
-    l2_first_source_raw_steps: int | None
-    l2_first_source_status: str | None
+    l2_source_steps: int | None
+    l2_source_raw_steps: int | None
+    l2_source_status: str | None
+
+
+@dataclass(frozen=True)
+class BenchmarkVariant:
+    name: str
+    optimize: Callable[[TMTransitionProgram], TMTransitionProgram]
+    state_order: Callable[[RawTMInstance], tuple[str, ...]] | None = None
+    scatter_state_ids: bool = False
 
 
 def _initial_band_width(tape: dict[int, str]) -> int:
@@ -62,21 +75,29 @@ def _measure(
     head: int,
     *,
     expensive: bool,
+    l2_source_steps: int,
+    state_order: Callable[[RawTMInstance], tuple[str, ...]] | None = None,
+    scatter_state_ids: bool = False,
 ) -> BenchmarkRow:
     direct_result = run_raw_tm(program, tape, head=head, max_steps=FUEL)
     encoded_guest_band_width = None
-    l2_first_source_status = None
-    l2_first_source_raw_steps = None
+    l2_source_status = None
+    l2_source_raw_steps = None
     if expensive:
-        encoded_guest = compile_raw_guest(RawTMInstance(
+        raw_instance = RawTMInstance(
             program=program,
             tape=tape,
             head=head,
             state=program.start_state,
-        ))
+        )
+        encoded_guest = compile_raw_guest(
+            raw_instance,
+            state_order=() if state_order is None else state_order(raw_instance),
+            scatter_state_ids=scatter_state_ids,
+        )
         encoded_guest_band = encoded_guest.to_band_artifact()
         encoded_guest_band_width = _initial_band_width(encoded_guest_band.to_runtime_tape())
-        l2_first_source_status, l2_first_source_raw_steps = _l2_first_source_step(encoded_guest, encoded_guest_band)
+        l2_source_status, l2_source_raw_steps = _l2_source_steps(encoded_guest, encoded_guest_band, groups=l2_source_steps)
     return BenchmarkRow(
         name=name,
         transitions=len(program.prog),
@@ -85,12 +106,13 @@ def _measure(
         direct_raw_steps=int(direct_result["steps"]),
         direct_status=str(direct_result["status"]),
         encoded_guest_band_width=encoded_guest_band_width,
-        l2_first_source_raw_steps=l2_first_source_raw_steps,
-        l2_first_source_status=l2_first_source_status,
+        l2_source_steps=l2_source_steps if expensive else None,
+        l2_source_raw_steps=l2_source_raw_steps,
+        l2_source_status=l2_source_status,
     )
 
 
-def _l2_first_source_step(encoded_guest, encoded_guest_band) -> tuple[str, int]:
+def _l2_source_steps(encoded_guest, encoded_guest_band, *, groups: int) -> tuple[str, int]:
     interpreter = UniversalInterpreter.for_encoded(encoded_guest)
     lowered = lower_program_with_source_map(
         interpreter.to_meta_asm(),
@@ -103,23 +125,48 @@ def _l2_first_source_step(encoded_guest, encoded_guest_band) -> tuple[str, int]:
         state=lowered.raw_program.start_state,
         source_map=lowered.source_map,
     )
-    result = runner.stream_to_next_source_step(max_raw=L2_SOURCE_STEP_FUEL)
-    return result.status, result.raw_steps
+    raw_steps = 0
+    status = "stepped"
+    for _group in range(groups):
+        result = runner.stream_to_next_source_step(max_raw=L2_SOURCE_STEP_FUEL)
+        raw_steps += result.raw_steps
+        status = result.status
+        if status != "stepped":
+            break
+    return status, raw_steps
 
 
-def benchmark_rows(*, expensive: bool = False) -> list[BenchmarkRow]:
+def benchmark_rows(*, expensive: bool = False, l2_source_steps: int = 1) -> list[BenchmarkRow]:
     baseline, tape, head = _compile_incrementer()
     baseline_transitions = len(baseline.prog)
-    variants: tuple[tuple[str, Callable[[TMTransitionProgram], TMTransitionProgram]], ...] = (
-        ("none", lambda program: program),
-        ("reachable", prune_unreachable_transitions),
-        ("merged", merge_identical_transition_states),
-        ("reachable+merged", lambda program: merge_identical_transition_states(prune_unreachable_transitions(program))),
-        ("merged+reachable", lambda program: prune_unreachable_transitions(merge_identical_transition_states(program))),
+    variants = (
+        BenchmarkVariant("none", lambda program: program),
+        BenchmarkVariant("reachable", prune_unreachable_transitions),
+        BenchmarkVariant("merged", merge_identical_transition_states),
+        BenchmarkVariant("reachable+merged", lambda program: merge_identical_transition_states(prune_unreachable_transitions(program))),
+        BenchmarkVariant("merged+reachable", lambda program: prune_unreachable_transitions(merge_identical_transition_states(program))),
+        BenchmarkVariant("right-biased-renumber", lambda program: program, right_biased_raw_guest_state_order, True),
+        BenchmarkVariant("merged+right-biased-renumber", merge_identical_transition_states, right_biased_raw_guest_state_order, True),
+        BenchmarkVariant(
+            "merged+reachable+right-biased-renumber",
+            lambda program: prune_unreachable_transitions(merge_identical_transition_states(program)),
+            right_biased_raw_guest_state_order,
+            True,
+        ),
     )
     return [
-        _measure(name, optimize(baseline), baseline_transitions, tape, head, expensive=expensive)
-        for name, optimize in variants
+        _measure(
+            variant.name,
+            variant.optimize(baseline),
+            baseline_transitions,
+            tape,
+            head,
+            expensive=expensive,
+            l2_source_steps=l2_source_steps,
+            state_order=variant.state_order,
+            scatter_state_ids=variant.scatter_state_ids,
+        )
+        for variant in variants
     ]
 
 
@@ -134,7 +181,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="include encoded raw-guest band width and first L2 source-step measurements",
     )
+    parser.add_argument(
+        "--l2-source-steps",
+        type=int,
+        default=1,
+        help="number of interpreted source steps to run for --expensive L2 measurements",
+    )
     args = parser.parse_args(argv)
+    if args.l2_source_steps <= 0:
+        raise SystemExit("--l2-source-steps must be positive")
 
     writer = csv.writer(sys.stdout)
     writer.writerow([
@@ -145,10 +200,11 @@ def main(argv: list[str] | None = None) -> int:
         "direct_raw_steps",
         "direct_status",
         "encoded_guest_band_width",
-        "l2_first_source_raw_steps",
-        "l2_first_source_status",
+        "l2_source_steps",
+        "l2_source_raw_steps",
+        "l2_source_status",
     ])
-    for row in benchmark_rows(expensive=args.expensive):
+    for row in benchmark_rows(expensive=args.expensive, l2_source_steps=args.l2_source_steps):
         writer.writerow([
             row.name,
             row.transitions,
@@ -157,8 +213,9 @@ def main(argv: list[str] | None = None) -> int:
             row.direct_raw_steps,
             row.direct_status,
             _optional(row.encoded_guest_band_width),
-            _optional(row.l2_first_source_raw_steps),
-            _optional(row.l2_first_source_status),
+            _optional(row.l2_source_steps),
+            _optional(row.l2_source_raw_steps),
+            _optional(row.l2_source_status),
         ])
     return 0
 
