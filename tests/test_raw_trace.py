@@ -606,10 +606,10 @@ def test_format_trace_view_renders_semantic_summary_for_decoded_band() -> None:
     assert rendered == "\n".join([
         "snapshot: step=0 state='START_STEP' head=-155",
         "raw tape: -156:'#REGS' [-155:'#CUR_STATE'] -154:'1'",
-        "next raw: ('START_STEP', '#CUR_STATE') -> ('program_START_STEP_body_0', '#CUR_STATE', S)",
-        "source: block=START_STEP instruction=? routine=0:seek op=0",
+        "next raw: ('START_STEP', '#CUR_STATE') -> ('START_STEP', '#CUR_STATE', L)",
+        "source: block=START_STEP instruction=0 routine=0:compare_global_literal op=0",
         "row: state='START_STEP' read='#CUR_STATE'",
-        "instruction: SEEK #CUR_STATE L",
+        "instruction: COMPARE_GLOBAL_LITERAL #CUR_STATE 01",
         "last raw: <none>",
         "semantic: state='qFindMargin' head=0",
         "semantic tape: -2:'_' -1:'_' [0:'1'] 1:'0' 2:'1'",

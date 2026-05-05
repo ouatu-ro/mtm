@@ -520,9 +520,9 @@ def test_block_lowering_uses_block_level_continuation_names() -> None:
 
     cfgs = program_to_cfgs(program)
 
-    assert cfgs[0].transitions[0].target == "program_START_STEP_body_0"
-    assert cfgs[1].entry == "program_START_STEP_body_0"
-    assert cfgs[1].transitions[0].target == "program_START_STEP_cont_0_0"
+    assert cfgs[0].transitions[0].target == "program_START_STEP_cont_0_0"
+    assert cfgs[1].entry == "program_START_STEP_cont_0_0"
+    assert cfgs[1].transitions[0].target == "DONE"
 
 
 def test_lower_program_with_source_map_maps_seek_rows_back_to_instruction_and_op() -> None:

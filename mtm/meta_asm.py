@@ -308,7 +308,7 @@ def build_universal_meta_asm(encoding: Encoding) -> Program:
                 CopyGlobalToHeadSymbol(WRITE_SYMBOL, encoding.symbol_width),
                 CopyGlobalGlobal(NEXT_STATE, CUR_STATE, encoding.state_width),
                 CompareGlobalLiteral(CUR_STATE, halt_bits),
-                BranchCmp("HALT", "DISPATCH_MOVE"),
+                Goto("DISPATCH_MOVE"),
             )),
             Block("DISPATCH_MOVE", (
                 CompareGlobalLiteral(MOVE_DIR, left_bits),

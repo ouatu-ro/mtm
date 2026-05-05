@@ -475,7 +475,7 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
     instruction_lines = instruction_trace.read_text().splitlines()
     assert instruction_lines[0].startswith("group\tstatus\traw_start\traw_end\traw_delta")
     assert len(instruction_lines) == 3
-    assert "\tSTART_STEP\tsetup\t" in instruction_lines[1]
+    assert "\tSTART_STEP\t0\t0\tcompare_global_literal\t" in instruction_lines[1]
 
     assert cli_main([
         "trace",
@@ -491,7 +491,7 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
     block_lines = block_trace.read_text().splitlines()
     assert block_lines[0].startswith("group\tstatus\traw_start\traw_end\traw_delta")
     assert len(block_lines) == 2
-    assert "\tSTART_STEP\tsetup\t" in block_lines[1]
+    assert "\tSTART_STEP\t0\t0\tcompare_global_literal\t" in block_lines[1]
 
     source_trace = out_dir / "source.tsv"
     assert cli_main([
@@ -513,4 +513,4 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
     first_source_step = source_lines[1].split("\t")
     assert first_source_step[1] == "stepped"
     assert first_source_step[5:12] == ["qFindMargin", "1", "1", "1", "qFindMargin", "0", "1"]
-    assert "\tSTART_STEP\tsetup\t" in source_lines[1]
+    assert "\tSTART_STEP\t0\t0\tcompare_global_literal\t" in source_lines[1]

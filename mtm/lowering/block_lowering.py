@@ -66,8 +66,6 @@ def block_entry_setup(block: Block) -> Instruction | None:
     block body can be lowered with simpler assumptions.
     """
 
-    if block.label == "START_STEP":
-        return Seek(CUR_STATE, "L")
     if block.label == "LOOKUP_RULE":
         return SeekOneOf((ACTIVE_RULE, END_RULES), "R")
     if block.label in {"CHECK_STATE", "CHECK_READ", "NEXT_RULE", "MATCHED_RULE"}:

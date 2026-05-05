@@ -1,5 +1,5 @@
 import mtm
-from mtm import Compiler, R, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
+from mtm import Compiler, L, R, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
 from mtm.artifacts import read_utm_artifact, write_utm_artifact
 from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
@@ -119,8 +119,25 @@ def test_one_step_right_constructs_blank_right_cell_end_to_end() -> None:
     assert result["status"] == "halted"
     assert view.current_state == "HALT"
     assert view.simulated_tape.left_band == ()
-    assert view.simulated_tape.right_band == ("_", "_")
-    assert view.simulated_tape.head == 1
+    assert view.simulated_tape.right_band == ("_", "_", "_")
+    assert view.simulated_tape.head == 2
+
+
+def test_halt_transition_moves_after_writing_on_left_tape() -> None:
+    blank = "_"
+    band = TMBand.from_dict({}, head=0, blank=blank)
+    program = TMProgram({
+        ("q0", blank): ("q1", "A", L),
+        ("q1", blank): ("HALT", "C", L),
+    }, initial_state="q0", halt_state="HALT", blank=blank)
+
+    result, view = _run_instance(TMInstance(program, band, "q0", "HALT"), fuel=20_000)
+
+    assert result["status"] == "halted"
+    assert view.current_state == "HALT"
+    assert view.simulated_tape.left_band == (blank, "C")
+    assert view.simulated_tape.right_band == ("A",)
+    assert view.simulated_tape.head == -2
 
 
 def test_utm_encoded_and_artifact_helpers() -> None:
