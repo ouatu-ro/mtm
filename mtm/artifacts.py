@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import TMAbi, UTMBandArtifact
-from .source_encoding import Encoding
+from .source_encoding import Encoding, abi_from_literal, abi_to_literal
 
 UTM_BAND_FORMAT = "mtm-utm-band-v1"
 RAW_TM_FORMAT = "mtm-raw-tm-v1"
@@ -53,16 +53,6 @@ def _require_format(namespace: dict[str, object], expected: str) -> None:
         raise ValueError(f"unsupported artifact format: expected {expected!r}, got {actual!r}")
 
 
-def _abi_literal(abi: TMAbi) -> dict[str, object]:
-    return {
-        "state_width": abi.state_width,
-        "symbol_width": abi.symbol_width,
-        "dir_width": abi.dir_width,
-        "grammar_version": abi.grammar_version,
-        "family_label": abi.family_label,
-    }
-
-
 def _load_abi(namespace: dict[str, object], name: str, *, fallback_encoding: Encoding) -> TMAbi:
     data = namespace.get(name)
     if data is None:
@@ -72,13 +62,7 @@ def _load_abi(namespace: dict[str, object], name: str, *, fallback_encoding: Enc
             dir_width=fallback_encoding.direction_width,
             family_label=f"U[Wq={fallback_encoding.state_width},Ws={fallback_encoding.symbol_width},Wd={fallback_encoding.direction_width}]",
         )
-    return TMAbi(
-        state_width=data["state_width"],
-        symbol_width=data["symbol_width"],
-        dir_width=data["dir_width"],
-        grammar_version=data.get("grammar_version", "mtm-v1"),
-        family_label=data.get("family_label", ""),
-    )
+    return abi_from_literal(data)
 
 
 def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
@@ -102,8 +86,8 @@ def write_utm_artifact(path: str | Path, artifact: UTMBandArtifact) -> None:
         f"encoding = {_literal(encoding)}",
         f"left_band = {_literal(list(artifact.left_band))}",
         f"right_band = {_literal(list(artifact.right_band))}",
-        f"target_abi = {_literal(_abi_literal(artifact.target_abi))}",
-        f"minimal_abi = {_literal(_abi_literal(artifact.minimal_abi))}",
+        f"target_abi = {_literal(abi_to_literal(artifact.target_abi))}",
+        f"minimal_abi = {_literal(abi_to_literal(artifact.minimal_abi))}",
     ])
     path.write_text(text + "\n")
 

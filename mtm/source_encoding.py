@@ -127,6 +127,53 @@ class TMAbi:
     family_label: str = ""
 
 
+def abi_to_literal(abi: TMAbi) -> dict[str, object]:
+    """Serialize ABI metadata into an artifact-safe literal dictionary."""
+
+    return {
+        "state_width": abi.state_width,
+        "symbol_width": abi.symbol_width,
+        "dir_width": abi.dir_width,
+        "grammar_version": abi.grammar_version,
+        "family_label": abi.family_label,
+    }
+
+
+def abi_from_literal(data: dict[str, object]) -> TMAbi:
+    """Load ABI metadata from an artifact literal dictionary."""
+
+    return TMAbi(
+        state_width=data["state_width"],
+        symbol_width=data["symbol_width"],
+        dir_width=data["dir_width"],
+        grammar_version=data.get("grammar_version", "mtm-v1"),
+        family_label=data.get("family_label", ""),
+    )
+
+
+def abi_compatible(a: TMAbi, b: TMAbi) -> bool:
+    """Return whether two ABI values describe the same executable shape."""
+
+    return (
+        a.state_width == b.state_width
+        and a.symbol_width == b.symbol_width
+        and a.dir_width == b.dir_width
+        and a.grammar_version == b.grammar_version
+    )
+
+
+def assert_abi_compatible(a: TMAbi, b: TMAbi) -> None:
+    """Raise when two ABI values cannot be used together."""
+
+    mismatches = []
+    for field in ("grammar_version", "state_width", "symbol_width", "dir_width"):
+        left, right = getattr(a, field), getattr(b, field)
+        if left != right:
+            mismatches.append(f"{field}: {left!r} != {right!r}")
+    if mismatches:
+        raise ValueError("ABI mismatch: " + "; ".join(mismatches))
+
+
 def width_for(count: int) -> int: return 1 if count <= 1 else ceil(log2(count))
 def assign_ids(values: Iterable[str | int]) -> dict[str | int, int]: return {value: index for index, value in enumerate(values)}
 
@@ -265,6 +312,7 @@ def encode_symbol(encoding: Encoding, symbol: str) -> tuple[str, ...]: return bi
 def encode_direction(encoding: Encoding, direction: int) -> tuple[str, ...]: return bits(encoding.direction_ids[direction], encoding.direction_width)
 
 
-__all__ = ["Encoding", "L", "R", "TMAbi", "TMProgram", "assign_ids", "bits", "build_encoding", "collect_alphabet",
+__all__ = ["Encoding", "L", "R", "TMAbi", "TMProgram", "abi_compatible", "abi_from_literal",
+           "abi_to_literal", "assert_abi_compatible", "assign_ids", "bits", "build_encoding", "collect_alphabet",
            "encode_direction", "encode_state", "encode_symbol", "infer_minimal_abi", "unbits", "width_for",
            "Transition", "TransitionKey"]

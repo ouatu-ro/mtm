@@ -6,6 +6,7 @@ from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import RawTMInstance, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
+from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
 
@@ -38,6 +39,42 @@ def test_tm_program_rejects_unsupported_direction() -> None:
         assert "unsupported move direction" in str(exc)
     else:
         raise AssertionError("expected unsupported direction to be rejected")
+
+
+def test_abi_literal_round_trip() -> None:
+    abi = TMAbi(3, 4, 2, "mtm-v2", "custom-family")
+
+    literal = abi_to_literal(abi)
+    loaded = abi_from_literal(literal)
+
+    assert literal == {
+        "state_width": 3,
+        "symbol_width": 4,
+        "dir_width": 2,
+        "grammar_version": "mtm-v2",
+        "family_label": "custom-family",
+    }
+    assert loaded == abi
+
+
+def test_abi_compatibility_ignores_family_label_and_rejects_shape_mismatches() -> None:
+    left = TMAbi(3, 4, 2, "mtm-v1", "left")
+    right = TMAbi(3, 4, 2, "mtm-v1", "right")
+    wrong_symbol_width = TMAbi(3, 5, 2, "mtm-v1", "left")
+    wrong_grammar = TMAbi(3, 4, 2, "mtm-v2", "left")
+
+    assert abi_compatible(left, right) is True
+    assert_abi_compatible(left, right)
+    assert abi_compatible(left, wrong_symbol_width) is False
+    assert abi_compatible(left, wrong_grammar) is False
+
+    for incompatible in (wrong_symbol_width, wrong_grammar):
+        try:
+            assert_abi_compatible(left, incompatible)
+        except ValueError as exc:
+            assert "ABI mismatch" in str(exc)
+        else:
+            raise AssertionError("expected incompatible ABI to be rejected")
 
 
 def test_semantic_view_from_encoded_band() -> None:

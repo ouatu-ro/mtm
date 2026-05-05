@@ -48,7 +48,7 @@ Out of scope:
 
 ## Steps
 
-- [ ] S1: Add shared ABI literal and compatibility helpers.
+- [x] S1: Add shared ABI literal and compatibility helpers.
   Deliverables: `abi_to_literal`, `abi_from_literal`, `abi_compatible`, `assert_abi_compatible`; `.utm.band` and `.tm` artifact code use the same ABI literal path; `.tm` ABI parsing does not depend on an `Encoding` fallback.
   Validation: ABI literal round-trip tests; matching and mismatched compatibility helper tests.
 
@@ -101,6 +101,7 @@ Out of scope:
 
 - 2026-05-05 19:20 EEST: Committed S7 as `85d74c8`. Validation: `uv run pytest -q`; `git diff --check`.
 - 2026-05-05 19:20 EEST: Restyled plan as a durable execute-disk-plan artifact.
+- 2026-05-05 19:26 EEST: Completed S1. Added shared ABI literal and compatibility helpers in `mtm/source_encoding.py`, updated `.utm.band` artifact IO to use them, and added focused helper tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 
 ## Findings / Debt
 
