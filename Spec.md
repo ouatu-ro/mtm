@@ -6,56 +6,65 @@ Build a staged system where a source-level Turing machine is compiled into an
 encoded UTM input band, and a generated universal interpreter executes that band
 on an ordinary TM runner.
 
-The two emitted runtime artifacts are:
+The two primary emitted runtime artifacts are:
 
 ```text
-utm.tm              lowered universal-machine transition program
-object.utm.band     encoded object program plus simulated object tape
+object.l1.tm        lowered universal-machine transition program for level 1
+object.l1.utm.band  encoded guest input band for level 1
 ```
 
 Execution pairs them as:
 
 ```text
 ordinary TM runner
-  program: utm.tm
-  input:   object.utm.band
+  program: object.l1.tm
+  input:   object.l1.utm.band
 ```
 
 There are two compilation pipelines:
 
 ```text
-Object compiler:
+Source-guest compiler:
   TMInstance
   -> UTMEncoded
   -> UTMBandArtifact
 
 Universal interpreter compiler:
-  TMAbi
+  Encoding
   -> MetaASMProgram
   -> TMTransitionProgram
   -> UTMProgramArtifact
 ```
 
+The current compiler handles source guests. Recursive self-hosting requires a
+second path for raw guests:
+
+```text
+Raw-guest compiler:
+  RawGuestInstance
+  -> UTMEncoded
+  -> UTMBandArtifact
+```
+
 ## 2. Public Interface
 
-The intended top-level workflow is:
+The current top-level workflow is:
 
 ```python
-instance = TMInstance(program, band)
+instance = TMInstance(program, band, initial_state=..., halt_state=...)
 
 compiler = Compiler(target_abi=abi)
 encoded = compiler.compile(instance)
 
 band_artifact = encoded.to_band_artifact()
-band_artifact.write("object.utm.band")
+band_artifact.write("object.l1.utm.band")
 
-interpreter = UniversalInterpreter.for_abi(encoded.target_abi)
+interpreter = UniversalInterpreter.for_encoded(encoded)
 asm = interpreter.to_meta_asm()
-program_artifact = asm.lower().to_artifact()
-program_artifact.write("utm.tm")
+program_artifact = interpreter.lower_for_band(band_artifact)
+program_artifact.write("object.l1.tm")
 
 result = program_artifact.run(band_artifact, fuel=100_000)
-view = result.decode(encoded.encoding)
 ```
 
 Primary objects:
@@ -74,6 +83,11 @@ Primary objects:
 - `UTMProgramArtifact`
 - `TMRunConfig`
 - `DecodedBandView`
+
+Planned missing objects:
+
+- `SourceArtifact`
+- `RawGuestInstance`
 
 ## 3. Source Program and Band
 
@@ -112,19 +126,28 @@ Source instance:
 TMInstance(
     program=program,
     band=band,
+    initial_state="q0",
+    halt_state="HALT",
 )
 ```
 
-The source band is a finite demonstrational tape/configuration. The UTM band
-artifact may include explicit blank padding on either side of the provided
-source cells.
+The source band is a finite demonstrational tape/configuration. The source band
+itself may include explicit blank cells when a larger initial simulated window
+is desired, and the UTM movement routines can also construct fresh blank cells
+at the encoded tape boundaries.
+
+Source well-formedness requires:
+
+```text
+TMProgram.blank == TMBand.blank
+```
 
 ## 4. ABI and Encoding
 
 The object compiler supports two ABI operations:
 
 ```python
-Compiler.infer_abi(instance) -> TMAbi
+Compiler().infer_abi(instance) -> TMAbi
 Compiler(target_abi=abi).compile(instance) -> UTMEncoded
 ```
 
@@ -134,6 +157,7 @@ The compiler accepts a selected ABI when:
 number_of_states  <= 2^state_width
 number_of_symbols <= 2^symbol_width
 number_of_dirs    <= 2^dir_width
+grammar_version matches
 ```
 
 Encoding assigns dense IDs:
@@ -163,6 +187,9 @@ decode(encode(x)) = x
 The blank symbol is always assigned id `0`, so its encoded bitstring is all
 zeroes at the selected symbol width. The lowerer relies on this when it
 constructs fresh blank cells at either simulated tape boundary.
+
+`TMAbi` is compatibility metadata. `Encoding` is the guest-specific semantic
+dictionary used to recover source-level meaning from an encoded band.
 
 ## 5. Semantic UTM Object
 
@@ -207,13 +234,24 @@ Simulated tape:
 
 ```python
 UTMSimulatedTape(
-    cells=...,
+    left_band=...,
+    right_band=...,
     head=...,
     blank=...,
 )
 ```
 
 ## 6. `.utm.band` Artifact Layout
+
+Artifact policy:
+
+```text
+.utm.band carries guest-specific encoding metadata.
+.tm carries host-family ABI metadata, when known.
+Raw execution depends on neither encoding nor ABI.
+Semantic decoding depends on encoding.
+Compatibility checks depend on ABI.
+```
 
 `UTMBandArtifact` serializes the semantic UTM object into a split runtime band:
 
@@ -232,6 +270,14 @@ Runtime materialization:
 
 The left band is placed at negative addresses. The right band starts at address
 `0`.
+
+Current `.utm.band` files persist:
+
+- concrete encoded band contents
+- `encoding`
+- `target_abi`
+- `minimal_abi`
+- file format version
 
 ### 6.1 Left Band
 
@@ -501,8 +547,10 @@ right neighbor has #HEAD
 head is at the new head cell's #CELL
 ```
 
-The bounded demonstrational implementation may enter `STUCK` when movement
-would leave the encoded tape window.
+When movement reaches `#END_TAPE` or `#END_TAPE_LEFT`, the lowered
+implementation constructs a fresh blank cell using the all-zero blank
+encoding. It may enter `STUCK` on malformed layouts or failed structural
+searches.
 
 ### 8.6 Branching on Current Marker
 
@@ -514,15 +562,15 @@ Branch according to the marker currently under the runtime head.
 
 ## 9. Universal Interpreter Program
 
-For a selected ABI:
+For a selected `Encoding`, whose widths come from `target_abi`:
 
 ```text
-state_width  = Wq
-symbol_width = Ws
-dir_width    = Wd
-L_BITS        = encoding of L
-R_BITS        = encoding of R
-HALT_BITS     = encoding of halt_state
+Wq = encoding.state_width
+Ws = encoding.symbol_width
+Wd = encoding.direction_width
+L_BITS = encode_direction(encoding, L)
+R_BITS = encode_direction(encoding, R)
+HALT_BITS = encode_state(encoding, encoding.halt_state)
 ```
 
 Generated Meta-ASM:
@@ -692,7 +740,7 @@ The final output is:
 
 ```python
 TMTransitionProgram(
-    transitions=...,
+    prog=...,
     start_state=...,
     halt_state=...,
     alphabet=...,
@@ -705,13 +753,83 @@ Wrapping that program with ABI metadata yields:
 ```python
 UTMProgramArtifact(
     program=transition_program,
-    abi=abi,
+    target_abi=abi,
 )
 ```
 
-## 11. Lowering Sketches
+Current `.tm` serialization still persists only:
 
-### 11.1 `SEEK marker dir`
+- raw transition table
+- start state
+- halt state
+- alphabet
+- blank
+
+ABI on `.tm` is optional compatibility/provenance metadata and must not be an
+execution dependency.
+
+If both a `.tm` artifact and a `.utm.band` artifact carry `target_abi`,
+tooling should reject mismatched:
+
+- `grammar_version`
+- `state_width`
+- `symbol_width`
+- `dir_width`
+
+before execution starts. If `.tm` ABI metadata is absent, execution is still
+allowed and compatibility remains unchecked.
+
+## 11. Artifact Naming and Tower Workflow
+
+Level numbers describe how many UTM layers the guest has been wrapped in.
+
+Recommended artifact names:
+
+```text
+incrementer.py            authoring format
+incrementer.mtm.source    future serializable source artifact
+
+incrementer.l1.utm.band   encoded source guest for level 1
+incrementer.l1.tm         lowered host for level 1
+
+incrementer.l2.utm.band   encoded raw guest for level 2
+incrementer.l2.tm         lowered host for level 2
+```
+
+Level-1 compilation:
+
+```text
+incrementer.py
+  -> incrementer.l1.utm.band
+  -> incrementer.l1.tm
+```
+
+Level-2 compilation requires the missing raw-guest path:
+
+```text
+guest program = incrementer.l1.tm
+guest runtime tape = incrementer.l1.utm.band materialized runtime tape
+
+(guest program, guest runtime tape)
+  -> incrementer.l2.utm.band
+  -> incrementer.l2.tm
+```
+
+The host at each level is allowed to be encoding-specific under the current
+implementation. True ABI-family-only hosts are a separate cleanup, not a
+prerequisite for recursive towers.
+
+Level meanings:
+
+```text
+l1 artifacts run the original source guest under one UTM layer.
+l2 artifacts run the l1 raw host computation as the guest under another UTM layer.
+l3 repeats the same wrapping process again.
+```
+
+## 12. Lowering Sketches
+
+### 12.1 `SEEK marker dir`
 
 Behavior:
 
@@ -729,7 +847,7 @@ state seek_marker:
   on any other symbol: keep symbol, move dir, stay in seek_marker
 ```
 
-### 11.2 `COMPARE_GLOBAL_LITERAL marker literal_bits`
+### 12.2 `COMPARE_GLOBAL_LITERAL marker literal_bits`
 
 Behavior:
 
@@ -744,35 +862,35 @@ cleanup
 
 The first implementation counts fixed-width bit positions in control states.
 
-### 11.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
+### 12.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
 
 Behavior:
 
 ```text
-mark current #RULE as #RULE_ACTIVE
+mark current #RULE as #ACTIVE_RULE
 for i in 0..width-1:
     read global bit i
     read local bit i in the active rule
     compare
 write #CMP_FLAG
-restore #RULE_ACTIVE to #RULE
+restore #ACTIVE_RULE to #RULE
 return to #RULE
 ```
 
-### 11.4 `COPY_LOCAL_GLOBAL local_marker global_marker width`
+### 12.4 `COPY_LOCAL_GLOBAL local_marker global_marker width`
 
 Behavior:
 
 ```text
-mark current #RULE as #RULE_ACTIVE
+mark current #RULE as #ACTIVE_RULE
 for i in 0..width-1:
     read local bit i
     write global bit i
-restore #RULE_ACTIVE to #RULE
+restore #ACTIVE_RULE to #RULE
 return to #RULE
 ```
 
-### 11.5 `FIND_HEAD_CELL`
+### 12.5 `FIND_HEAD_CELL`
 
 Behavior:
 
@@ -785,33 +903,31 @@ repeat:
   if #END_TAPE: goto STUCK
 ```
 
-### 11.6 `COPY_HEAD_SYMBOL_TO global_marker width`
+### 12.6 `COPY_HEAD_SYMBOL_TO global_marker width`
 
 Behavior:
 
 ```text
-mark current #CELL as #CELL_ACTIVE
 for i in 0..width-1:
-    read cell symbol bit i
-    write global bit i
-restore #CELL_ACTIVE to #CELL
-return to #CELL
+    read the bit at offset i from the current headed cell
+    seek the target global field
+    write that bit
+    seek back to the simulated #HEAD cell when another bit remains
 ```
 
-### 11.7 `COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width`
+### 12.7 `COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width`
 
 Behavior:
 
 ```text
-mark current #CELL as #CELL_ACTIVE
 for i in 0..width-1:
-    read global bit i
-    write cell symbol bit i
-restore #CELL_ACTIVE to #CELL
-return to #CELL
+    read the global bit at offset i
+    seek the current headed cell
+    write the corresponding symbol bit
+    return to the global field when another bit remains
 ```
 
-### 11.8 `MOVE_SIM_HEAD_RIGHT`
+### 12.8 `MOVE_SIM_HEAD_RIGHT`
 
 Behavior:
 
@@ -826,7 +942,7 @@ at current #CELL:
   return to the new #CELL
 ```
 
-### 11.9 `MOVE_SIM_HEAD_LEFT`
+### 12.9 `MOVE_SIM_HEAD_LEFT`
 
 Behavior:
 
@@ -841,7 +957,7 @@ at current #CELL:
   return to the new #CELL
 ```
 
-## 12. Runtime Alphabet
+## 13. Runtime Alphabet
 
 The runtime alphabet contains:
 
@@ -849,21 +965,19 @@ The runtime alphabet contains:
 - field markers
 - tape-cell markers
 - bits `0` and `1`
-- active marker variants such as `#RULE_ACTIVE` and `#CELL_ACTIVE`
-- marked bit variants when required by a lowering routine
+- active marker variants such as `#ACTIVE_RULE`
 - the runtime blank symbol
 
 Cycle-boundary invariants:
 
 ```text
 no active markers remain
-no marked bits remain
-exactly one #HEAD exists in the right band
+exactly one encoded simulated tape cell carries `#HEAD` across both left and right simulated tape regions
 ```
 
-## 13. Correctness Targets
+## 14. Correctness Targets
 
-### 13.1 Object Compiler
+### 14.1 Object Compiler
 
 For a source instance `I`:
 
@@ -871,15 +985,17 @@ For a source instance `I`:
 decode(Compiler.compile(I).to_band_artifact()) = initial semantic UTM state for I
 ```
 
-### 13.2 Meta-ASM Interpreter
+### 14.2 Meta-ASM Interpreter
 
-For a non-halting source configuration with a matching rule:
+For one interpreter cycle:
 
 ```text
-one Meta-ASM interpreter cycle = one source TM step
+if cur_state == halt_state: host halts without a simulated step
+elif a matching source rule exists: one Meta-ASM cycle = one source TM step
+else: host enters STUCK
 ```
 
-### 13.3 Lowering
+### 14.3 Lowering
 
 For each Meta-ASM instruction:
 
@@ -890,32 +1006,37 @@ lowered transition fragment implements the instruction contract
 For the full interpreter:
 
 ```text
-MetaASMProgram.lower() preserves Meta-ASM behavior at label boundaries
+Program.lower(alphabet, ...) preserves Meta-ASM behavior at label boundaries
 ```
 
-### 13.4 End-to-End
+### 14.4 End-to-End
 
 For source machine `M` and configuration `C`:
 
 ```text
-Encode(C) --utm.tm*--> Encode(step_M(C))
+if C.state == M.halt_state:
+  host halts without changing the simulated source tape
+elif a matching rule exists at C:
+  Encode(C) --object.l1.tm*--> Encode(step_M(C))
+else:
+  host enters STUCK
 ```
 
 The run continues until halt, stuck, or fuel exhaustion.
 
-## 14. Initial Milestone
+## 15. Initial Milestone
 
 The first complete target:
 
 ```python
-abi = Compiler.infer_abi(instance)
+abi = Compiler().infer_abi(instance)
 encoded = Compiler(target_abi=abi).compile(instance)
 
 band_artifact = encoded.to_band_artifact()
-interpreter = UniversalInterpreter.for_abi(encoded.target_abi)
+interpreter = UniversalInterpreter.for_encoded(encoded)
 asm = interpreter.to_meta_asm()
-
-status, final_band, trace, reason = asm.run_host(band_artifact, fuel=...)
+program_artifact = interpreter.lower_for_band(band_artifact)
+result = program_artifact.run(band_artifact, fuel=...)
 ```
 
 Expected demonstration:
@@ -927,9 +1048,10 @@ Expected demonstration:
 The next target emits and runs the lowered program:
 
 ```python
-program_artifact = asm.lower().to_artifact()
+program_artifact.write("incrementer.l1.tm")
 result = program_artifact.run(band_artifact, fuel=...)
 ```
 
-The lowered run should match the host Meta-ASM run at interpreter-cycle
-boundaries.
+The next major target after that is recursive self-hosting through
+`RawGuestInstance` and levelled artifacts such as `incrementer.l2.utm.band`
+and `incrementer.l2.tm`.
