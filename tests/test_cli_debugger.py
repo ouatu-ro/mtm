@@ -14,10 +14,11 @@ import mtm.semantic_objects
 
 
 COMPACT_STARTUP = """\
-status: running raw_step=0 max_raw=100000 history=0/0
-snapshot: state='START_STEP' head=-155 read='#CUR_STATE'
-where: block=START_STEP instruction=setup routine=0:seek op=0
-instruction: SEEK #CUR_STATE L"""
+running  raw=0  max_raw=100000  hist=0/0
+RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP
+SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0
+INSTRUCTION  SEEK #CUR_STATE L
+             Move L until marker #CUR_STATE is under the head."""
 
 FULL_VIEW_MARKER = "raw tape: <full-view>"
 
@@ -126,11 +127,12 @@ def test_cli_dbg_positional_fixture_starts_compact_debugger_session(monkeypatch,
     exit_code, output, calls = _run_dbg(["dbg", "incrementer"], monkeypatch, capsys)
 
     assert exit_code == 0
-    assert "mtm debugger: fixture incrementer" in output
+    assert "MTM debugger  fixture=incrementer  type `help` for commands" in output
     assert "type `help` for commands" in output
-    assert "status: running raw_step=0 max_raw=100000 history=0/0" in output
-    assert "snapshot: state='START_STEP' head=-155 read='#CUR_STATE'" in output
-    assert "where: block=START_STEP instruction=setup routine=0:seek op=0" in output
+    assert "running  raw=0  max_raw=100000  hist=0/0" in output
+    assert "RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP" in output
+    assert "SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0" in output
+    assert "INSTRUCTION  SEEK #CUR_STATE L" in output
     assert FULL_VIEW_MARKER not in output
     assert calls["session_status_calls"] == 1
     assert calls["session_view_calls"] == 0
@@ -144,8 +146,8 @@ def test_cli_dbg_flag_and_positional_share_fixture_path(monkeypatch, capsys):
 
     assert positional_code == 0
     assert flag_code == 0
-    assert "mtm debugger: fixture incrementer" in positional_output
-    assert "mtm debugger: fixture incrementer" in flag_output
+    assert "MTM debugger  fixture=incrementer  type `help` for commands" in positional_output
+    assert "MTM debugger  fixture=incrementer  type `help` for commands" in flag_output
     assert positional_calls["load_fixture"] == ["incrementer"]
     assert flag_calls["load_fixture"] == ["incrementer"]
     assert positional_calls["build_band"] == ["incrementer"]

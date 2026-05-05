@@ -87,11 +87,11 @@ def _back(session: DebuggerSession, boundary: str) -> str:
 
 
 def _compact_status_line(session: DebuggerSession) -> str:
-    return _status(session).splitlines()[0]
+    return _status(session)
 
 
 def _raw_steps_from_action(text: str) -> int:
-    match = re.search(r"raw_steps=(\d+)", text)
+    match = re.search(r"raw_delta=([+-]?\d+)", text)
     assert match is not None
     return int(match.group(1))
 
@@ -141,25 +141,30 @@ def _build_meta_session_for_block_step() -> RawTraceRunner:
 def test_session_status_includes_cursor_latest_and_max_raw() -> None:
     session, _ = _build_incrementer_session()
 
-    assert re.match(r"status: running raw_step=0 max_raw=100000 history=0/0", _compact_status_line(session))
+    initial = _compact_status_line(session)
+    assert initial.splitlines()[0] == "running  raw=0  max_raw=100000  hist=0/0"
+    assert initial.splitlines()[1] == "RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP"
+    assert initial.splitlines()[2] == "SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0"
+    assert initial.splitlines()[3] == "INSTRUCTION  SEEK #CUR_STATE L"
 
     _step(session, "raw")
     _step(session, "raw")
-    assert re.match(r"status: running raw_step=2 max_raw=100000 history=2/2", _compact_status_line(session))
+    after_steps = _compact_status_line(session)
+    assert after_steps.splitlines()[0] == "running  raw=2  max_raw=100000  hist=2/2"
 
     _back(session, "raw")
     compact = _compact_status_line(session)
-    assert re.match(r"status: running raw_step=1 max_raw=100000 history=1/2", compact)
+    assert compact.splitlines()[0] == "running  raw=1  max_raw=100000  hist=1/2"
 
 
 def test_session_where_renders_setup_for_entry_location() -> None:
     session, _ = _build_incrementer_session()
     where = _where(session)
     lines = where.splitlines()
-
-    assert lines[0].startswith("where: block=START_STEP instruction=setup routine=0:seek op=0")
-    assert lines[1].startswith("row: state='START_STEP' read='#CUR_STATE'")
-    assert lines[2] == "instruction: SEEK #CUR_STATE L"
+    assert lines[0] == "SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0"
+    assert lines[1] == "INSTRUCTION  SEEK #CUR_STATE L"
+    assert lines[2] == "             Move L until marker #CUR_STATE is under the head."
+    assert lines[3].startswith("NEXT ROW     state=START_STEP  read='#CUR_STATE'")
 
 
 def test_session_view_reports_semantic_decode_and_unavailable_mode() -> None:
@@ -169,8 +174,10 @@ def test_session_view_reports_semantic_decode_and_unavailable_mode() -> None:
     decoded = _view(decoded_session)
     undecoded = _view(undecoded_session)
 
-    assert "semantic: state='qFindMargin'" in decoded
-    assert "semantic: unavailable" in undecoded
+    assert "SEMANTIC     state=qFindMargin  head=0  symbol='1'" in decoded
+    assert "SEM TAPE" in decoded
+    assert "REGS         cur=qFindMargin" in decoded
+    assert undecoded.endswith("SEMANTIC     unavailable")
 
 
 def test_session_view_reports_semantic_decode_error_without_raising() -> None:
@@ -183,7 +190,7 @@ def test_session_view_reports_semantic_decode_error_without_raising() -> None:
     session = _build_session(runner, encoding=band.encoding)
     text = _view(session)
 
-    assert "semantic: <decode error:" in text
+    assert "SEMANTIC     <decode error:" in text
 
 
 def test_session_step_raw_and_back_raw_report_rewound_and_at_start() -> None:
@@ -193,13 +200,30 @@ def test_session_step_raw_and_back_raw_report_rewound_and_at_start() -> None:
     session = _build_session(runner, encoding=None)
 
     stepped = _step(session, "raw")
-    assert stepped.startswith("step raw: status=stepped raw_steps=1")
+    assert stepped.splitlines()[0] == "step raw  stepped  raw_delta=+1"
+    assert stepped.splitlines()[1] == "RAW          raw=1  head=0  read='0'  state=DONE"
 
     rewound = _back(session, "raw")
-    assert rewound.startswith("back raw: status=rewound raw_steps=1")
+    assert rewound.splitlines()[0] == "back raw  rewound  raw_delta=-1"
 
     at_start = _back(session, "raw")
-    assert at_start.startswith("back raw: status=at_start raw_steps=0")
+    assert at_start.splitlines()[0] == "back raw  at_start  raw_delta=0"
+
+
+def test_session_step_and_back_support_repeat_counts() -> None:
+    session, _ = _build_incrementer_session()
+
+    stepped = session.step_many_text("raw", 3)
+    assert stepped.splitlines()[0] == "step raw  stepped  count=3  raw_delta=+3"
+    assert stepped.splitlines()[1].startswith("RAW          raw=3")
+
+    rewound = session.back_many_text("raw", 2)
+    assert rewound.splitlines()[0] == "back raw  rewound  count=2  raw_delta=-2"
+    assert rewound.splitlines()[1].startswith("RAW          raw=1")
+
+    at_start = session.back_many_text("raw", 5)
+    assert at_start.splitlines()[0] == "back raw  at_start  count=1/5  raw_delta=-1"
+    assert at_start.splitlines()[1].startswith("RAW          raw=0")
 
 
 def test_session_step_instruction_runs_rows_and_honors_group_max_raw_guard() -> None:
@@ -207,13 +231,18 @@ def test_session_step_instruction_runs_rows_and_honors_group_max_raw_guard() -> 
     session = _build_session(runner, max_raw=100000)
 
     first = _step(session, "instruction")
-    assert first.startswith("step instruction: status=stepped")
+    assert first.startswith("step instruction  stepped  raw_delta=+")
     assert _raw_steps_from_action(first) > 0
-    assert "where:" in first
+    assert "SOURCE       block=ENTRY  instr=1  routine=1:goto  op=0" in first
+    assert "INSTRUCTION  GOTO SECOND" in first
+    assert "             Jump to block SECOND." in first
 
     session_guarded = _build_session(_build_meta_session_for_block_step(), max_raw=1)
     guarded = _step(session_guarded, "instruction")
-    assert guarded.startswith("step instruction: status=max_raw raw_steps=1")
+    assert guarded.splitlines()[0] == "step instruction  max_raw  raw_delta=+1"
+
+    repeated_guarded = session_guarded.step_many_text("instruction", 3)
+    assert repeated_guarded.splitlines()[0] == "step instruction  max_raw  count=0/3  raw_delta=+1"
 
 
 def test_session_back_instruction_rewinds_to_previous_segment_not_previous_row() -> None:
@@ -221,13 +250,11 @@ def test_session_back_instruction_rewinds_to_previous_segment_not_previous_row()
     session = _build_session(runner, max_raw=100000)
 
     first = _step(session, "instruction")
-    assert first.startswith("step instruction: status=stepped")
+    assert first.startswith("step instruction  stepped")
 
     rewound = _back(session, "instruction")
-    assert rewound.startswith("back instruction: status=rewound")
-
-    snapshot_line = rewound.splitlines()[1]
-    assert "snapshot: raw_step=0" in snapshot_line
+    assert rewound.splitlines()[0].startswith("back instruction  rewound  raw_delta=-")
+    assert "RAW          raw=0  head=0  read='0'  state=ENTRY" in rewound
 
     at_start = _back(session, "instruction")
-    assert at_start.startswith("back instruction: status=at_start raw_steps=0")
+    assert at_start.splitlines()[0] == "back instruction  at_start  raw_delta=0"

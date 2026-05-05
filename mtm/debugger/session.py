@@ -1,4 +1,4 @@
-"""Session-layer debugger formatting and command dispatch."""
+"""Session-layer debugger semantics over a raw trace runner."""
 
 from __future__ import annotations
 
@@ -7,7 +7,18 @@ from typing import Literal
 
 from ..lowering.source_map import RawTransitionSource
 from ..source_encoding import Encoding
-from .render import _format_decoded_view, _format_last_transition, _format_move, _format_sparse_tape, _format_transition
+from .render import (
+    DebuggerActionSummary,
+    DebuggerLocationSummary,
+    DebuggerRenderer,
+    DebuggerRunnerSummary,
+    DebuggerSemanticSummary,
+    DebuggerTransitionSummary,
+    DebuggerViewSummary,
+    _format_move,
+    _format_sparse_tape,
+    explain_meta_instruction,
+)
 from .trace import RawTraceRunner, RawTraceSnapshot
 
 Boundary = Literal["raw", "routine", "instruction", "block", "source"]
@@ -20,9 +31,10 @@ class DebuggerActionResult:
 
     boundary: Boundary
     status: ActionStatus
-    raw_steps: int
+    raw_delta: int
     snapshot: RawTraceSnapshot
-    source: RawTransitionSource | None
+    count_completed: int = 1
+    count_requested: int = 1
 
 
 class DebuggerSession:
@@ -38,6 +50,7 @@ class DebuggerSession:
         max_raw: int = DEFAULT_MAX_RAW,
         raw_window: int = 2,
         semantic_window: int = 2,
+        renderer: DebuggerRenderer | None = None,
     ) -> None:
         if max_raw <= 0:
             raise ValueError("max_raw must be positive")
@@ -46,137 +59,156 @@ class DebuggerSession:
         self.max_raw = max_raw
         self.raw_window = raw_window
         self.semantic_window = semantic_window
+        self.renderer = DebuggerRenderer(color=False) if renderer is None else renderer
+
+    def status_summary(self) -> tuple[DebuggerRunnerSummary, DebuggerLocationSummary]:
+        return self._runner_summary(self.runner.current), self._location_summary(self._display_source())
+
+    def where_summary(self) -> tuple[DebuggerLocationSummary, DebuggerTransitionSummary]:
+        return self._location_summary(self._display_source()), self._next_transition_summary()
+
+    def view_summary(self) -> DebuggerViewSummary:
+        view = self.runner.current_view(encoding=self.encoding)
+        source = view.next_raw_transition_source or view.last_transition_source
+        return DebuggerViewSummary(
+            runner=self._runner_summary(view.snapshot),
+            location=self._location_summary(source),
+            next_row=self._transition_from_key_row(view.next_raw_transition_key, view.next_raw_transition_row),
+            last_row=self._last_transition_summary(),
+            raw_tape=_format_sparse_tape(
+                view.snapshot.tape,
+                head=view.snapshot.head,
+                radius=self.raw_window,
+                blank_symbol=self.runner.program.blank,
+            ),
+            semantic=self._semantic_summary(view),
+        )
 
     def status_text(self) -> str:
-        """Return the compact debugger status view."""
-
-        lines = [
-            self._format_status_line(),
-            self._format_snapshot_line(self.runner.current, include_raw_step=False),
-        ]
-        source = self._display_source()
-        lines.append(self._format_where_header(source))
-        instruction_line = self._format_instruction_line(source)
-        if instruction_line is not None:
-            lines.append(instruction_line)
-        return "\n".join(lines)
+        runner, location = self.status_summary()
+        return self.renderer.render_status(runner=runner, location=location)
 
     def where_text(self) -> str:
-        """Return the current lowered source location view."""
-
-        source = self._display_source()
-        if source is None:
-            return "where: <unmapped>"
-        lines = [
-            self._format_where_header(source),
-            self._format_source_row(source),
-        ]
-        instruction_line = self._format_instruction_line(source)
-        if instruction_line is not None:
-            lines.append(instruction_line)
-        return "\n".join(lines)
+        location, next_row = self.where_summary()
+        return self.renderer.render_where(location=location, next_row=next_row)
 
     def view_text(self) -> str:
-        """Return the heavier debugger trace view."""
-
-        view = self.runner.current_view(encoding=self.encoding)
-        lines = [
-            self._format_status_line(),
-            self._format_snapshot_line(view.snapshot, include_raw_step=True),
-            f"raw tape: {_format_sparse_tape(view.snapshot.tape, head=view.snapshot.head, radius=self.raw_window, blank_symbol=self.runner.program.blank)}",
-        ]
-        if view.next_raw_transition_key is None or view.next_raw_transition_row is None:
-            lines.append("next raw: <none>")
-        else:
-            lines.append(f"next raw: {_format_transition(view.next_raw_transition_key, view.next_raw_transition_row)}")
-        if view.last_transition is None:
-            lines.append("last raw: <none>")
-        else:
-            lines.append(f"last raw: {_format_last_transition(view.last_transition)}")
-
-        source = view.next_raw_transition_source or view.last_transition_source
-        lines.append(self.where_text() if source is not None else "where: <unmapped>")
-        lines.extend(self._format_semantic_lines(view.decoded_view, view.decode_error))
-        return "\n".join(lines)
+        return self.renderer.render_view(self.view_summary())
 
     def step(self, boundary: Boundary) -> DebuggerActionResult:
-        """Execute one debugger step command."""
-
         if boundary == "raw":
             step_result = self.runner.step()
             return DebuggerActionResult(
                 boundary=boundary,
                 status=step_result.status,
-                raw_steps=1 if step_result.status == "stepped" else 0,
+                raw_delta=1 if step_result.status == "stepped" else 0,
                 snapshot=step_result.snapshot,
-                source=self._display_source(),
             )
 
         result = self._group_step(boundary)
         return DebuggerActionResult(
             boundary=boundary,
             status=result.status,
-            raw_steps=result.raw_steps,
+            raw_delta=result.raw_steps,
             snapshot=result.snapshot,
-            source=self._display_source(),
         )
 
     def step_text(self, boundary: Boundary) -> str:
-        """Execute and format one debugger step command."""
+        return self.step_many_text(boundary, 1)
 
-        return self.format_action_text("step", self.step(boundary))
+    def step_many(self, boundary: Boundary, count: int) -> DebuggerActionResult:
+        if count <= 0:
+            raise ValueError("count must be positive")
+        total_raw_delta = 0
+        completed = 0
+        last_result: DebuggerActionResult | None = None
+        for _ in range(count):
+            result = self.step(boundary)
+            last_result = result
+            total_raw_delta += result.raw_delta
+            if result.status == "stepped":
+                completed += 1
+                continue
+            break
+        assert last_result is not None
+        return DebuggerActionResult(
+            boundary=boundary,
+            status=last_result.status,
+            raw_delta=total_raw_delta,
+            snapshot=last_result.snapshot,
+            count_completed=completed,
+            count_requested=count,
+        )
+
+    def step_many_text(self, boundary: Boundary, count: int) -> str:
+        return self.renderer.render_action(self.action_summary("step", self.step_many(boundary, count)))
 
     def back(self, boundary: Boundary) -> DebuggerActionResult:
-        """Execute one debugger rewind command."""
-
         if boundary == "raw":
             rewound = self.runner.back()
             return DebuggerActionResult(
                 boundary=boundary,
                 status="rewound" if rewound else "at_start",
-                raw_steps=1 if rewound else 0,
+                raw_delta=-1 if rewound else 0,
                 snapshot=self.runner.current,
-                source=self._display_source(),
             )
 
         result = self._group_back(boundary)
-        status: ActionStatus = "rewound" if result.status == "stepped" else result.status
         return DebuggerActionResult(
             boundary=boundary,
-            status=status,
-            raw_steps=result.raw_steps,
+            status="rewound" if result.status == "stepped" else result.status,
+            raw_delta=-result.raw_steps if result.status == "stepped" else 0,
             snapshot=result.snapshot,
-            source=self._display_source(),
         )
 
     def back_text(self, boundary: Boundary) -> str:
-        """Execute and format one debugger rewind command."""
+        return self.back_many_text(boundary, 1)
 
-        return self.format_action_text("back", self.back(boundary))
+    def back_many(self, boundary: Boundary, count: int) -> DebuggerActionResult:
+        if count <= 0:
+            raise ValueError("count must be positive")
+        total_raw_delta = 0
+        completed = 0
+        last_result: DebuggerActionResult | None = None
+        for _ in range(count):
+            result = self.back(boundary)
+            last_result = result
+            total_raw_delta += result.raw_delta
+            if result.status == "rewound":
+                completed += 1
+                continue
+            break
+        assert last_result is not None
+        return DebuggerActionResult(
+            boundary=boundary,
+            status=last_result.status,
+            raw_delta=total_raw_delta,
+            snapshot=last_result.snapshot,
+            count_completed=completed,
+            count_requested=count,
+        )
 
-    def format_action_text(self, verb: Literal["step", "back"], result: DebuggerActionResult) -> str:
-        """Format a debugger action result for REPL output."""
+    def back_many_text(self, boundary: Boundary, count: int) -> str:
+        return self.renderer.render_action(self.action_summary("back", self.back_many(boundary, count)))
 
-        lines = [
-            f"{verb} {result.boundary}: status={result.status} raw_steps={result.raw_steps}",
-            self._format_snapshot_line(result.snapshot, include_raw_step=True),
-        ]
-        lines.append(self._format_where_header(result.source))
-        row_line = self._format_action_row()
-        if row_line is not None:
-            lines.append(row_line)
-        instruction_line = self._format_instruction_line(result.source)
-        if instruction_line is not None:
-            lines.append(instruction_line)
-        return "\n".join(lines)
+    def action_summary(self, verb: Literal["step", "back"], result: DebuggerActionResult) -> DebuggerActionSummary:
+        return DebuggerActionSummary(
+            verb=verb,
+            boundary=result.boundary,
+            status=result.status,
+            raw_delta=result.raw_delta,
+            runner=self._runner_summary(result.snapshot),
+            location=self._location_summary(self._display_source()),
+            next_row=self._next_transition_summary(),
+            count_completed=result.count_completed,
+            count_requested=result.count_requested,
+        )
 
     def set_max_raw(self, value: int) -> str:
-        """Update the grouped-step guard."""
-
         if value <= 0:
             raise ValueError("max_raw must be positive")
         self.max_raw = value
-        return f"max_raw: {self.max_raw}"
+        return self.renderer.render_set_max_raw(self.max_raw)
 
     def _group_step(self, boundary: Boundary):
         if boundary == "routine":
@@ -203,50 +235,116 @@ class DebuggerSession:
     def _display_source(self) -> RawTransitionSource | None:
         return self.runner.current_transition_source or self.runner.last_transition_source
 
-    def _format_status_line(self) -> str:
-        return (
-            f"status: {self.runner.run_status} raw_step={self.runner.current.steps} "
-            f"max_raw={self.max_raw} history={self.runner.history_cursor}/{self.runner.latest_history_index}"
+    def _runner_summary(self, snapshot: RawTraceSnapshot) -> DebuggerRunnerSummary:
+        return DebuggerRunnerSummary(
+            run_status=self.runner.run_status,
+            raw=snapshot.steps,
+            max_raw=self.max_raw,
+            hist_current=self.runner.history_cursor,
+            hist_last=self.runner.latest_history_index,
+            state=snapshot.state,
+            head=snapshot.head,
+            read_symbol=snapshot.tape.get(snapshot.head, self.runner.program.blank),
         )
 
-    def _format_snapshot_line(self, snapshot: RawTraceSnapshot, *, include_raw_step: bool) -> str:
-        read_symbol = snapshot.tape.get(snapshot.head, self.runner.program.blank)
-        prefix = f"snapshot: raw_step={snapshot.steps} " if include_raw_step else "snapshot: "
-        return f"{prefix}state={snapshot.state!r} head={snapshot.head} read={read_symbol!r}"
-
-    def _format_where_header(self, source: RawTransitionSource | None) -> str:
+    def _location_summary(self, source: RawTransitionSource | None) -> DebuggerLocationSummary:
         if source is None:
-            return "where: <unmapped>"
+            return DebuggerLocationSummary(
+                mapped=False,
+                block=None,
+                instr=None,
+                routine=None,
+                op=None,
+                instruction_text=None,
+                instruction_help=None,
+            )
         routine = source.routine_name if source.routine_index is None else f"{source.routine_index}:{source.routine_name}"
-        instruction = "setup" if source.instruction_index is None else str(source.instruction_index)
-        return f"where: block={source.block_label} instruction={instruction} routine={routine} op={source.op_index}"
-
-    def _format_source_row(self, source: RawTransitionSource) -> str:
-        return f"row: state={source.state!r} read={source.read_symbol!r}"
-
-    def _format_action_row(self) -> str | None:
-        key = self.runner.current_transition_key
-        row = self.runner.current_transition
-        if key is None or row is None:
-            return None
-        next_state, write_symbol, move = row
-        state, read_symbol = key
-        return (
-            f"row: state={state!r} read={read_symbol!r} -> "
-            f"next={next_state!r} write={write_symbol!r} move={_format_move(move)}"
+        return DebuggerLocationSummary(
+            mapped=True,
+            block=source.block_label,
+            instr="setup" if source.instruction_index is None else str(source.instruction_index),
+            routine=routine,
+            op=source.op_index,
+            instruction_text=source.instruction_text,
+            instruction_help=explain_meta_instruction(source.instruction),
         )
 
-    def _format_instruction_line(self, source: RawTransitionSource | None) -> str | None:
-        if source is None or source.instruction_text is None:
-            return None
-        return f"instruction: {source.instruction_text}"
+    def _next_transition_summary(self) -> DebuggerTransitionSummary:
+        return self._transition_from_key_row(self.runner.current_transition_key, self.runner.current_transition)
 
-    def _format_semantic_lines(self, decoded_view, decode_error: str | None) -> list[str]:
-        if decoded_view is not None:
-            return _format_decoded_view(decoded_view, semantic_window=self.semantic_window)
-        if decode_error is not None:
-            return [f"semantic: <decode error: {decode_error}>"]
-        return ["semantic: unavailable"]
+    def _transition_from_key_row(self, key, row) -> DebuggerTransitionSummary:
+        if key is None or row is None:
+            return DebuggerTransitionSummary(
+                present=False,
+                state=None,
+                read_symbol=None,
+                write_symbol=None,
+                move=None,
+                next_state=None,
+            )
+        state, read_symbol = key
+        next_state, write_symbol, move = row
+        return DebuggerTransitionSummary(
+            present=True,
+            state=state,
+            read_symbol=read_symbol,
+            write_symbol=write_symbol,
+            move=_format_move(move),
+            next_state=next_state,
+        )
+
+    def _last_transition_summary(self) -> DebuggerTransitionSummary:
+        transition = self.runner.last_transition
+        if transition is None:
+            return DebuggerTransitionSummary(
+                present=False,
+                state=None,
+                read_symbol=None,
+                write_symbol=None,
+                move=None,
+                next_state=None,
+            )
+        return DebuggerTransitionSummary(
+            present=True,
+            state=transition.state,
+            read_symbol=transition.read_symbol,
+            write_symbol=transition.write_symbol,
+            move=_format_move(transition.move),
+            next_state=transition.next_state,
+        )
+
+    def _semantic_summary(self, view) -> DebuggerSemanticSummary:
+        if view.decoded_view is None:
+            if view.decode_error is not None:
+                return DebuggerSemanticSummary(status="error", decode_error=view.decode_error)
+            return DebuggerSemanticSummary(status="unavailable")
+
+        decoded_view = view.decoded_view
+        head = decoded_view.simulated_tape.head
+        tape_cells = {
+            **{index - len(decoded_view.simulated_tape.left_band): symbol for index, symbol in enumerate(decoded_view.simulated_tape.left_band)},
+            **{index: symbol for index, symbol in enumerate(decoded_view.simulated_tape.right_band)},
+        }
+        registers = decoded_view.registers
+        return DebuggerSemanticSummary(
+            status="available",
+            state=decoded_view.current_state,
+            head=head,
+            symbol=tape_cells.get(head, decoded_view.simulated_tape.blank),
+            tape=_format_sparse_tape(
+                tape_cells,
+                head=head,
+                radius=self.semantic_window,
+                blank_symbol=decoded_view.simulated_tape.blank,
+            ),
+            cur=registers.cur_state,
+            read=registers.cur_symbol,
+            write=registers.write_symbol,
+            next=registers.next_state,
+            move=_format_move(registers.move_dir),
+            cmp=registers.cmp_flag,
+            tmp="".join(registers.tmp_bits) or "-",
+        )
 
 
 __all__ = [

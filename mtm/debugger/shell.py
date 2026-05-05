@@ -3,46 +3,16 @@
 from __future__ import annotations
 
 import cmd
-import textwrap
+import os
+import sys
 
+from .render import DebuggerRenderer
 from .session import DebuggerSession
 
-HELP_TEXT = textwrap.dedent(
-    """\
-    mtm debugger
-
-    Commands:
-      status               Show compact runner status
-      view                 Show raw + source + semantic trace view
-      where                Show current lowered source location only
-
-      step raw             Step one raw TM transition
-      step routine         Step to next lowering routine
-      step instruction     Step to next Meta-ASM instruction
-      step block           Step to next Meta-ASM block
-      step source          Step until one simulated source-TM transition completes
-
-      back raw             Rewind one raw TM transition
-      back routine         Rewind to previous lowering routine
-      back instruction     Rewind to previous Meta-ASM instruction
-      back block           Rewind to previous Meta-ASM block
-      back source          Rewind to previous simulated source-TM transition start
-
-      set max-raw N        Set grouped-step raw transition guard
-      help                 Show this help
-      quit                 Exit debugger
-
-    Shortcuts:
-      st=status, v=view, w=where
-      s=step raw, sr=step routine, si=step instruction, sb=step block, ss=step source
-      b=back raw, br=back routine, bi=back instruction, bb=back block, bs=back source
-      h/help/?=help, q=quit
-    """
-).rstrip()
-
-STEP_USAGE = "usage: step raw|routine|instruction|block|source"
-BACK_USAGE = "usage: back raw|routine|instruction|block|source"
+STEP_USAGE = "usage: step raw|routine|instruction|block|source [N]"
+BACK_USAGE = "usage: back raw|routine|instruction|block|source [N]"
 SET_USAGE = "usage: set max-raw N"
+COUNT_ERROR = "count must be a positive integer"
 BOUNDARIES = {"raw", "routine", "instruction", "block", "source"}
 
 
@@ -54,7 +24,9 @@ class DebuggerShell(cmd.Cmd):
     def __init__(self, session: DebuggerSession, *, stdin=None, stdout=None) -> None:
         super().__init__(stdin=stdin, stdout=stdout)
         self.session = session
-        self.use_rawinput = False
+        self._color_enabled = "NO_COLOR" not in os.environ and getattr(sys.stdout, "isatty", lambda: False)()
+        self.use_rawinput = stdin is None and stdout is None and getattr(sys.stdin, "isatty", lambda: False)()
+        self.renderer = DebuggerRenderer(color=self._color_enabled)
 
     def emptyline(self) -> bool:
         return False
@@ -73,16 +45,18 @@ class DebuggerShell(cmd.Cmd):
         self._write(self.session.where_text())
 
     def do_step(self, arg: str) -> None:
-        boundary = self._parse_boundary(arg, usage=STEP_USAGE)
-        if boundary is None:
+        parsed = self._parse_boundary_and_count(arg, usage=STEP_USAGE)
+        if parsed is None:
             return
-        self._write(self.session.step_text(boundary))
+        boundary, count = parsed
+        self._write(self.session.step_many_text(boundary, count))
 
     def do_back(self, arg: str) -> None:
-        boundary = self._parse_boundary(arg, usage=BACK_USAGE)
-        if boundary is None:
+        parsed = self._parse_boundary_and_count(arg, usage=BACK_USAGE)
+        if parsed is None:
             return
-        self._write(self.session.back_text(boundary))
+        boundary, count = parsed
+        self._write(self.session.back_many_text(boundary, count))
 
     def do_set(self, arg: str) -> None:
         parts = arg.split()
@@ -107,7 +81,16 @@ class DebuggerShell(cmd.Cmd):
         self._write(self.session.set_max_raw(value))
 
     def do_help(self, arg: str) -> None:
-        self._write(HELP_TEXT)
+        topic = " ".join(arg.split())
+        if not topic:
+            self._write(self.renderer.render_help())
+            return
+        help_text = self.renderer.render_command_help(topic)
+        if help_text is None:
+            self._write(f"unknown help topic: {topic}")
+            self._write("type `help` for commands")
+            return
+        self._write(help_text)
 
     def do_h(self, arg: str) -> None:
         self.do_help(arg)
@@ -128,52 +111,84 @@ class DebuggerShell(cmd.Cmd):
         self.do_where(arg)
 
     def do_s(self, arg: str) -> None:
-        self.do_step("raw")
+        self.do_step(self._alias_arg("raw", arg))
 
     def do_sr(self, arg: str) -> None:
-        self.do_step("routine")
+        self.do_step(self._alias_arg("routine", arg))
 
     def do_si(self, arg: str) -> None:
-        self.do_step("instruction")
+        self.do_step(self._alias_arg("instruction", arg))
 
     def do_sb(self, arg: str) -> None:
-        self.do_step("block")
+        self.do_step(self._alias_arg("block", arg))
 
     def do_ss(self, arg: str) -> None:
-        self.do_step("source")
+        self.do_step(self._alias_arg("source", arg))
 
     def do_b(self, arg: str) -> None:
-        self.do_back("raw")
+        self.do_back(self._alias_arg("raw", arg))
 
     def do_br(self, arg: str) -> None:
-        self.do_back("routine")
+        self.do_back(self._alias_arg("routine", arg))
 
     def do_bi(self, arg: str) -> None:
-        self.do_back("instruction")
+        self.do_back(self._alias_arg("instruction", arg))
 
     def do_bb(self, arg: str) -> None:
-        self.do_back("block")
+        self.do_back(self._alias_arg("block", arg))
 
     def do_bs(self, arg: str) -> None:
-        self.do_back("source")
+        self.do_back(self._alias_arg("source", arg))
 
     def do_EOF(self, arg: str) -> bool:
         return True
 
-    def _parse_boundary(self, arg: str, *, usage: str) -> str | None:
-        boundary = arg.strip()
-        if not boundary:
+    def _parse_boundary_and_count(self, arg: str, *, usage: str) -> tuple[str, int] | None:
+        parts = arg.split()
+        if not parts:
             self._write(usage)
             return None
+        if len(parts) > 2:
+            self._write(usage)
+            return None
+        boundary = parts[0]
         if boundary not in BOUNDARIES:
             self._write(f"unknown boundary: {boundary}")
             self._write(usage)
             return None
-        return boundary
+        count = 1
+        if len(parts) == 2:
+            try:
+                count = int(parts[1])
+            except ValueError:
+                self._write(COUNT_ERROR)
+                self._write(usage)
+                return None
+            if count <= 0:
+                self._write(COUNT_ERROR)
+                self._write(usage)
+                return None
+        return boundary, count
+
+    @staticmethod
+    def _alias_arg(boundary: str, arg: str) -> str:
+        stripped = arg.strip()
+        return boundary if not stripped else f"{boundary} {stripped}"
 
     def _write(self, text: str) -> None:
-        self.stdout.write(text)
+        self.stdout.write(self.renderer.format_output(text))
         self.stdout.write("\n")
+
+    def _style_output(self, text: str) -> str:
+        return text
+
+    def format_output(self, text: str) -> str:
+        """Expose shell formatting for startup output and tests."""
+
+        return self.renderer.format_output(text)
+
+
+HELP_TEXT = DebuggerRenderer(color=False).render_help()
 
 
 __all__ = ["BACK_USAGE", "DebuggerShell", "HELP_TEXT", "SET_USAGE", "STEP_USAGE"]
