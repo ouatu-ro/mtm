@@ -15,6 +15,7 @@ from ..raw_transition_tm import TMBuilder
 from .constants import Label, S, State, VALID_MOVES, move_for_direction
 from .ops import BranchAtOp, BranchOnBitOp, EmitAllOp, EmitAnyExceptOp, EmitOp, MoveStepsOp, Op, SeekOp, SeekUntilOneOfOp, WriteBitOp
 from .routines import NameSupply, Routine
+from .source_map import CFGTransitionSource, RoutineSource, TransitionSourceMap, raw_transition_source, transition_source_from_op
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,7 @@ class CFGTransition:
     target: State
     write: WriteAction
     move: int
+    source_meta: CFGTransitionSource | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ class RoutineCFG:
     exits: tuple[State, ...]
     internal_states: tuple[State, ...]
     transitions: tuple[CFGTransition, ...]
+    source: RoutineSource | None = None
 
     @property
     def states(self) -> tuple[State, ...]:
@@ -137,23 +140,32 @@ class CFGCompiler:
 
         return self.names.fresh(hint)
 
-    def add(self, source: Label | State, reads: ReadSet, target: Label | State, write: WriteAction, move: int) -> None:
+    def add(
+        self,
+        source: Label | State,
+        reads: ReadSet,
+        target: Label | State,
+        write: WriteAction,
+        move: int,
+        *,
+        source_meta: CFGTransitionSource | None = None,
+    ) -> None:
         """Append one structured CFG transition."""
 
-        self.transitions.append(CFGTransition(self.state(source), reads, self.state(target), write, move))
+        self.transitions.append(CFGTransition(self.state(source), reads, self.state(target), write, move, source_meta))
 
-    def compile_op(self, op: Op) -> None:
+    def compile_op(self, op: Op, *, source_meta: CFGTransitionSource | None = None) -> None:
         """Expand one Routine op into CFG transitions."""
 
         match op:
             case EmitOp(source, read, target, write, move):
-                self.add(source, ReadSymbol(read), target, WriteSymbolAction(write), move)
+                self.add(source, ReadSymbol(read), target, WriteSymbolAction(write), move, source_meta=source_meta)
             case EmitAllOp(source, target, move):
-                self.add(source, ReadAny(), target, KeepWrite(), move)
+                self.add(source, ReadAny(), target, KeepWrite(), move, source_meta=source_meta)
             case SeekOp(source, target, markers, direction):
                 move = move_for_direction(direction)
-                self.add(source, ReadSymbols(markers), target, KeepWrite(), S)
-                self.add(source, ReadAnyExcept(markers), source, KeepWrite(), move)
+                self.add(source, ReadSymbols(markers), target, KeepWrite(), S, source_meta=source_meta)
+                self.add(source, ReadAnyExcept(markers), source, KeepWrite(), move, source_meta=source_meta)
             case SeekUntilOneOfOp(source, found, boundary, found_target, boundary_target, direction):
                 if not found:
                     raise ValueError("bounded seek requires at least one found marker")
@@ -163,32 +175,32 @@ class CFGCompiler:
                 if overlap:
                     raise ValueError(f"bounded seek markers cannot be both found and boundary: {sorted(overlap)!r}")
                 move = move_for_direction(direction)
-                self.add(source, ReadSymbols(found), found_target, KeepWrite(), S)
-                self.add(source, ReadSymbols(boundary), boundary_target, KeepWrite(), S)
-                self.add(source, ReadAnyExcept(found | boundary), source, KeepWrite(), move)
+                self.add(source, ReadSymbols(found), found_target, KeepWrite(), S, source_meta=source_meta)
+                self.add(source, ReadSymbols(boundary), boundary_target, KeepWrite(), S, source_meta=source_meta)
+                self.add(source, ReadAnyExcept(found | boundary), source, KeepWrite(), move, source_meta=source_meta)
             case MoveStepsOp(source, target, steps, direction):
                 if steps < 0:
                     raise ValueError(f"move steps must be non-negative: {steps!r}")
                 if steps == 0:
-                    self.add(source, ReadAny(), target, KeepWrite(), S)
+                    self.add(source, ReadAny(), target, KeepWrite(), S, source_meta=source_meta)
                     return
                 move = move_for_direction(direction)
                 current = self.state(source)
                 for index in range(steps):
                     next_state = self.state(target) if index + 1 == steps else self.fresh(f"{source}_move_{index}")
-                    self.transitions.append(CFGTransition(current, ReadAny(), next_state, KeepWrite(), move))
+                    self.transitions.append(CFGTransition(current, ReadAny(), next_state, KeepWrite(), move, source_meta))
                     current = next_state
             case BranchOnBitOp(source, zero, one, move):
-                self.add(source, ReadSymbol("0"), zero, KeepWrite(), move)
-                self.add(source, ReadSymbol("1"), one, KeepWrite(), move)
+                self.add(source, ReadSymbol("0"), zero, KeepWrite(), move, source_meta=source_meta)
+                self.add(source, ReadSymbol("1"), one, KeepWrite(), move, source_meta=source_meta)
             case WriteBitOp(source, target, bit, move):
-                self.add(source, ReadSymbol("0"), target, WriteSymbolAction(bit), move)
-                self.add(source, ReadSymbol("1"), target, WriteSymbolAction(bit), move)
+                self.add(source, ReadSymbol("0"), target, WriteSymbolAction(bit), move, source_meta=source_meta)
+                self.add(source, ReadSymbol("1"), target, WriteSymbolAction(bit), move, source_meta=source_meta)
             case BranchAtOp(source, marker, label_true, label_false):
-                self.add(source, ReadSymbol(marker), label_true, KeepWrite(), S)
-                self.add(source, ReadAnyExcept(frozenset({marker})), label_false, KeepWrite(), S)
+                self.add(source, ReadSymbol(marker), label_true, KeepWrite(), S, source_meta=source_meta)
+                self.add(source, ReadAnyExcept(frozenset({marker})), label_false, KeepWrite(), S, source_meta=source_meta)
             case EmitAnyExceptOp(source, except_symbol, target, move):
-                self.add(source, ReadAnyExcept(frozenset({except_symbol})), target, KeepWrite(), move)
+                self.add(source, ReadAnyExcept(frozenset({except_symbol})), target, KeepWrite(), move, source_meta=source_meta)
 
     def cfg(self, routine: Routine) -> RoutineCFG:
         """Build the immutable CFG for the compiled routine."""
@@ -205,6 +217,7 @@ class CFGCompiler:
             exits=exits,
             internal_states=tuple(sorted(internal_states)),
             transitions=tuple(self.transitions),
+            source=routine.source,
         )
 
 
@@ -217,8 +230,11 @@ def compile_routine(
     """Compile one Routine into a structured CFG without mutating TMBuilder."""
 
     compiler = CFGCompiler(names=names, halt_state=halt_state)
-    for op in routine.ops:
-        compiler.compile_op(op)
+    if routine.op_sources and len(routine.op_sources) != len(routine.ops):
+        raise ValueError("routine op_sources must align 1:1 with ops")
+    op_sources = routine.op_sources or (None,) * len(routine.ops)
+    for op, op_source in zip(routine.ops, op_sources):
+        compiler.compile_op(op, source_meta=transition_source_from_op(op_source))
     return compiler.cfg(routine)
 
 
@@ -312,7 +328,12 @@ def _explicit_write_symbols(write: WriteAction) -> set[str]:
             raise TypeError(f"unsupported WriteAction: {write!r}")
 
 
-def assemble_cfg(builder: TMBuilder, cfg: RoutineCFG) -> None:
+def assemble_cfg(
+    builder: TMBuilder,
+    cfg: RoutineCFG,
+    *,
+    source_map: TransitionSourceMap | None = None,
+) -> None:
     """Emit a validated RoutineCFG into a raw transition-machine builder."""
 
     for transition in cfg.transitions:
@@ -324,6 +345,9 @@ def assemble_cfg(builder: TMBuilder, cfg: RoutineCFG) -> None:
                 transition.write.resolve(read),
                 transition.move,
             )
+            source = raw_transition_source(transition.source, read, transition.source_meta)
+            if source_map is not None and source is not None:
+                source_map.entries[(transition.source, read)] = source
 
 
 __all__ = [

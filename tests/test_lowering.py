@@ -1,6 +1,6 @@
 from mtm import TMBand, load_fixture
-from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, program_to_cfgs, validate_cfg, validate_program_cfgs
-from mtm.meta_asm import BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Seek
+from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, lower_program_with_source_map, program_to_cfgs, validate_cfg, validate_program_cfgs
+from mtm.meta_asm import Block, BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
@@ -510,6 +510,50 @@ def test_program_to_cfgs_returns_inspectable_cfgs_before_assembly() -> None:
 
     assert cfgs
     assert all(cfg.transitions for cfg in cfgs)
+
+
+def test_lower_program_with_source_map_maps_seek_rows_back_to_instruction_and_op() -> None:
+    instruction = Seek(RULES, "L")
+    program = Program(blocks=(Block("ENTRY", (instruction,)),), entry_label="ENTRY")
+
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    cfg = lowered.cfgs[0]
+
+    on_marker = lowered.source_map.lookup(cfg.entry, RULES)
+    on_other = lowered.source_map.lookup(cfg.entry, "0")
+
+    assert on_marker is not None
+    assert on_other is not None
+    assert on_marker.block_label == "ENTRY"
+    assert on_marker.instruction_index == 0
+    assert on_marker.instruction == instruction
+    assert on_marker.instruction_text == format_instruction(instruction)
+    assert on_marker.routine_index == 0
+    assert on_marker.routine_name == "seek"
+    assert on_marker.op_index == 0
+    assert on_marker.op == SeekOp("ENTRY", "program_ENTRY_exit_0", frozenset({RULES}), "L")
+    assert on_other.block_label == on_marker.block_label
+    assert on_other.instruction_index == on_marker.instruction_index
+    assert on_other.routine_index == on_marker.routine_index
+    assert on_other.op_index == on_marker.op_index
+
+
+def test_lower_program_with_source_map_maps_second_routine_rows_back_to_goto() -> None:
+    instructions = (Seek(RULES, "L"), Goto("DONE"))
+    program = Program(blocks=(Block("ENTRY", instructions),), entry_label="ENTRY")
+
+    lowered = lower_program_with_source_map(program, ("0", RULES))
+    goto_cfg = lowered.cfgs[1]
+    source = lowered.source_map.lookup(goto_cfg.entry, "0")
+
+    assert source is not None
+    assert source.block_label == "ENTRY"
+    assert source.instruction_index == 1
+    assert source.instruction == instructions[1]
+    assert source.instruction_text == format_instruction(instructions[1])
+    assert source.routine_index == 1
+    assert source.routine_name == "goto"
+    assert source.op_index == 0
 
 
 def test_lowered_incrementer_matches_host_run() -> None:

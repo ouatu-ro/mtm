@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .constants import Label
 from .contracts import HeadAnywhere, HeadContract
 from .ops import Op
+from .source_map import OpSource, RoutineSource
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class Routine:
     ops: tuple[Op, ...]
     requires: HeadContract = HeadAnywhere()
     ensures: HeadContract = HeadAnywhere()
+    source: RoutineSource | None = None
+    op_sources: tuple[OpSource | None, ...] = ()
 
 
 class NameSupply:
