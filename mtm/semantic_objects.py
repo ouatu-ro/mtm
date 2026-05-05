@@ -214,16 +214,21 @@ class UTMBandArtifact:
 
         return self.to_encoded_band().to_runtime_tape()
 
-    def to_run_config(self, program_artifact: "UTMProgramArtifact | TMTransitionProgram") -> "TMRunConfig":
-        """Pair this input artifact with a UTM program for raw execution."""
+    def to_raw_instance(self, program_artifact: "UTMProgramArtifact | TMTransitionProgram") -> "RawTMInstance":
+        """Pair this input artifact with a raw program instance."""
 
         program = program_artifact.program if isinstance(program_artifact, UTMProgramArtifact) else program_artifact
-        return TMRunConfig(
+        return RawTMInstance(
             program=program,
             tape=self.to_runtime_tape(),
             head=self.start_head,
             state=program.start_state,
         )
+
+    def to_run_config(self, program_artifact: "UTMProgramArtifact | TMTransitionProgram") -> "RawTMInstance":
+        """Backward-compatible alias for ``to_raw_instance``."""
+
+        return self.to_raw_instance(program_artifact)
 
     def write(self, path: str | "Path") -> None:
         from .artifacts import write_utm_artifact
@@ -238,8 +243,8 @@ class UTMBandArtifact:
 
 
 @dataclass(frozen=True)
-class TMRunConfig:
-    """Runner-facing raw TM execution state."""
+class RawTMInstance:
+    """A raw transition program paired with its current tape/head/state."""
 
     program: TMTransitionProgram
     tape: dict[int, str]
@@ -275,7 +280,7 @@ class UTMProgramArtifact:
     def run(self, band_artifact: UTMBandArtifact, *, fuel: int = 100) -> dict[str, object]:
         """Run this universal-machine program on a band artifact."""
 
-        config = band_artifact.to_run_config(self)
+        config = band_artifact.to_raw_instance(self)
         return run_raw_tm(
             config.program,
             config.tape,
@@ -446,7 +451,7 @@ def encoded_band_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedBand:
     )
 
 
-__all__ = ["DecodedBandView", "TMRunConfig", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
+__all__ = ["DecodedBandView", "RawTMInstance", "TMBand", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
            "decoded_view_from_encoded_band", "encoded_band_from_utm_artifact", "infer_minimal_abi",
            "start_head_from_encoded_band", "utm_artifact_from_band", "utm_encoded_from_band"]

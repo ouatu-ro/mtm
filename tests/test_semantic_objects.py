@@ -5,7 +5,7 @@ from mtm.lowering import lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, TMTransitionProgram
-from mtm.semantic_objects import TMRunConfig, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
+from mtm.semantic_objects import RawTMInstance, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.utm_band_layout import compile_tm_to_universal_tape
 
 
@@ -158,11 +158,11 @@ def test_primary_tm_program_names_and_io(tmp_path) -> None:
     assert isinstance(raw_tm, TMTransitionProgram)
     raw_tm.write(path)
     loaded = TMTransitionProgram.read(path)
-    config = TMRunConfig(program=loaded, tape={0: "_RUNTIME_BLANK"}, head=0, state=loaded.start_state)
+    instance = RawTMInstance(program=loaded, tape={0: "_RUNTIME_BLANK"}, head=0, state=loaded.start_state)
 
     assert loaded == raw_tm
-    assert config.program == raw_tm
-    assert config.state == raw_tm.start_state
+    assert instance.program == raw_tm
+    assert instance.state == raw_tm.start_state
 
 
 def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
@@ -178,15 +178,17 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
         target_abi=band_artifact.target_abi,
         minimal_abi=band_artifact.minimal_abi,
     )
-    config = band_artifact.to_run_config(loaded)
+    instance = band_artifact.to_raw_instance(loaded)
+    legacy_instance = band_artifact.to_run_config(loaded)
     result = loaded.run(band_artifact, fuel=200_000)
     final_band = type(band).from_runtime_tape(band.encoding, result["tape"])
     final_view = decoded_view_from_encoded_band(final_band)
 
     assert loaded.program == program_artifact.program
     assert loaded.target_abi == band_artifact.target_abi
-    assert config.head == band_artifact.start_head
-    assert config.state == loaded.program.start_state
+    assert legacy_instance == instance
+    assert instance.head == band_artifact.start_head
+    assert instance.state == loaded.program.start_state
     assert result["status"] == "halted"
     assert result["state"] == "U_HALT"
     assert final_view.current_state == band.encoding.halt_state
@@ -400,7 +402,7 @@ def test_public_boundary_is_small() -> None:
         "UTMBandArtifact",
         "UTMProgramArtifact",
         "TMTransitionProgram",
-        "TMRunConfig",
+        "RawTMInstance",
         "DecodedBandView",
         "UniversalInterpreter",
         "TMFixture",

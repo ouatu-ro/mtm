@@ -41,7 +41,7 @@ second path for raw guests:
 
 ```text
 Raw-guest compiler:
-  RawGuestInstance
+  RawTMInstance
   -> UTMEncoded
   -> UTMBandArtifact
 ```
@@ -81,13 +81,12 @@ Primary objects:
 - `MetaASMProgram`
 - `TMTransitionProgram`
 - `UTMProgramArtifact`
-- `TMRunConfig`
+- `RawTMInstance`
 - `DecodedBandView`
 
 Planned missing objects:
 
 - `SourceArtifact`
-- `RawGuestInstance`
 
 ## 3. Source Program and Band
 
@@ -1053,5 +1052,5 @@ result = program_artifact.run(band_artifact, fuel=...)
 ```
 
 The next major target after that is recursive self-hosting through
-`RawGuestInstance` and levelled artifacts such as `incrementer.l2.utm.band`
+`RawTMInstance` and levelled artifacts such as `incrementer.l2.utm.band`
 and `incrementer.l2.tm`.

@@ -356,25 +356,31 @@ R = 1
 
 This is the runner-facing executable object.
 
-### `TMRunConfig`
+### `RawTMInstance`
 
-Runner-facing raw execution configuration.
+A raw transition program paired with its current tape/head/state.
 
 Current code:
 
-- class: `mtm.semantic_objects.TMRunConfig`
+- class: `mtm.semantic_objects.RawTMInstance`
 - fields:
   - `program`
   - `tape`
   - `head`
   - `state`
 
-Meaning:
+Execution fields:
 
 - `program` is the raw executable
 - `tape` maps integer addresses to concrete runtime symbols
 - `head` is the raw head position
 - `state` is the raw control state
+
+Uses:
+
+- runner-facing raw execution configuration
+- recursive-self-hosting guest input for compiling a raw machine into another
+  UTM layer
 
 ### Raw Run Result
 
@@ -423,7 +429,7 @@ Important methods:
 ```python
 artifact.to_encoded_band() -> EncodedBand
 artifact.to_runtime_tape() -> dict[int, str]
-artifact.to_run_config(program_artifact_or_tm) -> TMRunConfig
+artifact.to_raw_instance(program_artifact_or_tm) -> RawTMInstance
 artifact.write(path) -> None
 UTMBandArtifact.read(path) -> UTMBandArtifact
 ```
@@ -617,22 +623,21 @@ to today’s authoring-time `.py` input:
 
 Today `.py` is an authoring format, not a stable source artifact format.
 
-### `RawGuestInstance`
+### `RawTMInstance`
 
-This is the key missing abstraction for recursive self-hosting.
+This is the key abstraction for recursive self-hosting.
 
 Conceptually:
 
 - `TMInstance` = symbolic source guest
-- `RawGuestInstance` = already-lowered ordinary TM guest
+- `RawTMInstance` = already-lowered ordinary TM guest
 
-A `RawGuestInstance` would likely contain:
+`RawTMInstance` contains:
 
 - `program: TMTransitionProgram`
 - `tape: dict[int, str]`
 - `head: int`
 - `state: str`
-- optional ABI/provenance hints
 
 The current compiler compiles source guests into UTM input. Recursive
 self-hosting requires a second compiler path that compiles raw guests into UTM
@@ -721,10 +726,9 @@ still a possible cleanup, but it is not the current API.
 - `MetaASMProgram` = semantic universal interpreter IR
 - `UTMProgramArtifact` = typed wrapper around a host `.tm`
 - `TMTransitionProgram` = raw executable transition table
-- `TMRunConfig` = runner-facing raw execution state
+- `RawTMInstance` = raw program plus tape/head/state, used for running and recursive guest compilation
 - `DecodedBandView` = decoded semantic inspection view
 - `TransitionSourceMap` = raw-row-to-lowered-source provenance
 - `RawTraceRunner` = reversible raw debugger
 - `TraceFacts` / `DebuggerQueries` = debugger read model
 - `SourceArtifact` = missing serializable source guest format
-- `RawGuestInstance` = missing recursive-self-hosting guest format

@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_raw_tm(raw_tm))
     if args.run_utm:
-        config = band_artifact.to_run_config(program_artifact)
+        config = band_artifact.to_raw_instance(program_artifact)
         result = run_raw_tm(raw_tm, config.tape, head=config.head, state=config.state, max_steps=args.max_raw_steps)
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
         final_band = EncodedBand(band.encoding, final_left_band, final_right_band)

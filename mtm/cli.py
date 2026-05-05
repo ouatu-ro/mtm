@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     artifact = UTMBandArtifact.read(args.input)
     band = artifact.to_encoded_band()
     program_artifact = UTMProgramArtifact(program=tm, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
-    config = artifact.to_run_config(program_artifact)
+    config = artifact.to_raw_instance(program_artifact)
     runtime_tape = dict(config.tape)
     result = program_artifact.run(artifact, fuel=args.max_steps)
     final_left_band, final_right_band = band.left_band, band.right_band
