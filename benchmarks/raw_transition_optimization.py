@@ -107,6 +107,7 @@ def benchmark_rows() -> list[BenchmarkRow]:
         ("reachable", prune_unreachable_transitions),
         ("merged", merge_identical_transition_states),
         ("reachable+merged", lambda program: merge_identical_transition_states(prune_unreachable_transitions(program))),
+        ("merged+reachable", lambda program: prune_unreachable_transitions(merge_identical_transition_states(program))),
     )
     return [
         _measure(name, optimize(baseline), baseline_transitions, tape, head)
