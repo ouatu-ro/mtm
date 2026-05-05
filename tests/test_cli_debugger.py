@@ -13,16 +13,6 @@ import mtm.meta_asm
 import mtm.semantic_objects
 
 
-COMPACT_STARTUP = """\
-running  raw=0  max_raw=100000  hist=0/0
-RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP
-SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0
-INSTRUCTION  SEEK #CUR_STATE L
-             Move L until marker #CUR_STATE is under the head."""
-
-FULL_VIEW_MARKER = "raw tape: <full-view>"
-
-
 def _install_debugger_stubs(monkeypatch):
     calls = {
         "load_fixture": [],
@@ -32,11 +22,9 @@ def _install_debugger_stubs(monkeypatch):
         "start_head": [],
         "runner_inits": [],
         "session_inits": [],
-        "session_status_calls": 0,
-        "session_view_calls": 0,
         "shell_inits": 0,
+        "startup_calls": [],
         "shell_cmdloop_calls": [],
-        "shell_cmdloop_intro": [],
     }
 
     fake_band = SimpleNamespace(
@@ -60,14 +48,6 @@ def _install_debugger_stubs(monkeypatch):
         def __init__(self, *args, **kwargs):
             calls["session_inits"].append((len(args), tuple(sorted(kwargs))))
 
-        def status_text(self) -> str:
-            calls["session_status_calls"] += 1
-            return COMPACT_STARTUP
-
-        def view_text(self) -> str:
-            calls["session_view_calls"] += 1
-            return FULL_VIEW_MARKER
-
     class FakeDebuggerShell:
         prompt = "mtmdbg> "
 
@@ -75,9 +55,15 @@ def _install_debugger_stubs(monkeypatch):
             calls["shell_inits"] += 1
             self.session = session
 
+        def render_startup(self, fixture_name: str) -> str:
+            calls["startup_calls"].append(fixture_name)
+            return f"startup:{fixture_name}"
+
         def cmdloop(self, intro=None):
-            calls["shell_cmdloop_calls"].append(1)
-            calls["shell_cmdloop_intro"].append(intro)
+            calls["shell_cmdloop_calls"].append(intro)
+
+        def format_output(self, text: str) -> str:
+            return f"formatted:{text}"
 
     def fake_load_fixture(name: str):
         calls["load_fixture"].append(name)
@@ -123,44 +109,32 @@ def _run_dbg(args: list[str], monkeypatch, capsys):
     return exit_code, output, calls
 
 
-def test_cli_dbg_positional_fixture_starts_compact_debugger_session(monkeypatch, capsys):
+def test_cli_dbg_positional_fixture_uses_shell_startup_path(monkeypatch, capsys):
     exit_code, output, calls = _run_dbg(["dbg", "incrementer"], monkeypatch, capsys)
 
     assert exit_code == 0
-    assert "MTM debugger  fixture=incrementer  type `help` for commands" in output
-    assert "type `help` for commands" in output
-    assert "running  raw=0  max_raw=100000  hist=0/0" in output
-    assert "RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP" in output
-    assert "SOURCE       block=START_STEP  instr=setup  routine=0:seek  op=0" in output
-    assert "INSTRUCTION  SEEK #CUR_STATE L" in output
-    assert FULL_VIEW_MARKER not in output
-    assert calls["session_status_calls"] == 1
-    assert calls["session_view_calls"] == 0
+    assert output.strip() == "formatted:startup:incrementer"
+    assert calls["load_fixture"] == ["incrementer"]
+    assert calls["build_band"] == ["incrementer"]
+    assert calls["build_universal"] == ["encoding"]
+    assert calls["lower_with_source_map"] == [("START_STEP", 3)]
+    assert calls["start_head"] == [True]
     assert calls["shell_inits"] == 1
-    assert len(calls["shell_cmdloop_calls"]) == 1
+    assert calls["startup_calls"] == ["incrementer"]
+    assert calls["shell_cmdloop_calls"] == [None]
 
 
-def test_cli_dbg_flag_and_positional_share_fixture_path(monkeypatch, capsys):
+def test_cli_dbg_flag_and_positional_share_fixture_resolution(monkeypatch, capsys):
     positional_code, positional_output, positional_calls = _run_dbg(["dbg", "incrementer"], monkeypatch, capsys)
     flag_code, flag_output, flag_calls = _run_dbg(["dbg", "--fixture", "incrementer"], monkeypatch, capsys)
 
     assert positional_code == 0
     assert flag_code == 0
-    assert "MTM debugger  fixture=incrementer  type `help` for commands" in positional_output
-    assert "MTM debugger  fixture=incrementer  type `help` for commands" in flag_output
+    assert positional_output.strip() == "formatted:startup:incrementer"
+    assert flag_output.strip() == "formatted:startup:incrementer"
     assert positional_calls["load_fixture"] == ["incrementer"]
     assert flag_calls["load_fixture"] == ["incrementer"]
-    assert positional_calls["build_band"] == ["incrementer"]
-    assert flag_calls["build_band"] == ["incrementer"]
-    assert positional_calls["build_universal"] == ["encoding"]
-    assert flag_calls["build_universal"] == ["encoding"]
-    assert positional_calls["lower_with_source_map"] == [("START_STEP", 3)]
-    assert flag_calls["lower_with_source_map"] == [("START_STEP", 3)]
-    assert positional_calls["start_head"] == [True]
-    assert flag_calls["start_head"] == [True]
     assert positional_calls["runner_inits"] == flag_calls["runner_inits"]
     assert positional_calls["session_inits"] == flag_calls["session_inits"]
-    assert positional_calls["shell_inits"] == 1
-    assert flag_calls["shell_inits"] == 1
-    assert len(positional_calls["shell_cmdloop_calls"]) == 1
-    assert len(flag_calls["shell_cmdloop_calls"]) == 1
+    assert positional_calls["startup_calls"] == ["incrementer"]
+    assert flag_calls["startup_calls"] == ["incrementer"]

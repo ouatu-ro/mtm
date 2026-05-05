@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 from pathlib import Path
 
 from .compiler import Compiler
-from .debugger import DebuggerRenderer, DebuggerSession, DebuggerShell, RawTraceRunner
+from .debugger import DebuggerSession, DebuggerShell, RawTraceRunner
 from .lowering import ACTIVE_RULE, lower_program_with_source_map
 from .meta_asm import build_universal_meta_asm
 from .utm_band_layout import EncodedBand, split_runtime_tape
@@ -75,21 +73,7 @@ def _build_fixture_debugger_session(name: str) -> DebuggerSession:
 def _run_fixture_debugger(name: str) -> int:
     session = _build_fixture_debugger_session(name)
     shell = DebuggerShell(session)
-    color_enabled = "NO_COLOR" not in os.environ and getattr(sys.stdout, "isatty", lambda: False)()
-    if hasattr(session, "status_summary"):
-        renderer = DebuggerRenderer(color=color_enabled)
-        runner, location = session.status_summary()
-        startup = renderer.render_startup(
-            fixture_name=name,
-            runner=runner,
-            location=location,
-        )
-    else:
-        startup = "\n".join([
-            f"MTM debugger  fixture={name}  type `help` for commands",
-            "",
-            session.status_text(),
-        ])
+    startup = shell.render_startup(name)
     formatter = getattr(shell, "format_output", None)
     print(formatter(startup) if callable(formatter) else startup)
     shell.cmdloop()

@@ -35,13 +35,13 @@ Out of scope:
 
 ## Steps
 
-- [ ] S1: Create the replacement scaffolding and remove the string-first
+- [x] S1: Create the replacement scaffolding and remove the string-first
   renderer/session coupling.
-- [ ] S2: Port debugger commands onto facts, queries, presentation blocks, and
+- [x] S2: Port debugger commands onto facts, queries, presentation blocks, and
   text rendering.
-- [ ] S3: Rewrite debugger tests around trace behavior, queries, presenter, text
+- [x] S3: Rewrite debugger tests around trace behavior, queries, presenter, text
   rendering, and shell wiring.
-- [ ] S4: Run focused and repo-level validation, update docs/exports, and remove
+- [x] S4: Run focused and repo-level validation, update docs/exports, and remove
   obsolete debugger modules/helpers.
 
 ## Validation
@@ -58,7 +58,17 @@ Out of scope:
 
 ## Progress Log
 
-- 2026-05-05 17:37: Plan created.
+- 2026-05-05 16:37: Plan created.
+- 2026-05-05 16:39: Baseline plan committed as `de95137`.
+- 2026-05-05 16:53: Replaced the debugger string-first surface with a fact/query
+  read model, shared presentation blocks, presenter, plain-text renderer, and a
+  rewritten shell/CLI path. Reviewed GPT-5.4 worker outputs for the
+  facts/session, presentation/renderer, and shell/test slices before final
+  local integration.
+- 2026-05-05 16:53: Validation completed:
+  - `uv run pytest -q tests/test_debugger_session.py tests/test_debugger_shell.py tests/test_cli_debugger.py tests/test_debugger_presenter.py`
+  - `uv run pytest -q`
+  - `git diff --check`
 
 ## Findings / Debt
 
