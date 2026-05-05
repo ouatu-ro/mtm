@@ -9,7 +9,7 @@ from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.source_file import load_python_tm, load_python_tm_instance, source_artifact_from_python
 from mtm.raw_transition_tm import TMTransitionProgram
-from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, utm_artifact_from_band
 from mtm.source_encoding import R, TMAbi, TMProgram
 
 
@@ -365,5 +365,59 @@ def test_cli_l2_generates_artifacts_and_runs_for_bounded_fuel(tmp_path: Path, ca
     assert band.target_abi == program.target_abi
     assert band.encoding.initial_state == "START_STEP"
     assert cli_main(["run", str(tm_path), str(band_path), "--max-steps", "1"]) == 0
+    output = capsys.readouterr().out
+    assert "FINAL STATUS: fuel_exhausted" in output
+
+
+def test_cli_l2_from_wider_l1_abi_generates_coherent_band(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "artifacts"
+    l1_target = TMAbi(3, 3, 2, "mtm-v1", "U[Wq=3,Ws=3,Wd=2]")
+
+    assert cli_main([
+        "l1",
+        "examples/incrementer_tm.py",
+        "--out-dir",
+        str(out_dir),
+        "--stem",
+        "incrementer-wide",
+        "--state-width",
+        str(l1_target.state_width),
+        "--symbol-width",
+        str(l1_target.symbol_width),
+        "--dir-width",
+        str(l1_target.dir_width),
+    ]) == 0
+    assert cli_main([
+        "l2",
+        str(out_dir / "incrementer-wide.l1.tm"),
+        str(out_dir / "incrementer-wide.l1.utm.band"),
+        "--out-dir",
+        str(out_dir),
+        "--stem",
+        "incrementer-wide",
+    ]) == 0
+
+    l1_band = UTMBandArtifact.read(out_dir / "incrementer-wide.l1.utm.band")
+    l1_program = UTMProgramArtifact.read(out_dir / "incrementer-wide.l1.tm")
+    l2_band = UTMBandArtifact.read(out_dir / "incrementer-wide.l2.utm.band")
+    l2_program = UTMProgramArtifact.read(out_dir / "incrementer-wide.l2.tm")
+    l2_view = decoded_view_from_encoded_band(l2_band.to_encoded_band())
+
+    assert l1_band.minimal_abi == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
+    assert l1_band.target_abi == l1_target
+    assert l1_program.target_abi == l1_target
+    assert l2_band.target_abi == l2_program.target_abi
+    assert l2_band.target_abi != l1_target
+    assert l2_band.target_abi.family_label.startswith("raw-min[")
+    assert l2_view.current_state == "START_STEP"
+    assert l2_view.simulated_tape.head == l1_band.start_head
+
+    assert cli_main([
+        "run",
+        str(out_dir / "incrementer-wide.l2.tm"),
+        str(out_dir / "incrementer-wide.l2.utm.band"),
+        "--max-steps",
+        "1",
+    ]) == 0
     output = capsys.readouterr().out
     assert "FINAL STATUS: fuel_exhausted" in output
