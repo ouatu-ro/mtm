@@ -14,7 +14,7 @@ from .meta_asm import format_program
 from . import load_fixture
 from .pretty import pretty_registers, pretty_tape
 from .source_file import load_python_tm_instance, source_artifact_from_python
-from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact, start_head_from_encoded_band
+from .semantic_objects import RawTMInstance, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, start_head_from_encoded_band
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
 
@@ -50,6 +50,24 @@ def _add_abi_args(parser: argparse.ArgumentParser) -> None:
 
 def _write_text(path: str | Path, text: str) -> None:
     Path(path).write_text(text + ("\n" if not text.endswith("\n") else ""))
+
+
+def _artifact_stem(path: str | Path) -> str:
+    name = Path(path).name
+    for suffix in (".mtm.source", ".utm.band", ".tm", ".py"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(path).stem
+
+
+def _l1_artifact_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path, Path]:
+    out = Path(out_dir)
+    return out / f"{stem}.mtm.source", out / f"{stem}.l1.utm.band", out / f"{stem}.l1.tm"
+
+
+def _l2_artifact_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path]:
+    out = Path(out_dir)
+    return out / f"{stem}.l2.utm.band", out / f"{stem}.l2.tm"
 
 
 def _build_fixture_debugger_session(name: str) -> DebuggerSession:
@@ -114,6 +132,18 @@ def main(argv: list[str] | None = None) -> int:
     source_parser.add_argument("input")
     source_parser.add_argument("-o", "--output", required=True)
 
+    l1_parser = sub.add_parser("l1", help="Emit source, l1 .utm.band, and l1 .tm artifacts from a Python TM file.")
+    l1_parser.add_argument("input")
+    l1_parser.add_argument("--out-dir", required=True)
+    l1_parser.add_argument("--stem")
+    _add_abi_args(l1_parser)
+
+    l2_parser = sub.add_parser("l2", help="Emit l2 artifacts from l1 .tm and l1 .utm.band artifacts.")
+    l2_parser.add_argument("tm_file")
+    l2_parser.add_argument("band_file")
+    l2_parser.add_argument("--out-dir", required=True)
+    l2_parser.add_argument("--stem")
+
     run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact.")
     run_parser.add_argument("tm_file")
     run_parser.add_argument("input", nargs="?")
@@ -147,6 +177,35 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "emit-source":
         source_artifact_from_python(args.input).write(args.output)
+        return 0
+
+    if args.command == "l1":
+        stem = args.stem or _artifact_stem(args.input)
+        source_path, band_path, tm_path = _l1_artifact_paths(args.out_dir, stem)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_artifact_from_python(args.input).write(source_path)
+        _encoded, band_artifact, _interpreter, program_artifact = _compile_from_py(args.input, abi=abi)
+        band_artifact.write(band_path)
+        program_artifact.write(tm_path)
+        return 0
+
+    if args.command == "l2":
+        stem = args.stem or _artifact_stem(args.band_file).removesuffix(".l1")
+        band_path, tm_path = _l2_artifact_paths(args.out_dir, stem)
+        band_path.parent.mkdir(parents=True, exist_ok=True)
+        l1_program_artifact = UTMProgramArtifact.read(args.tm_file)
+        l1_band_artifact = UTMBandArtifact.read(args.band_file)
+        raw_guest = RawTMInstance(
+            program=l1_program_artifact.program,
+            tape=l1_band_artifact.to_runtime_tape(),
+            head=l1_band_artifact.start_head,
+            state=l1_program_artifact.program.start_state,
+        )
+        encoded = compile_raw_guest(raw_guest)
+        band_artifact = encoded.to_band_artifact()
+        program_artifact = UniversalInterpreter.for_encoded(encoded).lower_for_band(band_artifact)
+        band_artifact.write(band_path)
+        program_artifact.write(tm_path)
         return 0
 
     if args.command == "dbg":

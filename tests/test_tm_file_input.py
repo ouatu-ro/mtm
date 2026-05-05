@@ -325,3 +325,45 @@ def test_cli_run_allows_old_tm_without_abi_metadata(tmp_path: Path, capsys) -> N
     assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
     output = capsys.readouterr().out
     assert "FINAL STATUS: halted" in output
+
+
+def test_cli_l1_generates_level_artifacts(tmp_path: Path) -> None:
+    out_dir = tmp_path / "artifacts"
+
+    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir)]) == 0
+
+    source_path = out_dir / "incrementer_tm.mtm.source"
+    band_path = out_dir / "incrementer_tm.l1.utm.band"
+    tm_path = out_dir / "incrementer_tm.l1.tm"
+
+    assert read_source_artifact(source_path).name == "incrementer_tm"
+    band = UTMBandArtifact.read(band_path)
+    program = UTMProgramArtifact.read(tm_path)
+    assert band.target_abi == program.target_abi
+    assert program.program.start_state == "START_STEP"
+
+
+def test_cli_l2_generates_artifacts_and_runs_for_bounded_fuel(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "artifacts"
+
+    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
+    assert cli_main([
+        "l2",
+        str(out_dir / "incrementer.l1.tm"),
+        str(out_dir / "incrementer.l1.utm.band"),
+        "--out-dir",
+        str(out_dir),
+        "--stem",
+        "incrementer",
+    ]) == 0
+
+    band_path = out_dir / "incrementer.l2.utm.band"
+    tm_path = out_dir / "incrementer.l2.tm"
+    band = UTMBandArtifact.read(band_path)
+    program = UTMProgramArtifact.read(tm_path)
+
+    assert band.target_abi == program.target_abi
+    assert band.encoding.initial_state == "START_STEP"
+    assert cli_main(["run", str(tm_path), str(band_path), "--max-steps", "1"]) == 0
+    output = capsys.readouterr().out
+    assert "FINAL STATUS: fuel_exhausted" in output

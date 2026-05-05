@@ -85,7 +85,7 @@ Out of scope:
   Deliverables: compile `RawTMInstance -> UTMEncoded -> UTMBandArtifact`; raw guest tape conversion mirrors `TMBand.from_dict(...)` semantics, with negative addresses on `left_band`, nonnegative addresses on `right_band`, and the current head cell included even if blank.
   Validation: trivial `TMTransitionProgram` guest compiles into `.utm.band`; resulting band is runnable by a lowered host.
 
-- [ ] S10: Add the `l1` / `l2` CLI workflow.
+- [x] S10: Add the `l1` / `l2` CLI workflow.
   Deliverables: CLI can produce `incrementer.mtm.source`, `incrementer.l1.utm.band`, `incrementer.l1.tm`, `incrementer.l2.utm.band`, and `incrementer.l2.tm`; `l1` means one UTM layer over the original source guest; `l2` means one UTM layer over the `l1` raw host computation as guest.
   Validation: CLI tests for `l1` and `l2` artifact generation; bounded-fuel execution of `l2` artifacts without artifact, compatibility, or decode errors.
 
@@ -110,6 +110,7 @@ Out of scope:
 - 2026-05-05 20:00 EEST: Completed S8. Added raw-guest ABI inference and `build_raw_guest_encoding(...)` with `S` move support, plus a dispatch test documenting that non-left/non-right moves stay put. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 20:02 EEST: Tightened S8. Preserved existing raw `L`/`R` direction IDs when `S` is present and added unsupported raw move rejection coverage. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
 - 2026-05-05 20:04 EEST: Completed S9. Added `compile_raw_guest(...)`, raw sparse tape conversion with blank head preservation, and tests for compiling a trivial raw guest into a runnable UTM band. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
+- 2026-05-05 20:06 EEST: Completed S10. Added CLI `l1` / `l2` artifact workflows, including source/l1 artifact emission and raw-instance-based l2 generation. Validation: `uv run pytest -q tests/test_tm_file_input.py`; `uv run pytest -q`; `git diff --check`.
 
 ## Findings / Debt
 
