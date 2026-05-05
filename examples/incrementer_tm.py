@@ -1,8 +1,7 @@
 blank = "_"
 initial_state = "qFindMargin"
 halt_state = "qDone"
-input_string = "1011"
-blanks_right = 4
+band = TMBand(cells=tuple("1011____"), head=0, blank=blank)
 note = "Binary increment by one."
 
 tm_program = TMProgram({

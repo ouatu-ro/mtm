@@ -8,28 +8,27 @@ from pkgutil import iter_modules
 
 from ..utm_band_layout import EncodedBand, compile_tm_to_universal_tape
 from ..source_encoding import TMAbi, TMProgram
+from ..semantic_objects import TMBand
 
 @dataclass(frozen=True)
 class TMFixture:
-    """A runnable TM program plus the input and tape margins it needs."""
+    """A runnable TM program plus its source-level input band."""
 
-    name: str; tm_program: TMProgram; input_symbols: list[str]
-    initial_state: str; halt_state: str; blank: str = "_"
-    blanks_left: int = 0; blanks_right: int = 8; note: str = ""
+    name: str; tm_program: TMProgram; band: TMBand
+    initial_state: str; halt_state: str; note: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.tm_program, TMProgram):
             raise TypeError("TMFixture.tm_program must be a TMProgram")
+        if not isinstance(self.band, TMBand):
+            raise TypeError("TMFixture.band must be a TMBand")
 
     def build_band(self, *, abi: TMAbi | None = None) -> EncodedBand:
         return compile_tm_to_universal_tape(
             self.tm_program,
-            self.input_symbols,
+            self.band,
             initial_state=self.initial_state,
             halt_state=self.halt_state,
-            blank=self.blank,
-            blanks_left=self.blanks_left,
-            blanks_right=self.blanks_right,
             abi=abi,
         )
 

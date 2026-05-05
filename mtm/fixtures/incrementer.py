@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..semantic_objects import TMBand
 from ..source_encoding import L, R, TMProgram
 from . import TMFixture
 
@@ -19,11 +20,8 @@ fixture = TMFixture(
         ("qAdd", "1"): ("qAdd", "0", L),
         ("qAdd", blank): ("qDone", "1", L),
     }, initial_state="qFindMargin", halt_state="qDone", blank=blank),
-    input_symbols=list("1011"),
+    band=TMBand(cells=tuple("1011____"), head=0, blank=blank),
     initial_state="qFindMargin",
     halt_state="qDone",
-    blank=blank,
-    blanks_left=0,
-    blanks_right=4,
     note="Binary increment by one.",
 )

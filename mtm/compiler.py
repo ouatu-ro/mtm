@@ -41,7 +41,6 @@ class Compiler:
             instance.band,
             initial_state=initial_state,
             halt_state=halt_state,
-            blank=instance.band.blank,
             abi=self.target_abi,
         )
         return utm_encoded_from_band(band)

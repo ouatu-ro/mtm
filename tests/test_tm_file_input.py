@@ -9,7 +9,7 @@ from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.source_file import load_python_tm, load_python_tm_instance
 from mtm.raw_transition_tm import TMTransitionProgram
-from mtm.semantic_objects import UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
 from mtm.source_encoding import R, TMProgram
 
 
@@ -17,8 +17,7 @@ INCREMENTER_FILE = """\
 blank = "_"
 initial_state = "qFindMargin"
 halt_state = "qDone"
-input_string = "1011"
-blanks_right = 4
+band = TMBand(cells=tuple("1011____"), head=0, blank=blank)
 
 tm_program = TMProgram({
     ("qFindMargin", "0"): ("qFindMargin", "0", R),
@@ -44,7 +43,7 @@ def test_load_python_tm_file(tmp_path: Path) -> None:
 
     assert fixture.name == "incrementer_tm"
     assert isinstance(fixture.tm_program, TMProgram)
-    assert fixture.input_symbols == list("1011")
+    assert fixture.band == TMBand(cells=tuple("1011____"), head=0, blank="_")
     assert fixture.initial_state == "qFindMargin"
     assert fixture.halt_state == "qDone"
     assert len(fixture.tm_program) == 6
@@ -56,6 +55,7 @@ def test_load_python_tm_file_requires_tm_program_object(tmp_path: Path) -> None:
     path.write_text("""\
 initial_state = "q0"
 halt_state = "qHalt"
+band = TMBand(cells=("_",), head=0, blank="_")
 tm_program = {("q0", "_"): ("qHalt", "_", R)}
 """)
 

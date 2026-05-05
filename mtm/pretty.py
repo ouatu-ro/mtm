@@ -187,7 +187,8 @@ def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
             [
                 ["name", fixture.name],
                 ["note", fixture.note or "-"],
-                ["input", "".join(fixture.input_symbols)],
+                ["source band", "".join(fixture.band.cells)],
+                ["source head", fixture.band.head],
                 ["states", len(band.encoding.state_ids)],
                 ["symbols", len(band.encoding.symbol_ids)],
                 ["rules", len(fixture.tm_program)],

@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-from typing import Iterable
 
 from .source_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
 
@@ -97,26 +96,6 @@ def build_rule_band(encoding: Encoding, tm_program: TMProgram) -> list[str]:
     return band + [END_RULES]
 
 
-def build_tape_band(
-    encoding: Encoding,
-    input_symbols: Iterable[str],
-    *,
-    head_index: int = 0,
-    blanks_left: int = 0,
-    blanks_right: int = 8,
-) -> list[str]:
-    """Build an encoded simulated tape from plain input symbols."""
-
-    symbols = [encoding.blank] * blanks_left + list(input_symbols) + [encoding.blank] * blanks_right
-    head_position = blanks_left + head_index
-    if not 0 <= head_position < len(symbols):
-        raise ValueError("head outside encoded tape band")
-    band = [TAPE]
-    for index, symbol in enumerate(symbols):
-        band.extend([CELL, HEAD if index == head_position else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
-    return band + [END_TAPE]
-
-
 def build_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
     """Build an encoded simulated tape from a source-level TMBand."""
 
@@ -149,26 +128,6 @@ def split_runtime_tape(runtime_tape: dict[int, str]) -> tuple[list[str], list[st
     return [runtime_tape[address] for address in range(lowest, 0)], [runtime_tape[address] for address in range(0, highest + 1)]
 
 
-def _coerce_source_band(
-    source: Iterable[str] | "TMBand",
-    *,
-    blank: str,
-    blanks_left: int,
-    blanks_right: int,
-) -> "TMBand":
-    from .semantic_objects import TMBand
-
-    if isinstance(source, TMBand):
-        if blank != source.blank:
-            raise ValueError(f"blank mismatch: source band uses {source.blank!r}, compile path requested {blank!r}")
-        return source
-    return TMBand(
-        cells=tuple([blank] * blanks_left + list(source) + [blank] * blanks_right),
-        head=blanks_left,
-        blank=blank,
-    )
-
-
 def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
     return TMAbi(
         state_width=minimal_abi.state_width,
@@ -181,18 +140,14 @@ def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
 
 def compile_tm_to_universal_tape(
     tm_program: TMProgram,
-    source: Iterable[str] | "TMBand",
+    source_band: "TMBand",
     *,
     initial_state: str,
     halt_state: str,
-    blank: str = "_",
-    blanks_left: int = 0,
-    blanks_right: int = 8,
     abi: TMAbi | None = None,
 ) -> EncodedBand:
     """Compile a source TM and source tape into concrete UTM input bands."""
 
-    source_band = _coerce_source_band(source, blank=blank, blanks_left=blanks_left, blanks_right=blanks_right)
     minimal_abi = infer_minimal_abi(
         tm_program,
         initial_state=initial_state,
@@ -217,6 +172,6 @@ def compile_tm_to_universal_tape(
 __all__ = ["CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_CELL", "END_FIELD", "END_REGS", "END_RULE",
            "END_RULES", "END_TAPE", "EncodedBand", "HEAD", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
            "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TMP", "WRITE", "WRITE_SYMBOL",
-           "build_register_band", "build_rule_band", "build_tape_band", "build_tape_band_from_source_band",
+           "build_register_band", "build_rule_band", "build_tape_band_from_source_band",
            "compile_tm_to_universal_tape", "materialize_runtime_tape", "place_on_negative_side",
            "place_on_positive_side", "split_runtime_tape", "wrap_field"]

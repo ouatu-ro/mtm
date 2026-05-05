@@ -176,24 +176,18 @@ def test_source_band_helper() -> None:
 
 def test_minimal_abi_inference_and_explicit_target_abi() -> None:
     fixture = load_fixture("incrementer")
-    source_band = source_band_from_simulated_tape(
-        tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
-        fixture.blanks_left,
-        blank=fixture.blank,
-    )
     inferred = infer_minimal_abi(
         fixture.tm_program,
-        source_band,
+        fixture.band,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
     target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
     band = compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        fixture.band,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
-        blank=fixture.blank,
         abi=target,
     )
 
@@ -209,11 +203,7 @@ def test_compiler_infers_abi_and_compiles_to_utm_encoded() -> None:
     fixture = load_fixture("incrementer")
     instance = TMInstance(
         program=fixture.tm_program,
-        band=TMBand(
-            cells=tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
-            head=fixture.blanks_left,
-            blank=fixture.blank,
-        ),
+        band=fixture.band,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
@@ -232,11 +222,7 @@ def test_compiler_uses_selected_target_abi() -> None:
     target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
     instance = TMInstance(
         program=fixture.tm_program,
-        band=TMBand(
-            cells=tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right),
-            head=fixture.blanks_left,
-            blank=fixture.blank,
-        ),
+        band=fixture.band,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
@@ -245,6 +231,31 @@ def test_compiler_uses_selected_target_abi() -> None:
 
     assert encoded.target_abi == target
     assert encoded.to_band_artifact().target_abi == target
+
+
+def test_wider_abi_incrementer_runs_end_to_end() -> None:
+    fixture = load_fixture("incrementer")
+    target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
+    instance = TMInstance(
+        program=fixture.tm_program,
+        band=fixture.band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+
+    encoded = Compiler(target_abi=target).compile(instance)
+    band_artifact = encoded.to_band_artifact()
+    program_artifact = UniversalInterpreter.for_encoded(encoded).lower_for_band(band_artifact)
+    result = program_artifact.run(band_artifact, fuel=200_000)
+    final_band = type(encoded.to_encoded_band()).from_runtime_tape(encoded.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
+
+    assert encoded.minimal_abi == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
+    assert encoded.target_abi == target
+    assert result["status"] == "halted"
+    assert result["state"] == "U_HALT"
+    assert final_view.current_state == fixture.halt_state
+    assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
 def test_compile_rejects_too_small_abi() -> None:

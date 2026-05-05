@@ -13,15 +13,14 @@ from mtm.meta_asm_host import format_meta_trace, run_meta_asm_runtime
 from mtm.pretty import pretty_fixture, pretty_registers, pretty_tape
 from mtm.source_file import load_python_tm
 from mtm.raw_transition_tm import format_raw_tm, run_raw_tm
-from mtm.semantic_objects import TMBand, TMInstance
+from mtm.semantic_objects import TMInstance
 from mtm.universal import UniversalInterpreter
 
 
 def _instance_from_fixture(fixture: Any) -> TMInstance:
-    cells = tuple([fixture.blank] * fixture.blanks_left + fixture.input_symbols + [fixture.blank] * fixture.blanks_right)
     return TMInstance(
         program=fixture.tm_program,
-        band=TMBand(cells=cells, head=fixture.blanks_left, blank=fixture.blank),
+        band=fixture.band,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )

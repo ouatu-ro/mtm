@@ -10,7 +10,7 @@ from .utm_band_layout import EncodedBand, split_runtime_tape
 from .meta_asm import format_program
 from .pretty import pretty_registers, pretty_tape
 from .source_file import load_python_tm_instance
-from .raw_transition_tm import TMTransitionProgram, run_raw_tm
+from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
@@ -70,12 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     tm_parser.add_argument("-o", "--output", required=True)
     _add_abi_args(tm_parser)
 
-    run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact or a plain string tape.")
+    run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact.")
     run_parser.add_argument("tm_file")
     run_parser.add_argument("input", nargs="?")
-    run_parser.add_argument("--input-string")
-    run_parser.add_argument("--head", type=int, default=0)
-    run_parser.add_argument("--blank", default="_")
     run_parser.add_argument("--max-steps", type=int, default=200_000)
 
     args = parser.parse_args(argv)
@@ -101,19 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     tm = TMTransitionProgram.read(args.tm_file)
-    if args.input_string is not None:
-        tape = dict(enumerate(args.input_string))
-        result = run_raw_tm(tm, tape, head=args.head, max_steps=args.max_steps)
-        print(f"FINAL STATUS: {result['status']}")
-        print(f"FINAL STATE: {result['state']}")
-        print(f"FINAL HEAD: {result['head']}")
-        print(f"STEPS: {result['steps']}")
-        cells = "".join(result["tape"].get(i, args.blank) for i in range(min(result["tape"], default=0), max(result["tape"], default=-1) + 1))
-        print(cells)
-        return 0
-
     if args.input is None:
-        raise SystemExit("run requires either INPUT.utm.band or --input-string")
+        raise SystemExit("run requires INPUT.utm.band")
     artifact = UTMBandArtifact.read(args.input)
     band = artifact.to_encoded_band()
     program_artifact = UTMProgramArtifact(program=tm, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)

@@ -103,6 +103,8 @@ def move_simulated_head(encoding, right_band: list[str], head_address: int, dire
     right_band = list(right_band)
     old_head = head_address
 
+    # NOTE: The host interpreter grows the simulated tape at either boundary.
+    # The lowered UTM backend is currently bounded and branches to STUCK there.
     if direction > 0:
         next_head = old_head + span
         if right_band[next_head] == END_TAPE:
