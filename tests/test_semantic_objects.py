@@ -249,6 +249,63 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
     assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
+def test_utm_program_artifact_run_allows_missing_program_abi_metadata() -> None:
+    band = load_fixture("incrementer").build_band()
+    band_artifact = utm_artifact_from_band(band)
+    program = UniversalInterpreter.for_encoding(band.encoding).lower_for_band(band_artifact).program
+    program_artifact = UTMProgramArtifact(program=program)
+
+    result = program_artifact.run(band_artifact, fuel=200_000)
+
+    assert result["status"] == "halted"
+
+
+def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
+    band = load_fixture("incrementer").build_band()
+    band_artifact = utm_artifact_from_band(band)
+    program = UniversalInterpreter.for_encoding(band.encoding).lower_for_band(band_artifact).program
+    mismatches = (
+        ("state_width", TMAbi(
+            band_artifact.target_abi.state_width + 1,
+            band_artifact.target_abi.symbol_width,
+            band_artifact.target_abi.dir_width,
+            band_artifact.target_abi.grammar_version,
+            "wrong-state",
+        )),
+        ("symbol_width", TMAbi(
+            band_artifact.target_abi.state_width,
+            band_artifact.target_abi.symbol_width + 1,
+            band_artifact.target_abi.dir_width,
+            band_artifact.target_abi.grammar_version,
+            "wrong-symbol",
+        )),
+        ("dir_width", TMAbi(
+            band_artifact.target_abi.state_width,
+            band_artifact.target_abi.symbol_width,
+            band_artifact.target_abi.dir_width + 1,
+            band_artifact.target_abi.grammar_version,
+            "wrong-dir",
+        )),
+        ("grammar_version", TMAbi(
+            band_artifact.target_abi.state_width,
+            band_artifact.target_abi.symbol_width,
+            band_artifact.target_abi.dir_width,
+            "mtm-v2",
+            "wrong-grammar",
+        )),
+    )
+
+    for field, wrong_abi in mismatches:
+        program_artifact = UTMProgramArtifact(program=program, target_abi=wrong_abi)
+        try:
+            program_artifact.run(band_artifact)
+        except ValueError as exc:
+            assert "ABI mismatch" in str(exc)
+            assert field in str(exc)
+        else:
+            raise AssertionError(f"expected {field} mismatch to be rejected")
+
+
 def test_universal_interpreter_for_encoded_matches_direct_lowering() -> None:
     band = load_fixture("incrementer").build_band()
     encoded = utm_encoded_from_band(band)

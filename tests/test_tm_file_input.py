@@ -10,7 +10,7 @@ from mtm.meta_asm import build_universal_meta_asm
 from mtm.source_file import load_python_tm, load_python_tm_instance
 from mtm.raw_transition_tm import TMTransitionProgram
 from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, encoded_band_from_utm_artifact, utm_artifact_from_band
-from mtm.source_encoding import R, TMProgram
+from mtm.source_encoding import R, TMAbi, TMProgram
 
 
 INCREMENTER_FILE = """\
@@ -242,3 +242,43 @@ def test_primary_program_and_band_artifact_work_together(tmp_path: Path) -> None
     assert program_artifact.minimal_abi == band_artifact.minimal_abi
     assert result["status"] == "halted"
     assert result["state"] == "U_HALT"
+
+
+def test_cli_run_preserves_program_side_abi_metadata(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
+    band_artifact = UTMBandArtifact.read(utm_path)
+    program_artifact = UTMProgramArtifact.read(raw_tm_path)
+    mismatched = UTMProgramArtifact(
+        program=program_artifact.program,
+        target_abi=TMAbi(
+            band_artifact.target_abi.state_width + 1,
+            band_artifact.target_abi.symbol_width,
+            band_artifact.target_abi.dir_width,
+            band_artifact.target_abi.grammar_version,
+            "mismatched",
+        ),
+        minimal_abi=program_artifact.minimal_abi,
+    )
+    mismatched.write(raw_tm_path)
+
+    with pytest.raises(ValueError, match="ABI mismatch"):
+        cli_main(["run", str(raw_tm_path), str(utm_path)])
+
+
+def test_cli_run_allows_old_tm_without_abi_metadata(tmp_path: Path, capsys) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
+    raw_tm = UTMProgramArtifact.read(raw_tm_path).program
+    raw_tm.write(raw_tm_path)
+
+    assert UTMProgramArtifact.read(raw_tm_path).target_abi is None
+    assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
+    output = capsys.readouterr().out
+    assert "FINAL STATUS: halted" in output

@@ -14,7 +14,6 @@ from .meta_asm import format_program
 from . import load_fixture
 from .pretty import pretty_registers, pretty_tape
 from .source_file import load_python_tm_instance
-from .raw_transition_tm import TMTransitionProgram
 from .semantic_objects import UTMBandArtifact, UTMEncoded, UTMProgramArtifact, start_head_from_encoded_band
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
@@ -145,12 +144,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "dbg":
         return _run_fixture_debugger(_resolve_debugger_fixture_name(args))
 
-    tm = TMTransitionProgram.read(args.tm_file)
     if args.input is None:
         raise SystemExit("run requires INPUT.utm.band")
     artifact = UTMBandArtifact.read(args.input)
     band = artifact.to_encoded_band()
-    program_artifact = UTMProgramArtifact(program=tm, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
+    program_artifact = UTMProgramArtifact.read(args.tm_file)
     config = artifact.to_raw_instance(program_artifact)
     runtime_tape = dict(config.tape)
     result = program_artifact.run(artifact, fuel=args.max_steps)
