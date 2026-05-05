@@ -261,21 +261,15 @@ class UTMProgramArtifact:
     minimal_abi: TMAbi | None = None
 
     def write(self, path: str | "Path") -> None:
-        self.program.write(path)
+        from .artifacts import write_utm_program_artifact
+
+        write_utm_program_artifact(path, self)
 
     @classmethod
-    def read(
-        cls,
-        path: str | "Path",
-        *,
-        target_abi: TMAbi | None = None,
-        minimal_abi: TMAbi | None = None,
-    ) -> "UTMProgramArtifact":
-        return cls(
-            program=TMTransitionProgram.read(path),
-            target_abi=target_abi,
-            minimal_abi=minimal_abi,
-        )
+    def read(cls, path: str | "Path") -> "UTMProgramArtifact":
+        from .artifacts import read_utm_program_artifact
+
+        return read_utm_program_artifact(path)
 
     def run(self, band_artifact: UTMBandArtifact, *, fuel: int = 100) -> dict[str, object]:
         """Run this universal-machine program on a band artifact."""

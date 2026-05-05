@@ -97,7 +97,7 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
     assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--asm-out", str(asm_path), "--tm-out", str(raw_tm_path)]) == 0
     artifact = read_utm_artifact(utm_path)
     band = artifact.to_encoded_band()
-    tm = UTMProgramArtifact.read(raw_tm_path, target_abi=artifact.target_abi, minimal_abi=artifact.minimal_abi)
+    tm = UTMProgramArtifact.read(raw_tm_path)
 
     assert utm_path.exists()
     assert asm_path.exists()
@@ -105,6 +105,8 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
     assert artifact.to_encoded_band() == band
     assert artifact.start_head < 0
     assert tm.program.start_state == "START_STEP"
+    assert tm.target_abi == artifact.target_abi
+    assert tm.minimal_abi == artifact.minimal_abi
     assert "LABEL START_STEP" in asm_path.read_text()
 
     assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
@@ -233,12 +235,10 @@ def test_primary_program_and_band_artifact_work_together(tmp_path: Path) -> None
     assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
 
     band_artifact = UTMBandArtifact.read(utm_path)
-    program_artifact = UTMProgramArtifact.read(
-        raw_tm_path,
-        target_abi=band_artifact.target_abi,
-        minimal_abi=band_artifact.minimal_abi,
-    )
+    program_artifact = UTMProgramArtifact.read(raw_tm_path)
     result = program_artifact.run(band_artifact, fuel=200_000)
 
+    assert program_artifact.target_abi == band_artifact.target_abi
+    assert program_artifact.minimal_abi == band_artifact.minimal_abi
     assert result["status"] == "halted"
     assert result["state"] == "U_HALT"

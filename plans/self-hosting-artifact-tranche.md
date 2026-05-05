@@ -52,7 +52,7 @@ Out of scope:
   Deliverables: `abi_to_literal`, `abi_from_literal`, `abi_compatible`, `assert_abi_compatible`; `.utm.band` and `.tm` artifact code use the same ABI literal path; `.tm` ABI parsing does not depend on an `Encoding` fallback.
   Validation: ABI literal round-trip tests; matching and mismatched compatibility helper tests.
 
-- [ ] S2: Make `.tm` metadata honest and usable.
+- [x] S2: Make `.tm` metadata honest and usable.
   Deliverables: `UTMProgramArtifact.write(...)` emits `target_abi` / `minimal_abi` when known; `UTMProgramArtifact.read(...)` returns persisted metadata or `None`; `read_tm(path) -> TMTransitionProgram` and `TMTransitionProgram.write(...)` remain raw-only.
   Validation: old `.tm` artifacts still read; new round-trip tests cover `.tm` with and without ABI metadata.
 
@@ -102,6 +102,7 @@ Out of scope:
 - 2026-05-05 19:20 EEST: Committed S7 as `85d74c8`. Validation: `uv run pytest -q`; `git diff --check`.
 - 2026-05-05 19:20 EEST: Restyled plan as a durable execute-disk-plan artifact.
 - 2026-05-05 19:26 EEST: Completed S1. Added shared ABI literal and compatibility helpers in `mtm/source_encoding.py`, updated `.utm.band` artifact IO to use them, and added focused helper tests. Validation: `uv run pytest -q tests/test_semantic_objects.py`; `git diff --check`.
+- 2026-05-05 19:48 EEST: Completed S2. Added ABI-aware `.tm` program artifact read/write paths, kept raw `TMTransitionProgram` IO metadata-blind, and updated artifact/CLI tests to read metadata from the file. Validation: `uv run pytest -q tests/test_semantic_objects.py tests/test_tm_file_input.py`; `git diff --check`.
 
 ## Findings / Debt
 

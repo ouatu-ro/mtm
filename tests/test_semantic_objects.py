@@ -202,6 +202,22 @@ def test_primary_tm_program_names_and_io(tmp_path) -> None:
     assert instance.state == raw_tm.start_state
 
 
+def test_utm_program_artifact_reads_old_raw_tm_without_abi_metadata(tmp_path) -> None:
+    builder = TMBuilder(["0"])
+    builder.emit("start", "0", builder.halt_state, "0", 0)
+    raw_tm = builder.build("start")
+    path = tmp_path / "old.tm"
+
+    raw_tm.write(path)
+    loaded = UTMProgramArtifact.read(path)
+
+    assert loaded.program == raw_tm
+    assert loaded.target_abi is None
+    assert loaded.minimal_abi is None
+    assert "target_abi" not in path.read_text()
+    assert "minimal_abi" not in path.read_text()
+
+
 def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
     band = load_fixture("incrementer").build_band()
     band_artifact = utm_artifact_from_band(band)
@@ -210,11 +226,8 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
     path = tmp_path / "utm.tm"
 
     program_artifact.write(path)
-    loaded = UTMProgramArtifact.read(
-        path,
-        target_abi=band_artifact.target_abi,
-        minimal_abi=band_artifact.minimal_abi,
-    )
+    loaded = UTMProgramArtifact.read(path)
+    raw_loaded = TMTransitionProgram.read(path)
     instance = band_artifact.to_raw_instance(loaded)
     legacy_instance = band_artifact.to_run_config(loaded)
     result = loaded.run(band_artifact, fuel=200_000)
@@ -222,7 +235,11 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
     final_view = decoded_view_from_encoded_band(final_band)
 
     assert loaded.program == program_artifact.program
+    assert raw_loaded == program_artifact.program
     assert loaded.target_abi == band_artifact.target_abi
+    assert loaded.minimal_abi == band_artifact.minimal_abi
+    assert "target_abi" in path.read_text()
+    assert "minimal_abi" in path.read_text()
     assert legacy_instance == instance
     assert instance.head == band_artifact.start_head
     assert instance.state == loaded.program.start_state

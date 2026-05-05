@@ -11,7 +11,7 @@ import ast
 from pathlib import Path
 
 from .raw_transition_tm import TMTransitionProgram
-from .semantic_objects import TMAbi, UTMBandArtifact
+from .semantic_objects import TMAbi, UTMBandArtifact, UTMProgramArtifact
 from .source_encoding import Encoding, abi_from_literal, abi_to_literal
 
 UTM_BAND_FORMAT = "mtm-utm-band-v1"
@@ -134,6 +134,25 @@ def write_tm(path: str | Path, tm: TMTransitionProgram) -> None:
     path.write_text(text + "\n")
 
 
+def write_utm_program_artifact(path: str | Path, artifact: UTMProgramArtifact) -> None:
+    """Write a UTM program artifact, including ABI metadata when known."""
+
+    path = Path(path)
+    fields = [
+        f"format = {RAW_TM_FORMAT!r}",
+        f"start_state = {_literal(artifact.program.start_state)}",
+        f"halt_state = {_literal(artifact.program.halt_state)}",
+        f"blank = {_literal(artifact.program.blank)}",
+        f"alphabet = {_literal(list(artifact.program.alphabet))}",
+        f"raw_tm = {_literal(artifact.program.prog)}",
+    ]
+    if artifact.target_abi is not None:
+        fields.append(f"target_abi = {_literal(abi_to_literal(artifact.target_abi))}")
+    if artifact.minimal_abi is not None:
+        fields.append(f"minimal_abi = {_literal(abi_to_literal(artifact.minimal_abi))}")
+    path.write_text("\n".join(fields) + "\n")
+
+
 def read_tm(path: str | Path) -> TMTransitionProgram:
     """Read a raw universal-machine ``.tm`` artifact without executing it."""
 
@@ -148,4 +167,29 @@ def read_tm(path: str | Path) -> TMTransitionProgram:
     )
 
 
-__all__ = ["read_tm", "read_utm_artifact", "write_tm", "write_utm_artifact"]
+def read_utm_program_artifact(path: str | Path) -> UTMProgramArtifact:
+    """Read a UTM program artifact, preserving persisted ABI metadata."""
+
+    namespace = _read_literal_assignments(path)
+    _require_format(namespace, RAW_TM_FORMAT)
+    return UTMProgramArtifact(
+        program=TMTransitionProgram(
+            prog=namespace["raw_tm"],
+            start_state=namespace["start_state"],
+            halt_state=namespace["halt_state"],
+            alphabet=tuple(namespace["alphabet"]),
+            blank=namespace["blank"],
+        ),
+        target_abi=None if namespace.get("target_abi") is None else abi_from_literal(namespace["target_abi"]),
+        minimal_abi=None if namespace.get("minimal_abi") is None else abi_from_literal(namespace["minimal_abi"]),
+    )
+
+
+__all__ = [
+    "read_tm",
+    "read_utm_artifact",
+    "read_utm_program_artifact",
+    "write_tm",
+    "write_utm_artifact",
+    "write_utm_program_artifact",
+]
