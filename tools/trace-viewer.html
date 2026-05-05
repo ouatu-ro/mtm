@@ -41,13 +41,13 @@
 
     main {
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
       min-height: 100vh;
       gap: 12px;
       padding: 16px;
     }
 
-    .toolbar, .status, .details {
+    .toolbar, .trace-info {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -95,23 +95,138 @@
     button.primary { background: var(--accent); border-color: var(--accent); color: white; }
     button:disabled { cursor: not-allowed; opacity: 0.45; }
 
-    .status {
+    .viewer-stack {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 10px;
+      align-content: center;
+      gap: 12px;
+      min-height: 0;
     }
 
-    .metric {
+    .trace-info {
+      width: min(100%, 1760px);
+      justify-self: center;
+    }
+
+    .trace-info {
+      display: grid;
+      grid-template-columns: minmax(680px, 2fr) minmax(360px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .encoded-strip {
+      display: grid;
+      gap: 12px;
+      width: min(100%, 760px);
+      justify-self: center;
+    }
+
+    .inspector-section {
+      display: grid;
+      gap: 5px;
       min-width: 0;
     }
 
-    .metric span {
+    .section-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .section-title.accent-run { color: #7ee0d1; }
+    .section-title.accent-raw { color: #f7c873; }
+    .section-title.accent-source { color: #8cb4ff; }
+    .section-title.accent-encoded { color: #c89cff; }
+
+    .inspector-panel {
+      display: grid;
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--line);
+    }
+
+    .run-card {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid rgba(126, 224, 209, 0.35);
+      border-radius: 7px;
+      background:
+        linear-gradient(135deg, rgba(69, 182, 169, 0.13), transparent 62%),
+        var(--panel);
+    }
+
+    .page-run {
+      position: fixed;
+      top: 86px;
+      right: 16px;
+      z-index: 5;
+      width: 260px;
+    }
+
+    .run-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .run-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .run-value {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .run-symbol {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+
+    .execution-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .runtime-info {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .info-cell {
+      min-width: 0;
+      background: var(--panel);
+      padding: 8px 10px;
+    }
+
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+
+    .info-cell span {
       display: block;
       color: var(--muted);
       font-size: 12px;
     }
 
-    .metric strong {
+    .info-cell strong {
       display: block;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -120,11 +235,36 @@
       font-size: 13px;
     }
 
+    .status-pill {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 2px 9px;
+      border: 1px solid var(--line);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .status-initial { color: #82cfff; border-color: #38647d; background: rgba(80, 170, 220, 0.12); }
+    .status-stepped { color: #7ee0d1; border-color: #2f6e68; background: rgba(69, 182, 169, 0.14); }
+    .status-halted { color: #a8d672; border-color: #587a3b; background: rgba(120, 190, 85, 0.14); }
+    .status-stuck, .status-fuel_exhausted { color: #ffb36e; border-color: #8a5d2f; background: rgba(255, 150, 70, 0.14); }
+
+    .raw-value {
+      color: var(--muted);
+    }
+
     .tape-viewport {
       overflow-x: auto;
       overflow-y: hidden;
       min-height: 106px;
       scrollbar-width: thin;
+      width: 100%;
+      justify-self: stretch;
     }
 
     .tape {
@@ -133,6 +273,7 @@
       grid-auto-columns: var(--cell-width, 48px);
       gap: 4px;
       align-items: stretch;
+      justify-content: center;
       width: max-content;
       min-width: 100%;
       min-height: 106px;
@@ -153,7 +294,15 @@
       opacity: 0.42;
     }
 
-    .cell.changed { background: var(--changed); }
+    @keyframes changed-pulse {
+      0% { background: var(--changed); box-shadow: 0 0 0 1px rgba(255, 216, 102, 0.85); }
+      100% { background: var(--panel); box-shadow: none; }
+    }
+
+    .cell.changed {
+      animation: changed-pulse 170ms ease-out;
+    }
+
     .cell.head { border-color: var(--head); box-shadow: inset 0 -3px 0 var(--head); }
 
     .addr {
@@ -171,6 +320,287 @@
       white-space: nowrap;
       font-size: 13px;
       font-weight: 700;
+    }
+
+    .info-cell.changed {
+      animation: changed-pulse 170ms ease-out;
+    }
+
+    @keyframes band-change-pulse {
+      0% { background: #ffd86a; box-shadow: 0 0 0 1px rgba(255, 216, 102, 0.95); color: #071113; }
+      100% { background: var(--panel); box-shadow: none; }
+    }
+
+    .cell.band-changed {
+      animation: band-change-pulse 510ms ease-out;
+    }
+
+    .last-write-badge.band-changed {
+      animation: band-change-pulse 510ms ease-out;
+    }
+
+    .transition-card {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid rgba(247, 200, 115, 0.32);
+      border-radius: 7px;
+      background:
+        linear-gradient(135deg, rgba(247, 200, 115, 0.12), transparent 58%),
+        var(--panel);
+    }
+
+    .transition-formula {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto auto minmax(260px, 1fr) auto auto;
+      gap: 12px;
+      align-items: center;
+      min-width: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .transition-field {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .transition-field.state-field {
+      min-width: 0;
+      align-items: center;
+    }
+
+    .transition-label {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .transition-label::after {
+      content: ":";
+    }
+
+    .transition-state {
+      display: flex;
+      align-items: center;
+      overflow-wrap: anywhere;
+      white-space: normal;
+      min-height: 2.3em;
+      line-height: 1.15;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .transition-arrow,
+    .transition-move {
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .transition-move {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      height: 20px;
+      border-radius: 5px;
+      padding: 0 6px;
+      background: #f7c873;
+      color: #071113;
+      text-align: center;
+      line-height: 1;
+    }
+
+    .last-write-badge {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(247, 200, 115, 0.28);
+      border-radius: 6px;
+      padding: 7px 9px;
+      background: rgba(247, 200, 115, 0.07);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .last-write-badge strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      overflow: hidden;
+    }
+
+    .source-card {
+      display: grid;
+      gap: 7px;
+      padding: 13px 12px;
+      border: 1px solid rgba(140, 180, 255, 0.28);
+      border-radius: 7px;
+      background:
+        linear-gradient(135deg, rgba(140, 180, 255, 0.10), transparent 60%),
+        var(--panel);
+    }
+
+    .source-block,
+    .source-routine,
+    .source-instruction {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      white-space: normal;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .source-field {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 8px;
+      align-items: baseline;
+      min-width: 0;
+      border-radius: 5px;
+      padding: 2px 4px;
+    }
+
+    .source-field.changed {
+      animation: changed-pulse 170ms ease-out;
+    }
+
+    .source-field.source-routine-field {
+      margin-left: 18px;
+    }
+
+    .source-field.source-instruction-field,
+    .source-field.source-op-field {
+      margin-left: 36px;
+    }
+
+    .source-field.source-routine-field,
+    .source-field.source-instruction-field,
+    .source-field.source-op-field {
+      position: relative;
+    }
+
+    .source-field.source-routine-field::before,
+    .source-field.source-instruction-field::before,
+    .source-field.source-op-field::before {
+      content: "";
+      position: absolute;
+      left: -11px;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: rgba(140, 180, 255, 0.26);
+    }
+
+    .source-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .source-label::after {
+      content: ":";
+    }
+
+    .source-block {
+      color: #8cb4ff;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .source-routine {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .source-instruction {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .source-op {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .encoded-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .encoded-group {
+      display: grid;
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid rgba(200, 156, 255, 0.22);
+      border-radius: 7px;
+      background: var(--line);
+      min-width: 0;
+    }
+
+    .encoded-group-title {
+      background: rgba(200, 156, 255, 0.12);
+      color: #c89cff;
+      padding: 6px 9px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .encoded-group .info-cell {
+      padding: 6px 8px;
+    }
+
+    .symbol-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      max-width: 100%;
+      height: 20px;
+      border-radius: 5px;
+      padding: 0 6px;
+      color: #071113;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+      vertical-align: middle;
+    }
+
+    .symbol-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .symbol-with-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      max-width: 100%;
     }
 
     .legend {
@@ -210,23 +640,20 @@
       white-space: nowrap;
     }
 
-    .details {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-
-    pre {
-      margin: 0;
-      overflow: auto;
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 13px;
-    }
-
     @media (max-width: 760px) {
       main { padding: 10px; }
-      .status, .details { grid-template-columns: 1fr; }
+      .trace-info { grid-template-columns: 1fr; }
+      .page-run {
+        position: static;
+        width: auto;
+        justify-self: stretch;
+      }
+      .transition-formula { grid-template-columns: 1fr; }
+      .transition-field { justify-content: space-between; }
+      .transition-arrow, .transition-move { text-align: left; }
+      .encoded-grid { grid-template-columns: 1fr; }
+      .execution-grid, .runtime-info { grid-template-columns: 1fr 1fr; }
+      .span-2, .span-3, .span-4 { grid-column: span 2; }
       input[type="file"] { max-width: 160px; }
     }
   </style>
@@ -236,7 +663,9 @@
     <section class="toolbar">
       <label>Meta JSON <input id="metaFile" type="file" accept=".json,application/json"></label>
       <label>Raw TSV <input id="traceFile" type="file" accept=".tsv,text/tab-separated-values,text/plain"></label>
-      <button id="fixtureBtn">Load Incrementer</button>
+      <button id="incrementerFixtureBtn">Load Incrementer Full</button>
+      <button id="walkFixtureBtn">Load R/L Demo</button>
+      <button id="walkL1FixtureBtn">Load R/L L1</button>
       <button id="resetBtn">Reset</button>
       <button id="playBtn" class="primary">Play</button>
       <button id="step1Btn">+1</button>
@@ -247,24 +676,117 @@
       <label>Cells <input id="cellsInput" type="number" min="7" max="151" value="51"></label>
     </section>
 
-    <section class="status">
-      <div class="metric"><span>Row</span><strong id="rowMetric">0 / 0</strong></div>
-      <div class="metric"><span>State</span><strong id="stateMetric">-</strong></div>
-      <div class="metric"><span>Head</span><strong id="headMetric">-</strong></div>
-      <div class="metric"><span>Status</span><strong id="statusMetric">-</strong></div>
-      <div class="metric"><span>Blank</span><strong id="blankMetric">-</strong></div>
-    </section>
+    <aside class="inspector-section page-run">
+      <div class="section-title accent-run">Run</div>
+      <div class="run-card">
+        <div class="run-row">
+          <span class="run-label">Row</span>
+          <strong id="rowMetric" class="run-value">0 / 0</strong>
+        </div>
+        <div class="run-row">
+          <span class="run-label">Status</span>
+          <strong id="statusMetric" class="status-pill">-</strong>
+        </div>
+        <div class="run-row">
+          <span class="run-label">Head</span>
+          <strong id="headMetric" class="run-value">-</strong>
+        </div>
+        <div class="run-row">
+          <span class="run-label">Symbol</span>
+          <strong id="headSymbolMetric" class="run-symbol">-</strong>
+        </div>
+      </div>
+    </aside>
 
-    <section id="tapeViewport" class="tape-viewport">
-      <div id="tape" class="tape"></div>
-    </section>
+    <div class="viewer-stack">
+      <section id="tapeViewport" class="tape-viewport">
+        <div id="tape" class="tape"></div>
+      </section>
 
-    <section id="legend" class="legend"></section>
+      <section class="trace-info">
+            <div class="inspector-section">
+              <div class="section-title accent-raw">Raw Transition</div>
+              <div class="transition-card">
+                <div id="rawFormula" class="transition-formula">
+                  <div class="transition-field state-field">
+                    <span class="transition-label">q</span>
+                    <strong id="stateMetric" class="transition-state">-</strong>
+                  </div>
+                  <div class="transition-field">
+                    <span class="transition-label">read</span>
+                    <span id="readMetric">-</span>
+                  </div>
+                  <span class="transition-arrow">-&gt;</span>
+                  <div class="transition-field state-field">
+                    <span class="transition-label">q'</span>
+                    <strong id="nextStateMetric" class="transition-state">-</strong>
+                  </div>
+                  <div class="transition-field">
+                    <span class="transition-label">write</span>
+                    <span id="writeMetric">-</span>
+                  </div>
+                  <div class="transition-field">
+                    <span class="transition-label">Move</span>
+                    <strong id="moveMetric" class="transition-move">-</strong>
+                  </div>
+                </div>
+                <div id="lastWriteCell" class="last-write-badge">
+                  <span>Last Write</span>
+                  <strong id="lastWriteMetric">-</strong>
+                </div>
+              </div>
+            </div>
 
-    <section class="details">
-      <pre id="transitionPanel">Load a trace meta JSON and raw TSV to begin.</pre>
-      <pre id="sourcePanel"></pre>
-    </section>
+            <div class="inspector-section">
+              <div class="section-title accent-source">Source Mapping</div>
+              <div class="source-card">
+                <div id="blockInfoCell" class="source-field source-block-field">
+                  <span class="source-label">Block</span>
+                  <strong id="blockMetric" class="source-block">-</strong>
+                </div>
+                <div id="routineInfoCell" class="source-field source-routine-field">
+                  <span class="source-label">Routine</span>
+                  <strong id="routineMetric" class="source-routine">-</strong>
+                </div>
+                <div id="instructionInfoCell" class="source-field source-instruction-field">
+                  <span class="source-label">Instr</span>
+                  <strong id="instructionMetric" class="source-instruction">-</strong>
+                </div>
+                <div id="opInfoCell" class="source-field source-op-field">
+                  <span class="source-label">Op</span>
+                  <span id="opMetric" class="source-op">-</span>
+                </div>
+              </div>
+            </div>
+      </section>
+
+      <section class="encoded-strip">
+        <div class="inspector-section">
+          <div class="section-title accent-encoded">Encoded / Extracted Fields</div>
+          <div class="encoded-grid">
+            <div class="encoded-group">
+              <div class="encoded-group-title">Current</div>
+              <div id="curStateRegisterCell" class="info-cell"><span>CUR_STATE</span><strong id="curStateRegisterMetric">-</strong></div>
+              <div id="curSymbolRegisterCell" class="info-cell"><span>CUR_SYMBOL</span><strong id="curSymbolRegisterMetric">-</strong></div>
+            </div>
+            <div class="encoded-group">
+              <div class="encoded-group-title">Next / Write</div>
+              <div id="nextStateRegisterCell" class="info-cell"><span>NEXT_STATE</span><strong id="nextStateRegisterMetric">-</strong></div>
+              <div id="writeSymbolRegisterCell" class="info-cell"><span>WRITE_SYMBOL</span><strong id="writeSymbolRegisterMetric">-</strong></div>
+              <div id="moveDirRegisterCell" class="info-cell"><span>MOVE_DIR</span><strong id="moveDirRegisterMetric">-</strong></div>
+            </div>
+            <div class="encoded-group">
+              <div class="encoded-group-title">Compare / Runtime</div>
+              <div id="cmpFlagRegisterCell" class="info-cell"><span>CMP_FLAG</span><strong id="cmpFlagRegisterMetric">-</strong></div>
+              <div id="tmpRegisterCell" class="info-cell"><span>TMP</span><strong id="tmpRegisterMetric">-</strong></div>
+              <div id="blankInfoCell" class="info-cell"><span>Blank</span><strong id="blankMetric" class="raw-value">-</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="legend" class="legend"></section>
+    </div>
   </main>
 
   <script src="assets/incrementer-raw-trace.js"></script>
@@ -278,6 +800,11 @@
       status: "",
       index: 0,
       changedAddress: null,
+      changedAddresses: new Set(),
+      writeCount: 0,
+      lastActualWrite: null,
+      lastRenderedHeadSymbol: null,
+      lastInfoValues: new Map(),
       timer: null,
       renderedStart: 0,
       renderedEnd: 0,
@@ -286,7 +813,9 @@
     const fields = {
       metaFile: document.getElementById("metaFile"),
       traceFile: document.getElementById("traceFile"),
-      fixtureBtn: document.getElementById("fixtureBtn"),
+      incrementerFixtureBtn: document.getElementById("incrementerFixtureBtn"),
+      walkFixtureBtn: document.getElementById("walkFixtureBtn"),
+      walkL1FixtureBtn: document.getElementById("walkL1FixtureBtn"),
       resetBtn: document.getElementById("resetBtn"),
       playBtn: document.getElementById("playBtn"),
       step1Btn: document.getElementById("step1Btn"),
@@ -296,20 +825,61 @@
       speedInput: document.getElementById("speedInput"),
       cellsInput: document.getElementById("cellsInput"),
       rowMetric: document.getElementById("rowMetric"),
+      blankInfoCell: document.getElementById("blankInfoCell"),
       stateMetric: document.getElementById("stateMetric"),
       headMetric: document.getElementById("headMetric"),
       statusMetric: document.getElementById("statusMetric"),
+      readMetric: document.getElementById("readMetric"),
+      nextStateMetric: document.getElementById("nextStateMetric"),
+      writeMetric: document.getElementById("writeMetric"),
+      moveMetric: document.getElementById("moveMetric"),
+      blockInfoCell: document.getElementById("blockInfoCell"),
+      blockMetric: document.getElementById("blockMetric"),
+      instructionInfoCell: document.getElementById("instructionInfoCell"),
+      instructionMetric: document.getElementById("instructionMetric"),
+      routineInfoCell: document.getElementById("routineInfoCell"),
+      routineMetric: document.getElementById("routineMetric"),
+      opInfoCell: document.getElementById("opInfoCell"),
+      opMetric: document.getElementById("opMetric"),
       blankMetric: document.getElementById("blankMetric"),
+      headSymbolMetric: document.getElementById("headSymbolMetric"),
+      lastWriteCell: document.getElementById("lastWriteCell"),
+      lastWriteMetric: document.getElementById("lastWriteMetric"),
+      curStateRegisterCell: document.getElementById("curStateRegisterCell"),
+      curStateRegisterMetric: document.getElementById("curStateRegisterMetric"),
+      curSymbolRegisterCell: document.getElementById("curSymbolRegisterCell"),
+      curSymbolRegisterMetric: document.getElementById("curSymbolRegisterMetric"),
+      writeSymbolRegisterCell: document.getElementById("writeSymbolRegisterCell"),
+      writeSymbolRegisterMetric: document.getElementById("writeSymbolRegisterMetric"),
+      nextStateRegisterCell: document.getElementById("nextStateRegisterCell"),
+      nextStateRegisterMetric: document.getElementById("nextStateRegisterMetric"),
+      moveDirRegisterCell: document.getElementById("moveDirRegisterCell"),
+      moveDirRegisterMetric: document.getElementById("moveDirRegisterMetric"),
+      cmpFlagRegisterCell: document.getElementById("cmpFlagRegisterCell"),
+      cmpFlagRegisterMetric: document.getElementById("cmpFlagRegisterMetric"),
+      tmpRegisterCell: document.getElementById("tmpRegisterCell"),
+      tmpRegisterMetric: document.getElementById("tmpRegisterMetric"),
       tapeViewport: document.getElementById("tapeViewport"),
       tape: document.getElementById("tape"),
       legend: document.getElementById("legend"),
-      transitionPanel: document.getElementById("transitionPanel"),
-      sourcePanel: document.getElementById("sourcePanel"),
     };
+
+    const REGISTERS = [
+      ["#CUR_STATE", "curStateRegisterCell", "curStateRegisterMetric"],
+      ["#CUR_SYMBOL", "curSymbolRegisterCell", "curSymbolRegisterMetric"],
+      ["#WRITE_SYMBOL", "writeSymbolRegisterCell", "writeSymbolRegisterMetric"],
+      ["#NEXT_STATE", "nextStateRegisterCell", "nextStateRegisterMetric"],
+      ["#MOVE_DIR", "moveDirRegisterCell", "moveDirRegisterMetric"],
+      ["#CMP_FLAG", "cmpFlagRegisterCell", "cmpFlagRegisterMetric"],
+      ["#TMP", "tmpRegisterCell", "tmpRegisterMetric"],
+    ];
 
     const SYMBOL_STYLE = {
       "0": ["0", "#9fd0ff"],
       "1": ["1", "#f7c873"],
+      "A": ["A", "#f3a6b6"],
+      "B": ["B", "#a8d672"],
+      "C": ["C", "#f0df6a"],
       "#REGS": ["REG", "#8fd19e"],
       "#END_REGS": ["/REG", "#8fd19e"],
       "#RULES": ["RLS", "#f39b6d"],
@@ -374,6 +944,11 @@
       state.status = "initial";
       state.index = 0;
       state.changedAddress = null;
+      state.changedAddresses = new Set();
+      state.writeCount = 0;
+      state.lastActualWrite = null;
+      state.lastRenderedHeadSymbol = null;
+      state.lastInfoValues = new Map();
       render({ center: true });
     }
 
@@ -393,6 +968,10 @@
       return String(state.meta?.blank ?? "_");
     }
 
+    function tapeSymbol(address) {
+      return state.tape.get(address) ?? blankSymbol();
+    }
+
     function symbolInfo(symbol) {
       if (symbol === blankSymbol()) return { label: "·", color: "#65717b", full: symbol, blank: true };
       const known = SYMBOL_STYLE[symbol];
@@ -401,26 +980,65 @@
       return { label: symbol, color: "#d9dde1", full: symbol, blank: false };
     }
 
+    function symbolChip(symbol, options = {}) {
+      const text = symbol === "" || symbol === undefined || symbol === null ? "-" : String(symbol);
+      if (text === "-") return document.createTextNode("-");
+      const info = symbolInfo(text);
+      const chip = document.createElement("span");
+      chip.className = "symbol-chip";
+      chip.style.background = info.color;
+      chip.textContent = info.label;
+      chip.title = info.full;
+      if (!options.withName) return chip;
+
+      const wrapper = document.createElement("span");
+      wrapper.className = "symbol-with-name";
+      const name = document.createElement("span");
+      name.className = "symbol-name";
+      name.textContent = info.full;
+      name.title = info.full;
+      wrapper.append(chip, name);
+      return wrapper;
+    }
+
+    function renderSymbolMetric(element, symbol, options = {}) {
+      element.replaceChildren(symbolChip(symbol, options));
+    }
+
     function step(count) {
       if (!state.meta || !state.rows.length) {
         stop();
         return;
       }
+      const changedAddresses = new Set();
+      let lastChangedAddress = null;
+      let writeCount = 0;
+      let lastActualWrite = state.lastActualWrite;
       for (let i = 0; i < count && state.index < state.rows.length; i += 1) {
         const row = state.rows[state.index];
         const write = row.write ?? "";
         const beforeHead = state.head;
+        const previous = tapeSymbol(beforeHead);
         if (write === blankSymbol()) {
           state.tape.delete(beforeHead);
         } else if (write !== "") {
           state.tape.set(beforeHead, write);
         }
-        state.changedAddress = write === "" ? null : beforeHead;
+        if (write !== "" && write !== previous) {
+          changedAddresses.add(beforeHead);
+          lastChangedAddress = beforeHead;
+          writeCount += 1;
+          lastActualWrite = { address: beforeHead, read: previous, write };
+        }
         state.head = row.head_after === "" ? state.head : Number(row.head_after);
         state.currentState = row.next_state || row.state || state.currentState;
         state.status = row.status || "";
         state.index += 1;
       }
+      state.changedAddress = lastChangedAddress;
+      state.changedAddresses = changedAddresses;
+      state.writeCount = writeCount;
+      state.lastActualWrite = lastActualWrite;
       render({ follow: Boolean(state.timer) });
       if (state.index >= state.rows.length) stop();
     }
@@ -428,7 +1046,7 @@
     function renderedRange() {
       const count = cellCount();
       const addresses = [...state.tape.keys(), state.head];
-      if (state.changedAddress !== null) addresses.push(state.changedAddress);
+      for (const address of state.changedAddresses) addresses.push(address);
       const low = Math.min(...addresses);
       const high = Math.max(...addresses);
       const margin = Math.max(3, Math.ceil(count * 0.12));
@@ -462,11 +1080,141 @@
       const viewport = fields.tapeViewport;
       const leftLimit = viewport.scrollLeft + (viewport.clientWidth * 0.25);
       const rightLimit = viewport.scrollLeft + (viewport.clientWidth * 0.75);
-      const headLeft = cell.offsetLeft;
-      const headRight = cell.offsetLeft + cell.offsetWidth;
-      if (headLeft < leftLimit || headRight > rightLimit) {
-        centerHead();
+      const headCenter = cell.offsetLeft + (cell.offsetWidth / 2);
+      if (headCenter < leftLimit) {
+        viewport.scrollLeft -= leftLimit - headCenter;
+      } else if (headCenter > rightLimit) {
+        viewport.scrollLeft += headCenter - rightLimit;
       }
+    }
+
+    function setStatus(value) {
+      const status = value || "-";
+      fields.statusMetric.textContent = status;
+      fields.statusMetric.className = "status-pill";
+      fields.statusMetric.classList.add(`status-${status}`);
+      state.lastInfoValues.set("status", status);
+    }
+
+    function rowHasSource(row) {
+      return Boolean(row && (row.block || row.instruction || row.routine_name || row.op_index));
+    }
+
+    function rowHasTransition(row) {
+      return Boolean(row && (row.read || row.write || row.move || row.next_state));
+    }
+
+    function nearestSourceRow() {
+      if (!state.rows.length) return null;
+      const start = Math.min(state.index, state.rows.length - 1);
+      for (let index = start; index >= 0; index -= 1) {
+        if (rowHasSource(state.rows[index])) return state.rows[index];
+      }
+      return null;
+    }
+
+    function lastTransitionRow() {
+      const start = Math.min(state.index - 1, state.rows.length - 1);
+      for (let index = start; index >= 0; index -= 1) {
+        if (rowHasTransition(state.rows[index])) return state.rows[index];
+      }
+      return null;
+    }
+
+    function routineSummary(row) {
+      if (!row) return "-";
+      const name = row.routine_name || "-";
+      return row.routine_index ? `${row.routine_index}:${name}` : name;
+    }
+
+    function fieldValue(marker) {
+      const markerEntry = [...state.tape.entries()].find(([, symbol]) => symbol === marker);
+      if (!markerEntry) return { value: "-", addresses: [] };
+      const addresses = [];
+      const bits = [];
+      for (let address = markerEntry[0] + 1; address < markerEntry[0] + 128; address += 1) {
+        const symbol = tapeSymbol(address);
+        if (symbol === "#END_FIELD" || symbol === blankSymbol()) break;
+        bits.push(symbol);
+        addresses.push(address);
+      }
+      return { value: bits.length ? bits.join("") : "-", addresses };
+    }
+
+    function pulseIf(element, condition) {
+      element.classList.remove("changed");
+      if (!condition) return;
+      void element.offsetWidth;
+      element.classList.add("changed");
+    }
+
+    function pulseBandIf(element, condition) {
+      element.classList.remove("band-changed");
+      if (!condition) return;
+      void element.offsetWidth;
+      element.classList.add("band-changed");
+    }
+
+    function setInfoMetric(key, cell, metric, value) {
+      const text = String(value || "-");
+      const previous = state.lastInfoValues.get(key);
+      metric.textContent = text;
+      pulseIf(cell, previous !== undefined && previous !== text);
+      state.lastInfoValues.set(key, text);
+    }
+
+    function setTextMetric(metric, value) {
+      metric.textContent = String(value || "-");
+      metric.title = String(value || "-");
+    }
+
+    function setPulsingTextMetric(key, cell, metric, value) {
+      const text = String(value || "-");
+      const previous = state.lastInfoValues.get(key);
+      metric.textContent = text;
+      metric.title = text;
+      pulseIf(cell, previous !== undefined && previous !== text);
+      state.lastInfoValues.set(key, text);
+    }
+
+    function moveLabel(value) {
+      if (value === "1" || value === 1) return "R";
+      if (value === "-1" || value === -1) return "L";
+      if (value === "0" || value === 0) return "S";
+      return value || "-";
+    }
+
+    function renderTransition(row) {
+      setTextMetric(fields.stateMetric, row?.state || state.currentState || "-");
+      setTextMetric(fields.nextStateMetric, row?.next_state || "-");
+      setTextMetric(fields.moveMetric, moveLabel(row?.move));
+      renderSymbolMetric(fields.readMetric, row?.read || "-");
+      renderSymbolMetric(fields.writeMetric, row?.write || "-");
+    }
+
+    function renderLastWrite() {
+      fields.lastWriteMetric.replaceChildren();
+      if (!state.lastActualWrite) {
+        fields.lastWriteMetric.textContent = "-";
+        pulseBandIf(fields.lastWriteCell, false);
+        return;
+      }
+
+      const prefix = state.writeCount > 1
+        ? `changed ${state.writeCount}; last @ ${state.lastActualWrite.address}:`
+        : `@ ${state.lastActualWrite.address}:`;
+      fields.lastWriteMetric.append(document.createTextNode(prefix + " "));
+      fields.lastWriteMetric.append(symbolChip(state.lastActualWrite.read));
+      fields.lastWriteMetric.append(document.createTextNode(" -> "));
+      fields.lastWriteMetric.append(symbolChip(state.lastActualWrite.write));
+      pulseBandIf(fields.lastWriteCell, state.writeCount > 0);
+    }
+
+    function renderSource(row) {
+      setPulsingTextMetric("block", fields.blockInfoCell, fields.blockMetric, row?.block || "-");
+      setPulsingTextMetric("routine", fields.routineInfoCell, fields.routineMetric, routineSummary(row));
+      setPulsingTextMetric("instruction", fields.instructionInfoCell, fields.instructionMetric, row?.instruction || "-");
+      setPulsingTextMetric("op", fields.opInfoCell, fields.opMetric, row?.op_index || "-");
     }
 
     function play() {
@@ -500,11 +1248,18 @@
 
     function render(options = {}) {
       updateCellWidth();
-      fields.rowMetric.textContent = `${state.index} / ${state.rows.length}`;
-      fields.stateMetric.textContent = state.currentState || "-";
-      fields.headMetric.textContent = String(state.head);
-      fields.statusMetric.textContent = state.status || "-";
-      fields.blankMetric.textContent = blankSymbol();
+      setTextMetric(fields.rowMetric, `${state.index} / ${state.rows.length}`);
+      setStatus(state.status);
+      const sourceRow = nearestSourceRow();
+      const transitionRow = lastTransitionRow();
+      setTextMetric(fields.headMetric, String(state.head));
+      renderTransition(transitionRow);
+      renderSource(sourceRow);
+      setTextMetric(fields.blankMetric, blankSymbol());
+      const headSymbol = tapeSymbol(state.head);
+      renderSymbolMetric(fields.headSymbolMetric, headSymbol);
+      renderLastWrite();
+      state.lastRenderedHeadSymbol = headSymbol;
 
       fields.tape.replaceChildren();
       const range = renderedRange();
@@ -516,7 +1271,7 @@
         cell.className = "cell";
         cell.dataset.address = String(address);
         if (address === state.head) cell.classList.add("head");
-        if (address === state.changedAddress) cell.classList.add("changed");
+        if (state.changedAddresses.has(address)) cell.classList.add("band-changed");
         const addr = document.createElement("div");
         addr.className = "addr";
         addr.textContent = String(address);
@@ -532,31 +1287,29 @@
         cell.append(addr, sym);
         fields.tape.append(cell);
       }
+      renderRegisters();
       renderLegend(visibleSymbols);
-
-      const row = state.rows[Math.max(0, state.index - 1)];
-      fields.transitionPanel.textContent = row
-        ? `(${row.state}, ${row.read}) -> (${row.next_state}, ${row.write}, ${row.move})\nhead_after: ${row.head_after}`
-        : "Initial snapshot";
-      fields.sourcePanel.textContent = row
-        ? [
-            `block: ${row.block || "-"}`,
-            `instruction: ${row.instruction || "-"}`,
-            `routine: ${row.routine_name || "-"}`,
-            `op_index: ${row.op_index || "-"}`,
-          ].join("\n")
-        : "";
       requestAnimationFrame(() => {
         if (options.center) centerHead();
         if (options.follow) followHeadInScroll();
       });
     }
 
+    function renderRegisters() {
+      for (const [marker, cellKey, metricKey] of REGISTERS) {
+        const field = fieldValue(marker);
+        const cell = fields[cellKey];
+        const metric = fields[metricKey];
+        metric.textContent = field.value;
+        metric.title = marker;
+        pulseIf(cell, field.addresses.some((address) => state.changedAddresses.has(address)));
+      }
+    }
+
     function renderLegend(symbols) {
       fields.legend.replaceChildren();
       for (const symbol of [...symbols].sort()) {
         const info = symbolInfo(symbol);
-        if (info.blank) continue;
         const item = document.createElement("span");
         item.className = "legend-item";
         const chip = document.createElement("span");
@@ -586,16 +1339,20 @@
       reset();
     });
 
-    fields.fixtureBtn.addEventListener("click", () => {
-      const fixture = window.MTM_TRACE_FIXTURES?.incrementer;
+    function loadFixture(key) {
+      const fixture = window.MTM_TRACE_FIXTURES?.[key];
       if (!fixture) {
-        fields.transitionPanel.textContent = "Missing tools/assets/incrementer-raw-trace.js";
+        fields.instructionMetric.textContent = `missing ${key}`;
         return;
       }
       fields.metaFile.value = "";
       fields.traceFile.value = "";
       loadTrace(fixture.meta, fixture.trace);
-    });
+    }
+
+    fields.incrementerFixtureBtn.addEventListener("click", () => loadFixture("incrementerFull"));
+    fields.walkFixtureBtn.addEventListener("click", () => loadFixture("rightLeftWalk"));
+    fields.walkL1FixtureBtn.addEventListener("click", () => loadFixture("rightLeftWalkL1"));
 
     fields.resetBtn.addEventListener("click", reset);
     fields.playBtn.addEventListener("click", play);
