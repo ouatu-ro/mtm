@@ -42,7 +42,7 @@ Out of scope:
   Add `#HALT_STATE`, `#BLANK_SYMBOL`, `#LEFT_DIR`, and `#RIGHT_DIR` to the
   structural alphabet, register-band layout, semantic register objects,
   pretty/parsing helpers, and generated fixture expectations.
-- [ ] S2: Remove guest-width literals from the universal interpreter.
+- [x] S2: Remove guest-width literals from the universal interpreter.
   Replace baked halt and direction literal checks with band-field comparisons.
   Add or expose `COMPARE_GLOBAL_GLOBAL` if needed by MetaASM and lowering.
 - [ ] S3: Implement delimiter-aware compare and copy in the MetaASM host.
@@ -87,14 +87,18 @@ Out of scope:
   register layout, semantic register decode/re-encode, pretty parsing, object
   model docs, and focused semantic-object tests. Validation:
   `uv run python -m pytest tests/test_semantic_objects.py tests/test_tm_file_input.py`.
+- 2026-05-06 07:43 EEST: S2 completed. Added `COMPARE_GLOBAL_GLOBAL`, switched
+  the universal program to band-field halt and direction comparisons, updated
+  debugger/trace expectations, and kept compare semantics exact-width for now.
+  Validation: `uv run python -m pytest tests/test_meta_asm.py tests/test_semantic_objects.py::test_universal_dispatch_treats_non_left_non_right_direction_as_stay tests/test_lowering.py::test_lowered_start_step_matches_host_block tests/test_lowering.py::test_compare_global_global_matches_host_block tests/test_debugger_session.py::test_session_status_query_and_render_include_cursor_latest_and_max_raw tests/test_debugger_session.py::test_session_where_renders_setup_for_entry_location tests/test_debugger_presenter.py::test_presenter_status_doc_exposes_block_structure tests/test_raw_trace.py::test_format_trace_view_renders_semantic_summary_for_decoded_band tests/test_tm_file_input.py::test_cli_trace_emits_raw_instruction_and_block_levels`.
 
 ## Findings / Debt
 
-- [ ] D1: Direction constants have the same ABI-width issue as halt state.
+- [x] D1: Direction constants have the same ABI-width issue as halt state.
   Impact: A wider host comparing `#MOVE_DIR` against baked host-width `L` or
   `R` literals would still reject a valid narrower band.
-  Recommendation: Do now as part of S1/S2 by adding `#LEFT_DIR` and
-  `#RIGHT_DIR`.
+  Resolved: S1 added `#LEFT_DIR` and `#RIGHT_DIR`; S2 switched dispatch to
+  compare `#MOVE_DIR` against those band fields.
 - [ ] D2: Cell-field copies use different terminators.
   Impact: `#END_CELL` and `#END_FIELD` are not interchangeable, so head-symbol
   copies must stop on the source terminator while preserving the destination's

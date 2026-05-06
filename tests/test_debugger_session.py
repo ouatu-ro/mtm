@@ -87,13 +87,13 @@ def test_session_status_query_and_render_include_cursor_latest_and_max_raw() -> 
     assert status.snapshot.hist_last == 0
     assert status.source.block == "START_STEP"
     assert status.source.instr == "0"
-    assert status.source.routine == "0:compare_global_literal"
+    assert status.source.routine == "0:compare_global_global"
 
     rendered = _render_status(session)
     assert rendered.splitlines()[0] == "running  raw=0  max_raw=100000  hist=0/0"
-    assert rendered.splitlines()[1] == "RAW          raw=0  head=-155  read='#CUR_STATE'  state=START_STEP"
-    assert rendered.splitlines()[2] == "SOURCE       block=START_STEP  instr=0  routine=0:compare_global_literal  op=0"
-    assert rendered.splitlines()[3] == "INSTRUCTION  COMPARE_GLOBAL_LITERAL #CUR_STATE 01"
+    assert rendered.splitlines()[1] == "RAW          raw=0  head=-169  read='#CUR_STATE'  state=START_STEP"
+    assert rendered.splitlines()[2] == "SOURCE       block=START_STEP  instr=0  routine=0:compare_global_global  op=0"
+    assert rendered.splitlines()[3] == "INSTRUCTION  COMPARE_GLOBAL_GLOBAL #CUR_STATE #HALT_STATE 2"
 
     session.step_many("raw", 2)
     session.back_many("raw", 1)
@@ -107,9 +107,9 @@ def test_session_where_renders_setup_for_entry_location() -> None:
     session, _ = _build_incrementer_session()
     where = _render_where(session)
     lines = where.splitlines()
-    assert lines[0] == "SOURCE       block=START_STEP  instr=0  routine=0:compare_global_literal  op=0"
-    assert lines[1] == "INSTRUCTION  COMPARE_GLOBAL_LITERAL #CUR_STATE 01"
-    assert lines[2] == "             Compare register #CUR_STATE against literal bits 01."
+    assert lines[0] == "SOURCE       block=START_STEP  instr=0  routine=0:compare_global_global  op=0"
+    assert lines[1] == "INSTRUCTION  COMPARE_GLOBAL_GLOBAL #CUR_STATE #HALT_STATE 2"
+    assert lines[2] == "             Compare register #CUR_STATE against register #HALT_STATE over 2 bits."
     assert lines[3].startswith("NEXT ROW     state=START_STEP  read='#CUR_STATE'")
 
 

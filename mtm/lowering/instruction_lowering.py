@@ -8,7 +8,7 @@ TMBuilder.
 
 from __future__ import annotations
 
-from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
+from ..meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
 from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, END_TAPE_LEFT, END_CELL, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, RUNTIME_BLANK, TAPE, TAPE_LEFT, WRITE_SYMBOL
 from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_until_one_of, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
 from .constants import ACTIVE_RULE, L, Label, R, S, global_direction
@@ -377,6 +377,59 @@ def _compare_global_literal_routine(state: Label, cont: Label, global_marker: st
     return draft.build()
 
 
+def _compare_global_global_routine(state: Label, cont: Label, src_marker: str, dst_marker: str, width: int) -> Routine:
+    draft = RoutineDraft("compare_global_global", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(CMP_FLAG))
+    if src_marker == dst_marker:
+        seek_regs = draft.local("seek_regs")
+        seek_cmp = draft.local("seek_cmp")
+        _seek_regs_from_anywhere(draft, state, target=seek_regs)
+        seek(draft, seek_regs, markers={CMP_FLAG}, direction="R", target=seek_cmp)
+        _write_cmp_flag(draft, seek_cmp, bit="1", target=cont)
+        return draft.build()
+
+    to_dst = global_direction(src_marker, dst_marker)
+    to_src = global_direction(dst_marker, src_marker)
+    dir_to_cmp = global_direction(dst_marker, CMP_FLAG)
+    seek_regs = draft.local("seek_regs")
+    current = draft.local("seek_src")
+    _seek_regs_from_anywhere(draft, state, target=seek_regs)
+    seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
+    for index in range(width):
+        branches = branch_bit_at_offset(
+            draft,
+            current,
+            offset=index + 1,
+            move_after_read=R if to_dst == "R" else L,
+            prefix="src",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
+        for branch in branches:
+            dst_marker_state = draft.local(f"dst_marker_{branch.bit}_{index}")
+            dst_read = draft.local(f"dst_read_{branch.bit}_{index}")
+            mismatch_bit = "1" if branch.bit == "0" else "0"
+            mismatch_seek = draft.local(f"mismatch_seek_{branch.bit}_{index}")
+            cmp_false_state = draft.local(f"false_cmp_{branch.bit}_{index}")
+            seek(draft, branch.state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
+            move_steps(draft, dst_marker_state, steps=index + 1, direction="R", target=dst_read)
+            draft.add(EmitOp(dst_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
+            seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+            _write_cmp_flag(draft, cmp_false_state, bit="0", target=cont)
+            if next_iter is not None:
+                back_to_src = draft.local(f"back_to_src_{branch.bit}_{index}")
+                draft.add(EmitOp(dst_read, branch.bit, back_to_src, branch.bit, S))
+                seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
+            else:
+                match_seek = draft.local(f"match_seek_{branch.bit}_{index}")
+                cmp_true_state = draft.local(f"true_cmp_{branch.bit}_{index}")
+                draft.add(EmitOp(dst_read, branch.bit, match_seek, branch.bit, S))
+                seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+                _write_cmp_flag(draft, cmp_true_state, bit="1", target=cont)
+        if next_iter is not None:
+            current = next_iter
+    return draft.build()
+
+
 def _compare_global_local_routine(state: Label, cont: Label, global_marker: str, local_marker: str, width: int) -> Routine:
     draft = RoutineDraft("compare_global_local", entry=state, exits=(cont,), requires=HeadAtOneOf((RULE, ACTIVE_RULE)), ensures=HeadAt(ACTIVE_RULE))
     dir_to_cmp = global_direction(global_marker, CMP_FLAG)
@@ -491,6 +544,8 @@ def lower_instruction_to_routine(instruction: Instruction, *, state: Label, cont
             return _branch_cmp_routine(state, cont, label_equal, label_not_equal)
         case CompareGlobalLiteral(global_marker, literal_bits):
             return _compare_global_literal_routine(state, cont, global_marker, literal_bits)
+        case CompareGlobalGlobal(src_marker, dst_marker, width):
+            return _compare_global_global_routine(state, cont, src_marker, dst_marker, width)
         case CompareGlobalLocal(global_marker, local_marker, width):
             return _compare_global_local_routine(state, cont, global_marker, local_marker, width)
         case CopyGlobalGlobal(src_marker, dst_marker, width):

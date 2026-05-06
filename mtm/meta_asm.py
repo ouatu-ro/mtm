@@ -12,8 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable, TypeAlias
 
-from .utm_band_layout import CUR_STATE, CUR_SYMBOL, END_RULES, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, STATE, WRITE, WRITE_SYMBOL
-from .source_encoding import Encoding, L, R, encode_direction, encode_state
+from .utm_band_layout import CUR_STATE, CUR_SYMBOL, END_RULES, HALT_STATE, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, READ, RIGHT_DIR, STATE, WRITE, WRITE_SYMBOL
+from .source_encoding import Encoding
 
 LabelName: TypeAlias = str
 Marker: TypeAlias = str
@@ -56,6 +56,10 @@ class CompareGlobalLocal:
 @dataclass(frozen=True)
 class CompareGlobalLiteral:
     global_marker: Marker; literal_bits: BitString
+
+@dataclass(frozen=True)
+class CompareGlobalGlobal:
+    src_marker: Marker; dst_marker: Marker; width: int
 
 @dataclass(frozen=True)
 class BranchCmp:
@@ -104,7 +108,7 @@ Instruction: TypeAlias = (
     | Halt
     | Seek | SeekOneOf
     | FindFirstRule | FindNextRule | FindHeadCell
-    | CompareGlobalLocal | CompareGlobalLiteral
+    | CompareGlobalLocal | CompareGlobalLiteral | CompareGlobalGlobal
     | BranchCmp
     | CopyLocalGlobal | CopyGlobalGlobal | CopyHeadSymbolTo | CopyGlobalToHeadSymbol
     | WriteGlobal
@@ -195,6 +199,11 @@ def _format_compare_global_literal(instruction: Instruction) -> str:
     return f"{instruction.global_marker} {_join_bits(instruction.literal_bits)}"
 
 
+def _format_compare_global_global(instruction: Instruction) -> str:
+    assert isinstance(instruction, CompareGlobalGlobal)
+    return f"{instruction.src_marker} {instruction.dst_marker} {instruction.width}"
+
+
 def _format_branch_cmp(instruction: Instruction) -> str:
     assert isinstance(instruction, BranchCmp)
     return f"{instruction.label_equal} {instruction.label_not_equal}"
@@ -240,6 +249,7 @@ INSTRUCTION_FORMATS: dict[type[Instruction], InstructionFormatSpec] = {
     FindHeadCell: InstructionFormatSpec("FIND_HEAD_CELL"),
     CompareGlobalLocal: InstructionFormatSpec("COMPARE_GLOBAL_LOCAL", _format_compare_global_local),
     CompareGlobalLiteral: InstructionFormatSpec("COMPARE_GLOBAL_LITERAL", _format_compare_global_literal),
+    CompareGlobalGlobal: InstructionFormatSpec("COMPARE_GLOBAL_GLOBAL", _format_compare_global_global),
     BranchCmp: InstructionFormatSpec("BRANCH_CMP", _format_branch_cmp),
     CopyLocalGlobal: InstructionFormatSpec("COPY_LOCAL_GLOBAL", _format_copy_local_global),
     CopyGlobalGlobal: InstructionFormatSpec("COPY_GLOBAL_GLOBAL", _format_copy_global_global),
@@ -270,13 +280,11 @@ def format_program(program: Program) -> str:
 
 
 def build_universal_meta_asm(encoding: Encoding) -> Program:
-    halt_bits = encode_state(encoding, encoding.halt_state)
-    left_bits, right_bits = encode_direction(encoding, L), encode_direction(encoding, R)
     return Program(
         entry_label="START_STEP",
         blocks=(
             Block("START_STEP", (
-                CompareGlobalLiteral(CUR_STATE, halt_bits),
+                CompareGlobalGlobal(CUR_STATE, HALT_STATE, encoding.state_width),
                 BranchCmp("HALT", "FIND_HEAD"),
             )),
             Block("FIND_HEAD", (
@@ -307,15 +315,14 @@ def build_universal_meta_asm(encoding: Encoding) -> Program:
                 FindHeadCell(),
                 CopyGlobalToHeadSymbol(WRITE_SYMBOL, encoding.symbol_width),
                 CopyGlobalGlobal(NEXT_STATE, CUR_STATE, encoding.state_width),
-                CompareGlobalLiteral(CUR_STATE, halt_bits),
                 Goto("DISPATCH_MOVE"),
             )),
             Block("DISPATCH_MOVE", (
-                CompareGlobalLiteral(MOVE_DIR, left_bits),
+                CompareGlobalGlobal(MOVE_DIR, LEFT_DIR, encoding.direction_width),
                 BranchCmp("MOVE_LEFT", "CHECK_RIGHT"),
             )),
             Block("CHECK_RIGHT", (
-                CompareGlobalLiteral(MOVE_DIR, right_bits),
+                CompareGlobalGlobal(MOVE_DIR, RIGHT_DIR, encoding.direction_width),
                 BranchCmp("MOVE_RIGHT", "START_STEP"),
             )),
             Block("MOVE_LEFT", (
@@ -334,8 +341,9 @@ def build_universal_meta_asm(encoding: Encoding) -> Program:
     )
 
 
-__all__ = ["BitString", "Block", "BranchAt", "BranchCmp", "CompareGlobalLiteral", "CompareGlobalLocal",
-           "CopyGlobalGlobal", "CopyGlobalToHeadSymbol", "CopyHeadSymbolTo", "CopyLocalGlobal", "DirectionName",
-           "FindFirstRule", "FindHeadCell", "FindNextRule", "Goto", "Halt", "Instruction", "LabelName", "Marker",
-           "MetaASMProgram", "MoveSimHeadLeft", "MoveSimHeadRight", "Program", "Seek", "SeekOneOf", "Unimplemented",
-           "WriteGlobal", "bits", "build_universal_meta_asm", "format_instruction", "format_program"]
+__all__ = ["BitString", "Block", "BranchAt", "BranchCmp", "CompareGlobalGlobal", "CompareGlobalLiteral",
+           "CompareGlobalLocal", "CopyGlobalGlobal", "CopyGlobalToHeadSymbol", "CopyHeadSymbolTo",
+           "CopyLocalGlobal", "DirectionName", "FindFirstRule", "FindHeadCell", "FindNextRule", "Goto", "Halt",
+           "Instruction", "LabelName", "Marker", "MetaASMProgram", "MoveSimHeadLeft", "MoveSimHeadRight",
+           "Program", "Seek", "SeekOneOf", "Unimplemented", "WriteGlobal", "bits", "build_universal_meta_asm",
+           "format_instruction", "format_program"]

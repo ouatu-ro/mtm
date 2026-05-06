@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
-from .meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
+from .meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
 from .source_encoding import encode_symbol
 
@@ -257,6 +257,17 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 outcome = f"head at {token_at(left_band, right_band, head_address)}"
             case CompareGlobalLiteral(global_marker, literal_bits):
                 cmp_bit = "1" if get_global_bits(left_band, global_marker) == literal_bits else "0"
+                left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
+                instruction_index += 1
+                outcome = f"{CMP_FLAG}={cmp_bit}"
+            case CompareGlobalGlobal(src_marker, dst_marker, width):
+                src_bits = get_global_bits(left_band, src_marker)
+                dst_bits = get_global_bits(left_band, dst_marker)
+                if len(src_bits) != width:
+                    raise ValueError(f"wrong width for {src_marker}: expected {width}, got {len(src_bits)}")
+                if len(dst_bits) != width:
+                    raise ValueError(f"wrong width for {dst_marker}: expected {width}, got {len(dst_bits)}")
+                cmp_bit = "1" if src_bits == dst_bits else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"

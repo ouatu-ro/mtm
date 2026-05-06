@@ -1,4 +1,4 @@
-from mtm.meta_asm import Block, BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, bits, format_instruction, format_program
+from mtm.meta_asm import Block, BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, bits, format_instruction, format_program
 
 
 def test_format_instruction_preserves_all_current_spellings() -> None:
@@ -12,6 +12,7 @@ def test_format_instruction_preserves_all_current_spellings() -> None:
         (FindHeadCell(), "FIND_HEAD_CELL"),
         (CompareGlobalLocal("#GLOBAL", "#LOCAL", 3), "COMPARE_GLOBAL_LOCAL #GLOBAL #LOCAL 3"),
         (CompareGlobalLiteral("#GLOBAL", bits("101")), "COMPARE_GLOBAL_LITERAL #GLOBAL 101"),
+        (CompareGlobalGlobal("#SRC", "#DST", 4), "COMPARE_GLOBAL_GLOBAL #SRC #DST 4"),
         (BranchCmp("EQ", "NEQ"), "BRANCH_CMP EQ NEQ"),
         (CopyLocalGlobal("#LOCAL", "#GLOBAL", 2), "COPY_LOCAL_GLOBAL #LOCAL #GLOBAL 2"),
         (CopyGlobalGlobal("#SRC", "#DST", 4), "COPY_GLOBAL_GLOBAL #SRC #DST 4"),

@@ -66,4 +66,4 @@ def test_rich_renderer_adds_ansi_styles_for_interactive_output(monkeypatch) -> N
 
     assert "\x1b[" in rendered
     assert "step raw" in plain
-    assert "COMPARE_GLOBAL_LITERAL #CUR_STATE 01" in plain
+    assert "COMPARE_GLOBAL_GLOBAL #CUR_STATE #HALT_STATE 2" in plain

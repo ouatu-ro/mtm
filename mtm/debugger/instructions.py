@@ -7,7 +7,7 @@ step is trying to do.
 
 from __future__ import annotations
 
-from ..meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, Unimplemented, WriteGlobal
+from ..meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, Unimplemented, WriteGlobal
 
 
 def explain_meta_instruction(instruction) -> str | None:
@@ -32,6 +32,8 @@ def explain_meta_instruction(instruction) -> str | None:
             return "Seek to the simulated source-tape head cell."
         case CompareGlobalLocal(global_marker=global_marker, local_marker=local_marker, width=width):
             return f"Compare register {global_marker} against local field {local_marker} over {width} bits."
+        case CompareGlobalGlobal(src_marker=src_marker, dst_marker=dst_marker, width=width):
+            return f"Compare register {src_marker} against register {dst_marker} over {width} bits."
         case CompareGlobalLiteral(global_marker=global_marker, literal_bits=literal_bits):
             return f"Compare register {global_marker} against literal bits {''.join(literal_bits)}."
         case BranchCmp(label_equal=label_equal, label_not_equal=label_not_equal):

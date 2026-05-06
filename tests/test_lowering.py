@@ -1,12 +1,12 @@
 from mtm import TMBand, load_fixture
 from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, lower_program_with_source_map, program_to_cfgs, validate_cfg, validate_program_cfgs
-from mtm.meta_asm import Block, BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
+from mtm.meta_asm import Block, BranchCmp, CompareGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
 from mtm.semantic_objects import decoded_view_from_encoded_band
 from mtm.source_encoding import encode_symbol
-from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, RULES, TAPE_LEFT, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
+from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HALT_STATE, HEAD, NO_HEAD, RULES, TAPE_LEFT, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -128,6 +128,33 @@ def test_lowered_start_step_matches_host_block() -> None:
 
         assert host["label"] == expected_label
         assert result["state"] == expected_label
+        assert final_left_band[cmp_index + 1] == expected_cmp
+
+
+def test_compare_global_global_matches_host_block() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+
+    for cur_state_bits, expected_cmp in [("10", "0"), ("01", "1")]:
+        builder = TMBuilder(alphabet)
+        prepared_tape = _set_global_bits(band, CUR_STATE, cur_state_bits)
+        host = run_meta_asm_block_runtime(
+            Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
+            band.encoding,
+            prepared_tape,
+            label="START",
+            max_steps=5,
+        )
+        assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width), state="start", continuation_label="DONE")
+        result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_STATE), max_steps=500)
+        final_left_band, _ = split_runtime_tape(result["tape"])
+        cmp_index = final_left_band.index(CMP_FLAG)
+
+        assert host["trace"][-1]["outcome"] == f"{CMP_FLAG}={expected_cmp}"
+        assert result["status"] == "stuck"
+        assert result["state"] == "DONE"
         assert final_left_band[cmp_index + 1] == expected_cmp
 
 

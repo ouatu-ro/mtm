@@ -11,13 +11,25 @@ from __future__ import annotations
 from typing import TypeAlias
 
 from ..raw_transition_tm import L, R, S
-from ..utm_band_layout import CMP_FLAG, CUR_STATE, CUR_SYMBOL, MOVE_DIR, NEXT_STATE, TMP, WRITE_SYMBOL
+from ..utm_band_layout import BLANK_SYMBOL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HALT_STATE, LEFT_DIR, MOVE_DIR, NEXT_STATE, RIGHT_DIR, TMP, WRITE_SYMBOL
 
 Label: TypeAlias = str
 State: TypeAlias = str
 Symbol: TypeAlias = str
 
-GLOBAL_MARKERS = (CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE, MOVE_DIR, CMP_FLAG, TMP)
+GLOBAL_MARKERS = (
+    CUR_STATE,
+    CUR_SYMBOL,
+    WRITE_SYMBOL,
+    NEXT_STATE,
+    MOVE_DIR,
+    HALT_STATE,
+    BLANK_SYMBOL,
+    LEFT_DIR,
+    RIGHT_DIR,
+    CMP_FLAG,
+    TMP,
+)
 ACTIVE_RULE = "#ACTIVE_RULE"
 VALID_MOVES = {L, S, R}
 

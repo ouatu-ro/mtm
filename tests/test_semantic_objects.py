@@ -2,7 +2,7 @@ import mtm
 from mtm import Compiler, L, R, TMAbi, TMBand, TMInstance, TMProgram, load_fixture, UniversalInterpreter
 from mtm.artifacts import read_utm_artifact, write_utm_artifact
 from mtm.lowering import lower_program_to_raw_tm
-from mtm.meta_asm import build_universal_meta_asm
+from mtm.meta_asm import CompareGlobalGlobal, build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import S, TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, compile_raw_guest, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
@@ -323,9 +323,14 @@ def test_universal_dispatch_treats_non_left_non_right_direction_as_stay() -> Non
     encoding = build_raw_guest_encoding(instance)
     program = build_universal_meta_asm(encoding)
 
+    start_step = next(block for block in program.blocks if block.label == "START_STEP")
+    dispatch_move = next(block for block in program.blocks if block.label == "DISPATCH_MOVE")
     check_right = next(block for block in program.blocks if block.label == "CHECK_RIGHT")
 
     assert encoding.direction_ids == {-1: 0, 1: 1, 0: 2}
+    assert start_step.instructions[0] == CompareGlobalGlobal("#CUR_STATE", "#HALT_STATE", encoding.state_width)
+    assert dispatch_move.instructions[0] == CompareGlobalGlobal("#MOVE_DIR", "#LEFT_DIR", encoding.direction_width)
+    assert check_right.instructions[0] == CompareGlobalGlobal("#MOVE_DIR", "#RIGHT_DIR", encoding.direction_width)
     assert check_right.instructions[-1].label_equal == "MOVE_RIGHT"
     assert check_right.instructions[-1].label_not_equal == "START_STEP"
 
