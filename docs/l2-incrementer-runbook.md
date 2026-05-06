@@ -293,3 +293,74 @@ Combining that measured speed with the current raw-step estimate:
 This still does not make a full lowered L2 raw run small; it changes the local
 estimate from "decades in Python" to "weeks in C" and makes honest slices cheap
 enough to measure.
+
+## Self-Contained Raw C Backends
+
+`tools/generate_raw_tm_c.py` emits a standalone C file for a `.tm`/`.utm.band`
+pair. It has two backends:
+
+```bash
+uv run python tools/generate_raw_tm_c.py \
+  "$out/incrementer.l2.tm" \
+  "$out/incrementer.l1.utm.band" \
+  -o "$out/packed_l2host_l1band.c" \
+  --backend packed-array \
+  --right-dump-cells 8 \
+  --raw-dump-cells 48
+
+cc -O3 -std=c11 \
+  "$out/packed_l2host_l1band.c" \
+  -o "$out/packed_l2host_l1band"
+
+"$out/packed_l2host_l1band" 1000000
+```
+
+Current packed-array cross-ABI result:
+
+```text
+backend=packed-array status=halted steps=54915 ... state=U_HALT
+decoded_right: 1 1 0 0 _ _ _ _
+```
+
+Current packed-array real L2 bounded slice:
+
+```text
+backend=packed-array status=fuel_exhausted steps=1000000000 ...
+msteps_per_s=451.802
+```
+
+This packed standalone form is portable C11, but it is currently slower than the
+header-based dense runner. The bit packing removes table columns but adds decode
+work on the hot path.
+
+The computed-goto backend emits one label per valid transition and dispatches
+with Clang/GNU C label pointers:
+
+```bash
+uv run python tools/generate_raw_tm_c.py \
+  "$out/incrementer.l1.tm" \
+  "$out/incrementer.l1.utm.band" \
+  -o "$out/cgoto_l1.c" \
+  --backend computed-goto \
+  --right-dump-cells 8
+
+cc -O0 -std=gnu11 \
+  "$out/cgoto_l1.c" \
+  -o "$out/cgoto_l1_O0"
+
+"$out/cgoto_l1_O0" 1000000
+```
+
+Current computed-goto result at `-O0`:
+
+```text
+backend=computed-goto status=halted steps=54915 ... state=U_HALT
+decoded_right: 1 1 0 0 _ _ _ _
+msteps_per_s=5.812
+```
+
+The backend compiles syntactically on this machine, but optimized builds are not
+practical yet. `cc -O3 -std=gnu11` on the 124k-transition L2 host was stopped
+after about 4.5 minutes, and `cc -O1` on the smaller 25k-transition L1 host was
+stopped after about 1 minute. The current label-per-transition shape gives the
+compiler too much global control flow to optimize.
