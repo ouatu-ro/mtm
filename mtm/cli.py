@@ -34,11 +34,11 @@ TOP_LEVEL_HELP = """\
 Compile, inspect, and run Meta Turing Machine artifacts.
 
 Common workflows:
-  mtm l1 examples/incrementer_tm.py --out-dir out
-  mtm l2 out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band --out-dir out
-  mtm run out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band
-  mtm trace out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band --level raw --out out/raw.tsv
-  mtm dbg out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band
+  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm
+  mtm run out/incrementer.tm out/incrementer.utm.band
+  mtm trace out/incrementer.tm out/incrementer.utm.band --level raw --out out/raw.tsv --meta-out out/raw.json
+  mtm dbg incrementer
+  mtm dbg out/incrementer.tm out/incrementer.utm.band
 
 Run `mtm COMMAND -h` for command-specific inputs, outputs, and examples.
 """

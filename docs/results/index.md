@@ -14,6 +14,5 @@ Current material:
 
 Useful supporting pages:
 
-- [L2 Incrementer Runbook](../runbooks/l2-incrementer.md)
+- [Advanced L2 Bootstrap Runbook](../runbooks/l2-incrementer.md)
 - [C Runner Docs](../tools/c-runners.md)
-

@@ -39,14 +39,10 @@ nav:
       - Invariants and Correctness: specs/invariants-and-correctness.md
   - Architecture:
       - Debugger Stepper: architecture/debugger-stepper.md
-  - Runbooks:
-      - L2 Incrementer: runbooks/l2-incrementer.md
-  - Results:
-      - Index: results/index.md
-      - L2 Bootstrap: results/l2-bootstrap.md
   - Tools:
       - Index: tools/index.md
       - Trace Viewer: tools/trace-viewer.md
       - C Runners: tools/c-runners.md
-  - RFCs:
-      - Help Menu: rfc/help-menu.md
+  - Advanced:
+      - L2 Bootstrap Results: results/l2-bootstrap.md
+      - L2 Incrementer Runbook: runbooks/l2-incrementer.md

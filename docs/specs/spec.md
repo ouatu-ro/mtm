@@ -20,5 +20,5 @@ This is the map for the split specification set.
 ## Related
 
 - [Results](../results/index.md)
-- [Runbooks](../runbooks/l2-incrementer.md)
 - [Tools](../tools/index.md)
+- [L2 Bootstrap Runbook](../runbooks/l2-incrementer.md)

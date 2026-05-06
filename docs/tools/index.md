@@ -27,4 +27,4 @@ They are documentation for the current inventory, not a promise of a stable tool
 ## Related docs
 
 - [Results](../results/index.md)
-- [L2 Incrementer Runbook](../runbooks/l2-incrementer.md)
+- [Advanced L2 Bootstrap Runbook](../runbooks/l2-incrementer.md)

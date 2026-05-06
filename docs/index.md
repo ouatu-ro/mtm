@@ -68,9 +68,13 @@ The same staged structure is described in more detail in the spec pages.
 
 Start here:
 
+- [User guide](user-guide/cli.md)
 - [Specs](specs/spec.md)
 - [Overview](specs/overview.md)
-- [Runbooks](runbooks/l2-incrementer.md)
 - [Results](results/index.md)
 - [Tools](tools/index.md)
-- [User guide](user-guide/cli.md)
+
+Advanced bootstrapping notes:
+
+- [L2 Incrementer Runbook](runbooks/l2-incrementer.md)
+- [L2 Bootstrap Results](results/l2-bootstrap.md)

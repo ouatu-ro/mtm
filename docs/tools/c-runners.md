@@ -31,5 +31,4 @@ The runner variants correspond to the measurements discussed in
 [L2 Bootstrap Results](../results/l2-bootstrap.md).
 
 For the reproducible command sequence that feeds these experiments, see the
-[L2 Incrementer Runbook](../runbooks/l2-incrementer.md).
-
+[advanced L2 bootstrap runbook](../runbooks/l2-incrementer.md).
