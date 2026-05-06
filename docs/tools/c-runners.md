@@ -1,7 +1,6 @@
 ---
 title: C Runners
 description: Experimental C runner generators and performance-oriented raw execution tools.
-status: experimental
 audience: engineer
 ---
 

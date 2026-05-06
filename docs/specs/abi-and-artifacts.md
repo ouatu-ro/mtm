@@ -1,6 +1,5 @@
 ---
 title: ABI and Artifacts
-status: current spec
 audience: implementers
 ---
 

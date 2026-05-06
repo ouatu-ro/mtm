@@ -1,6 +1,7 @@
 site_name: MTM
 site_description: Meta Turing Machine documentation
-repo_url: https://github.com/bgrins/mtm
+repo_url: https://github.com/ouatu-ro/mtm
+repo_name: ouatu-ro/mtm
 
 theme:
   name: material
@@ -9,6 +10,9 @@ theme:
     - navigation.indexes
     - search.suggest
     - search.highlight
+
+extra_css:
+  - assets/stylesheets/mtm.css
 
 markdown_extensions:
   - admonition
@@ -33,8 +37,6 @@ nav:
       - Meta-ASM and Lowering: specs/meta-asm-and-lowering.md
       - Recursive Towers: specs/recursive-towers.md
       - Invariants and Correctness: specs/invariants-and-correctness.md
-      - Debugger REPL: specs/debugger-repl.md
-      - Debugger Presentation: specs/debugger-presentation.md
   - Architecture:
       - Debugger Stepper: architecture/debugger-stepper.md
   - Runbooks:

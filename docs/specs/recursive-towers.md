@@ -1,6 +1,5 @@
 ---
 title: Recursive Towers
-status: current spec
 audience: implementers
 ---
 

@@ -1,6 +1,5 @@
 ---
 title: Meta-ASM and Lowering
-status: current spec
 audience: implementers
 ---
 

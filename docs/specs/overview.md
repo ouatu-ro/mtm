@@ -1,6 +1,5 @@
 ---
 title: Overview
-status: current spec
 audience: implementers
 ---
 

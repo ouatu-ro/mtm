@@ -1,7 +1,6 @@
 ---
 title: CLI Guide
 description: Quick guide to the MTM command line and its main workflows.
-status: current
 audience: user
 ---
 

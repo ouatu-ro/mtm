@@ -1,7 +1,6 @@
 ---
 title: Results
 description: Index of measurements, observations, and bootstrap notes.
-status: results
 audience: engineer
 ---
 

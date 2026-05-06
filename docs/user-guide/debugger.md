@@ -1,7 +1,6 @@
 ---
 title: Debugger Guide
 description: Practical entry point for the MTM debugger REPL.
-status: current
 audience: user
 ---
 

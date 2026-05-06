@@ -1,7 +1,6 @@
 ---
 title: Tools
 description: Index of the existing MTM helper tools and experimental runners.
-status: experimental
 audience: engineer
 ---
 
@@ -15,6 +14,12 @@ They are documentation for the current inventory, not a promise of a stable tool
 
 - [Trace Viewer](trace-viewer.md)
 
+## Debugger design docs
+
+- [Debugger REPL Spec](../specs/debugger-repl.md)
+- [Debugger Presentation Model Spec](../specs/debugger-presentation.md)
+- [Debugger Stepper Layers](../architecture/debugger-stepper.md)
+
 ## C runners and generators
 
 - [C Runners](c-runners.md)
@@ -23,4 +28,3 @@ They are documentation for the current inventory, not a promise of a stable tool
 
 - [Results](../results/index.md)
 - [L2 Incrementer Runbook](../runbooks/l2-incrementer.md)
-

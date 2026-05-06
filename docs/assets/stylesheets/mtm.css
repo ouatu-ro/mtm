@@ -1,0 +1,46 @@
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav__title {
+    margin-bottom: 0.35rem;
+  }
+
+  .md-nav--primary .md-nav__item {
+    padding: 0;
+  }
+
+  .md-nav--primary .md-nav__item--section {
+    margin: 0.6rem 0 0.2rem;
+  }
+
+  .md-nav--primary .md-nav__link {
+    margin-top: 0.26rem;
+    line-height: 1.25;
+  }
+}
+
+.md-main__inner {
+  margin-top: 0.7rem;
+}
+
+.md-typeset h1 {
+  margin: 0 0 1.1rem;
+}
+
+.md-typeset h2 {
+  margin: 1.45rem 0 0.55rem;
+}
+
+.md-typeset h3 {
+  margin: 1.1rem 0 0.35rem;
+}
+
+.md-typeset p,
+.md-typeset ul,
+.md-typeset ol,
+.md-typeset pre {
+  margin-top: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.md-typeset li {
+  margin-bottom: 0.12rem;
+}

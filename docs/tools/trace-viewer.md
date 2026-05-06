@@ -1,7 +1,6 @@
 ---
 title: Trace Viewer
 description: Browser-based trace viewer built from HTML, JavaScript, and trace assets.
-status: experimental
 audience: engineer
 ---
 

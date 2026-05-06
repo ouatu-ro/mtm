@@ -1,6 +1,5 @@
 ---
 title: Invariants and Correctness
-status: current spec
 audience: implementers
 ---
 

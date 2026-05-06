@@ -1,7 +1,6 @@
 ---
 title: MTM Documentation
 description: Entry point for MTM specs, architecture, runbooks, results, tools, and user guides.
-status: current
 audience: user
 ---
 
