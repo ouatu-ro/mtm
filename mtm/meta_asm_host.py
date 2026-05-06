@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE, materialize_runtime_tape, split_runtime_tape
+from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import BranchAt, BranchCmp, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
 from .source_encoding import encode_symbol
@@ -35,7 +35,30 @@ def set_global_bits(left_band: list[str], marker: str, bits: tuple[str, ...]) ->
     return left_band
 
 
-def find_head_cell(right_band: list[str]) -> int:
+def runtime_address(left_band: list[str], side: str, index: int) -> int:
+    return index if side == "right" else index - len(left_band)
+
+
+def band_position(left_band: list[str], right_band: list[str], address: int) -> tuple[str, int]:
+    if address >= 0:
+        return "right", address
+    return "left", left_index(left_band, address)
+
+
+def simulated_left_cell_indices(left_band: list[str]) -> list[int]:
+    tape_left = left_band.index(TAPE_LEFT)
+    return [index for index, token in enumerate(left_band[:tape_left]) if token == CELL]
+
+
+def simulated_right_cell_indices(right_band: list[str]) -> list[int]:
+    return [index for index, token in enumerate(right_band) if token == CELL]
+
+
+def find_head_cell(left_band: list[str], right_band: list[str]) -> int:
+    tape_left = left_band.index(TAPE_LEFT)
+    for index, token in enumerate(left_band[:tape_left]):
+        if token == CELL and left_band[index + 1] == HEAD:
+            return runtime_address(left_band, "left", index)
     for index, token in enumerate(right_band):
         if token == CELL and right_band[index + 1] == HEAD:
             return index
@@ -84,63 +107,113 @@ def find_next_rule(left_band: list[str], head_address: int | None) -> int:
     raise ValueError("unterminated rule registry")
 
 
-def cell_span(symbol_width: int) -> int:
-    return 3 + symbol_width
+def is_simulated_cell(left_band: list[str], right_band: list[str], head_address: int | None) -> bool:
+    if head_address is None:
+        return False
+    side, index = band_position(left_band, right_band, head_address)
+    band = right_band if side == "right" else left_band
+    return 0 <= index < len(band) and band[index] == CELL
 
 
-def read_head_symbol_bits(right_band: list[str], head_address: int, width: int) -> tuple[str, ...]:
-    return tuple(right_band[head_address + 2:head_address + 2 + width])
+def read_head_symbol_bits(left_band: list[str], right_band: list[str], head_address: int, width: int) -> tuple[str, ...]:
+    side, index = band_position(left_band, right_band, head_address)
+    band = right_band if side == "right" else left_band
+    return tuple(band[index + 2:index + 2 + width])
 
 
-def write_head_symbol_bits(right_band: list[str], head_address: int, bits: tuple[str, ...]) -> list[str]:
+def write_head_symbol_bits(left_band: list[str], right_band: list[str], head_address: int, bits: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    side, index = band_position(left_band, right_band, head_address)
+    if side == "left":
+        left_band = list(left_band)
+        left_band[index + 2:index + 2 + len(bits)] = list(bits)
+        return left_band, right_band
     right_band = list(right_band)
-    right_band[head_address + 2:head_address + 2 + len(bits)] = list(bits)
-    return right_band
+    right_band[index + 2:index + 2 + len(bits)] = list(bits)
+    return left_band, right_band
 
 
-def move_simulated_head(encoding, right_band: list[str], head_address: int, direction: int) -> tuple[list[str], int]:
-    span, blank_bits = cell_span(encoding.symbol_width), encode_symbol(encoding, encoding.blank)
+def blank_cell(encoding, head_marker: str) -> list[str]:
+    return [CELL, head_marker, *encode_symbol(encoding, encoding.blank), END_CELL]
+
+
+def move_simulated_head(encoding, left_band: list[str], right_band: list[str], head_address: int, direction: int) -> tuple[list[str], list[str], int]:
+    blank_bits = encode_symbol(encoding, encoding.blank)
+    left_band = list(left_band)
     right_band = list(right_band)
-    old_head = head_address
 
-    # NOTE: The host models tape growth with Python list insertion. The lowered
-    # UTM does it by moving the encoded end marker outward by one cell width.
+    if direction == 0:
+        return left_band, right_band, head_address
+
+    side, old_index = band_position(left_band, right_band, head_address)
+    if side == "left":
+        left_cells = simulated_left_cell_indices(left_band)
+        cell_position = left_cells.index(old_index)
+        left_band[old_index + 1] = NO_HEAD
+
+        if direction > 0:
+            if cell_position + 1 < len(left_cells):
+                next_index = left_cells[cell_position + 1]
+                left_band[next_index + 1] = HEAD
+                return left_band, right_band, runtime_address(left_band, "left", next_index)
+
+            right_cells = simulated_right_cell_indices(right_band)
+            if not right_cells:
+                end_tape = right_band.index(END_TAPE)
+                right_band[end_tape:end_tape] = blank_cell(encoding, NO_HEAD)
+                right_cells = simulated_right_cell_indices(right_band)
+            next_index = right_cells[0]
+            right_band[next_index + 1] = HEAD
+            return left_band, right_band, next_index
+
+        if cell_position == 0:
+            insert_at = 1
+            left_band[insert_at:insert_at] = [CELL, HEAD, *blank_bits, END_CELL]
+            return left_band, right_band, runtime_address(left_band, "left", insert_at)
+
+        next_index = left_cells[cell_position - 1]
+        left_band[next_index + 1] = HEAD
+        return left_band, right_band, runtime_address(left_band, "left", next_index)
+
+    right_cells = simulated_right_cell_indices(right_band)
+    cell_position = right_cells.index(old_index)
+    right_band[old_index + 1] = NO_HEAD
+
     if direction > 0:
-        next_head = old_head + span
-        if right_band[next_head] == END_TAPE:
-            right_band = right_band[:-1] + [CELL, NO_HEAD, *blank_bits, END_CELL, END_TAPE]
-        right_band[old_head + 1], right_band[next_head + 1] = NO_HEAD, HEAD
-        return right_band, next_head
-
-    if direction < 0:
-        if old_head == 1:
-            right_band = [TAPE, CELL, NO_HEAD, *blank_bits, END_CELL, *right_band[1:]]
-            old_head += span
-            next_head = 1
+        if cell_position + 1 < len(right_cells):
+            next_index = right_cells[cell_position + 1]
         else:
-            next_head = old_head - span
-        right_band[old_head + 1], right_band[next_head + 1] = NO_HEAD, HEAD
-        return right_band, next_head
+            end_tape = right_band.index(END_TAPE)
+            right_band[end_tape:end_tape] = [CELL, HEAD, *blank_bits, END_CELL]
+            next_index = end_tape
+        right_band[next_index + 1] = HEAD
+        return left_band, right_band, next_index
 
-    return right_band, old_head
+    if cell_position > 0:
+        next_index = right_cells[cell_position - 1]
+        right_band[next_index + 1] = HEAD
+        return left_band, right_band, next_index
 
+    left_cells = simulated_left_cell_indices(left_band)
+    if left_cells:
+        next_index = left_cells[-1]
+        left_band[next_index + 1] = HEAD
+        return left_band, right_band, runtime_address(left_band, "left", next_index)
 
-def all_addresses(left_band: list[str], right_band: list[str]) -> list[int]:
-    return list(range(-len(left_band), 0)) + list(range(len(right_band)))
+    insert_at = left_band.index(TAPE_LEFT)
+    left_band[insert_at:insert_at] = [CELL, HEAD, *blank_bits, END_CELL]
+    return left_band, right_band, runtime_address(left_band, "left", insert_at)
 
 
 def seek_address(left_band: list[str], right_band: list[str], start: int | None, markers: set[str], direction: str) -> int:
-    addresses = all_addresses(left_band, right_band)
     if start is None:
         raise ValueError("SEEK requires the runtime head to be positioned")
-    start_index = addresses.index(start)
+    lowest, highest = -len(left_band), len(right_band) - 1
     step = -1 if direction == "L" else 1
-    index = start_index
-    while 0 <= index < len(addresses):
-        address = addresses[index]
+    address = start
+    while lowest <= address <= highest:
         if token_at(left_band, right_band, address) in markers:
             return address
-        index += step
+        address += step
     raise ValueError(f"failed to seek one of {sorted(markers)} in direction {direction}")
 
 
@@ -159,13 +232,12 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
     blocks = {block.label: block for block in program.blocks}
     label, instruction_index, head_address, status, reason = start_label, 0, None, "running", None
     trace: list[dict[str, object]] = []
-    runtime_tape = dict(runtime_tape)
+    left_band, right_band = split_runtime_tape(runtime_tape)
 
     for step in range(max_steps):
         if status != "running":
             break
 
-        left_band, right_band = split_runtime_tape(runtime_tape)
         block = blocks[label]
         if instruction_index >= len(block.instructions):
             status, reason = "halted", f"fell off end of block {label}"
@@ -186,14 +258,12 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
             case CompareGlobalLiteral(global_marker, literal_bits):
                 cmp_bit = "1" if get_global_bits(left_band, global_marker) == literal_bits else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
             case CompareGlobalLocal(global_marker, local_marker, _width):
                 rule_index = current_rule_index(left_band, head_address)
                 cmp_bit = "1" if get_global_bits(left_band, global_marker) == get_local_bits(left_band, rule_index, local_marker) else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
             case BranchCmp(label_equal, label_not_equal):
@@ -207,25 +277,23 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 label, instruction_index = target, 0
                 outcome = f"goto {target}"
             case FindHeadCell():
-                head_address = find_head_cell(right_band)
+                head_address = find_head_cell(left_band, right_band)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case CopyHeadSymbolTo(global_marker, width):
-                if head_address is None or head_address < 0 or right_band[head_address] != CELL:
+                if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("COPY_HEAD_SYMBOL_TO requires the runtime head to be at a simulated #CELL")
-                symbol_bits = read_head_symbol_bits(right_band, head_address, width)
+                symbol_bits = read_head_symbol_bits(left_band, right_band, head_address, width)
                 left_band = set_global_bits(left_band, global_marker, symbol_bits)
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}={''.join(symbol_bits)}"
             case CopyGlobalToHeadSymbol(global_marker, width):
-                if head_address is None or head_address < 0 or right_band[head_address] != CELL:
+                if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("COPY_GLOBAL_TO_HEAD_SYMBOL requires the runtime head to be at a simulated #CELL")
                 symbol_bits = get_global_bits(left_band, global_marker)
                 if len(symbol_bits) != width:
                     raise ValueError(f"wrong width for {global_marker}: expected {width}, got {len(symbol_bits)}")
-                right_band = write_head_symbol_bits(right_band, head_address, symbol_bits)
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
+                left_band, right_band = write_head_symbol_bits(left_band, right_band, head_address, symbol_bits)
                 instruction_index += 1
                 outcome = f"head_symbol={''.join(symbol_bits)}"
             case FindFirstRule():
@@ -241,31 +309,26 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
             case CopyLocalGlobal(local_marker, global_marker, _width):
                 rule_index = current_rule_index(left_band, head_address)
                 left_band = set_global_bits(left_band, global_marker, get_local_bits(left_band, rule_index, local_marker))
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}<-{local_marker}"
             case CopyGlobalGlobal(src_marker, dst_marker, _width):
                 left_band = set_global_bits(left_band, dst_marker, get_global_bits(left_band, src_marker))
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{dst_marker}<-{src_marker}"
             case WriteGlobal(global_marker, literal_bits):
                 left_band = set_global_bits(left_band, global_marker, literal_bits)
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
                 instruction_index += 1
                 outcome = f"{global_marker}={''.join(literal_bits)}"
             case MoveSimHeadLeft(_symbol_width):
-                if head_address is None or head_address < 0 or right_band[head_address] != CELL:
+                if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("MOVE_SIM_HEAD_LEFT requires the runtime head to be at a simulated #CELL")
-                right_band, head_address = move_simulated_head(encoding, right_band, head_address, -1)
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
+                left_band, right_band, head_address = move_simulated_head(encoding, left_band, right_band, head_address, -1)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case MoveSimHeadRight(_symbol_width):
-                if head_address is None or head_address < 0 or right_band[head_address] != CELL:
+                if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("MOVE_SIM_HEAD_RIGHT requires the runtime head to be at a simulated #CELL")
-                right_band, head_address = move_simulated_head(encoding, right_band, head_address, 1)
-                runtime_tape = materialize_runtime_tape(left_band, right_band)
+                left_band, right_band, head_address = move_simulated_head(encoding, left_band, right_band, head_address, 1)
                 instruction_index += 1
                 outcome = f"head at {head_address}"
             case Goto(target):
@@ -281,7 +344,6 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 status, reason = "halted", f"ASM instruction not yet supported by host runner: {format_instruction(instruction)}"
                 outcome = "unsupported"
 
-        left_band, right_band = split_runtime_tape(runtime_tape)
         trace.append({
             "step": step,
             "label": block.label,
@@ -297,6 +359,7 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
 
     if status == "running":
         status, reason = "halted", "fuel exhausted" if reason is None else reason
+    runtime_tape = materialize_runtime_tape(left_band, right_band)
     return {
         "status": status,
         "runtime_tape": runtime_tape,

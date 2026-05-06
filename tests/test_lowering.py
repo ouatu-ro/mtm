@@ -4,6 +4,7 @@ from mtm.meta_asm import Block, BranchCmp, CopyGlobalToHeadSymbol, CopyHeadSymbo
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
+from mtm.semantic_objects import decoded_view_from_encoded_band
 from mtm.source_encoding import encode_symbol
 from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HEAD, NO_HEAD, RULES, TAPE_LEFT, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
@@ -280,6 +281,56 @@ def test_move_sim_head_left_crosses_to_materialized_left_band() -> None:
     assert result["state"] == "DONE"
     assert result["head"] == _left_cell_address(band, 0)
     assert final_left_band[left_cell_index + 1] == HEAD
+
+
+def test_meta_asm_host_finds_and_reads_left_band_head_cell() -> None:
+    fixture = load_fixture("incrementer")
+    source_band = TMBand.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
+    band = compile_tm_to_universal_tape(
+        fixture.tm_program,
+        source_band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+    program = Program(
+        blocks=(Block("ENTRY", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),),
+        entry_label="ENTRY",
+    )
+
+    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=10)
+    final_left_band, _ = split_runtime_tape(runtime_tape)
+    cur_symbol_index = final_left_band.index(CUR_SYMBOL)
+
+    assert status == "halted"
+    assert trace[0]["head"] == _left_cell_address(band, 0)
+    assert tuple(final_left_band[cur_symbol_index + 1:cur_symbol_index + 1 + band.encoding.symbol_width]) == encode_symbol(band.encoding, "1")
+
+
+def test_meta_asm_host_moves_between_right_and_left_simulated_tape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    program = Program(
+        blocks=(
+            Block(
+                "ENTRY",
+                (
+                    FindHeadCell(),
+                    MoveSimHeadLeft(band.encoding.symbol_width),
+                    MoveSimHeadRight(band.encoding.symbol_width),
+                ),
+            ),
+        ),
+        entry_label="ENTRY",
+    )
+
+    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=10)
+    view = decoded_view_from_encoded_band(type(band).from_runtime_tape(band.encoding, runtime_tape))
+
+    assert status == "halted"
+    assert trace[1]["head"] < 0
+    assert trace[2]["head"] == 1
+    assert view.simulated_tape.left_band == ("_",)
+    assert view.simulated_tape.head == 0
 
 
 def test_lower_instruction_to_routine_is_inspectable() -> None:
