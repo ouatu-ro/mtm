@@ -315,7 +315,7 @@ search summaries, and future site rendering.
   Move debugger specs, debugger architecture notes, runbooks, results, and RFCs
   to their target directories with only heading/link/status adjustments.
 
-- [ ] S3: Split `documentation/Spec.md` mechanically.
+- [x] S3: Split `documentation/Spec.md` mechanically.
   Create the first-pass spec files under `docs/specs/` by copying the mapped
   sections. Do not rewrite content beyond path references and headings.
 
@@ -384,6 +384,15 @@ If the optional site shell is added:
   `documentation/OBJECT_MODEL.md` into the target `docs/` subdirectories;
   `documentation/Spec.md` and `documentation/DOCS-SCRATCHPAD.MD` were left
   in place for later steps.
+- 2026-05-06 20:10: Completed S3 mechanical split. Created
+  `docs/specs/overview.md`, `docs/specs/abi-and-artifacts.md`,
+  `docs/specs/meta-asm-and-lowering.md`,
+  `docs/specs/recursive-towers.md`, and
+  `docs/specs/invariants-and-correctness.md` from `documentation/Spec.md`
+  with front matter and top headings; validation passed with `git diff --check`,
+  `find docs/specs -maxdepth 1 -type f | sort`,
+  `rg -n "^## [0-9]+\\." docs/specs || true`, and
+  `git status --short --untracked-files=all`.
 
 ## Findings / Debt
 
