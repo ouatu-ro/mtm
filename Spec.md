@@ -184,11 +184,23 @@ decode(encode(x)) = x
 ```
 
 The blank symbol is always assigned id `0`, so its encoded bitstring is all
-zeroes at the selected symbol width. The lowerer relies on this when it
-constructs fresh blank cells at either simulated tape boundary.
+zeroes at the selected symbol width.
 
 `TMAbi` is compatibility metadata. `Encoding` is the guest-specific semantic
 dictionary used to recover source-level meaning from an encoded band.
+
+Runtime UTM compatibility is a lattice, not exact ABI equality:
+
+```text
+band_abi <= host_abi  => executable
+band_abi > host_abi   => rejected before execution
+```
+
+The encoded band is the authority for guest field lengths and guest constants.
+The host UTM's selected widths are upper bounds that keep generated routines
+finite. A wider host must not reinterpret a narrower band field by padding or
+inheriting host-width literals. Field and cell terminators delimit the actual
+guest values at runtime.
 
 ## 5. Semantic UTM Object
 
@@ -305,6 +317,10 @@ transition rules:
   #WRITE_SYMBOL  <symbol_bits> #END_FIELD
   #NEXT_STATE    <state_bits>  #END_FIELD
   #MOVE_DIR      <dir_bits>    #END_FIELD
+  #HALT_STATE    <state_bits>  #END_FIELD
+  #BLANK_SYMBOL  <symbol_bits> #END_FIELD
+  #LEFT_DIR      <dir_bits>    #END_FIELD
+  #RIGHT_DIR     <dir_bits>    #END_FIELD
   #CMP_FLAG      <bit>         #END_FIELD
   #TMP           <tmp_bits>    #END_FIELD
 #END_REGS
@@ -327,6 +343,10 @@ Transition record semantics:
 ```text
 (#STATE, #READ) -> (#NEXT, #WRITE, #MOVE)
 ```
+
+`#HALT_STATE`, `#BLANK_SYMBOL`, `#LEFT_DIR`, and `#RIGHT_DIR` are copied from
+the band's guest encoding. They prevent the generated UTM from baking
+host-width halt, blank, or direction literals into runtime decisions.
 
 ### 6.2 Right Band
 
@@ -352,7 +372,7 @@ nonnegative side after `#TAPE`, but not both.
 
 ### 6.3 Field Widths
 
-Initial fixed-width fields:
+Generated bands use one fixed payload width per field kind:
 
 ```text
 state field width  = state_width
@@ -367,8 +387,9 @@ Fields also carry terminators:
 #CELL #HEAD 00000001 #END_CELL
 ```
 
-The fixed width lets the interpreter count bits. The terminators make layout
-validation and variable-width routines straightforward.
+The band width is the semantic width of that encoded guest. A host UTM may use
+wider maximum widths, but runtime comparison and copying must treat the
+terminators as the actual field boundaries.
 
 ## 7. Meta-ASM
 
@@ -453,11 +474,30 @@ head returns to the current #RULE
 temporary marks are cleaned
 ```
 
+Comparison is width-bounded and delimiter-aware. `width` is the host maximum
+payload width. The routine compares at most `width + 1` positions: up to
+`width` payload bits plus the terminator position. Equality succeeds when the
+two streams match through the terminator. This preserves exact-ABI behavior and
+also allows a wider host UTM to run a valid narrower band without padding the
+band's fields.
+
+```text
+COMPARE_GLOBAL_GLOBAL lhs_marker rhs_marker width
+```
+
+Compare two global register fields using the same width-bounded,
+delimiter-aware rule.
+
 ```text
 COMPARE_GLOBAL_LITERAL global_marker literal_bits
 ```
 
 Compare a global register field against a literal bitstring.
+
+Literal comparison is only appropriate for host-owned constants. Guest-owned
+values whose width depends on the band, such as halt state and directions, must
+be represented as delimited band fields and compared with
+`COMPARE_GLOBAL_LOCAL` or `COMPARE_GLOBAL_GLOBAL`.
 
 ```text
 BRANCH_CMP label_equal label_not_equal
@@ -478,6 +518,13 @@ COPY_GLOBAL_GLOBAL src_marker dst_marker width
 ```
 
 Copy one global register into another global register.
+
+Copy routines copy delimited source payloads, subject to the same `width + 1`
+upper bound. Field-to-field copies may overwrite through the field terminator.
+Cell-to-field and field-to-cell symbol copies stop at the source terminator and
+preserve the destination's own terminator shape. Generated bands are expected to
+keep same-kind fields at the same guest width, so copy does not resize or shift
+destination fields.
 
 ```text
 COPY_HEAD_SYMBOL_TO global_marker width
@@ -547,9 +594,9 @@ head is at the new head cell's #CELL
 ```
 
 When movement reaches `#END_TAPE` or `#END_TAPE_LEFT`, the lowered
-implementation constructs a fresh blank cell using the all-zero blank
-encoding. It may enter `STUCK` on malformed layouts or failed structural
-searches.
+implementation constructs a fresh blank cell using the band-carried
+`#BLANK_SYMBOL` payload. It may enter `STUCK` on malformed layouts or failed
+structural searches.
 
 ### 8.6 Branching on Current Marker
 
@@ -561,22 +608,29 @@ Branch according to the marker currently under the runtime head.
 
 ## 9. Universal Interpreter Program
 
-For a selected `Encoding`, whose widths come from `target_abi`:
+For a selected host encoding, whose widths come from `target_abi`:
 
 ```text
 Wq = encoding.state_width
 Ws = encoding.symbol_width
 Wd = encoding.direction_width
-L_BITS = encode_direction(encoding, L)
-R_BITS = encode_direction(encoding, R)
-HALT_BITS = encode_state(encoding, encoding.halt_state)
+```
+
+These widths are upper bounds for runtime routines. Guest-owned constants are
+read from the encoded band:
+
+```text
+#HALT_STATE
+#BLANK_SYMBOL
+#LEFT_DIR
+#RIGHT_DIR
 ```
 
 Generated Meta-ASM:
 
 ```text
 LABEL START_STEP
-  COMPARE_GLOBAL_LITERAL #CUR_STATE HALT_BITS
+  COMPARE_GLOBAL_GLOBAL #CUR_STATE #HALT_STATE Wq
   BRANCH_CMP HALT FIND_HEAD
 
 LABEL FIND_HEAD
@@ -610,15 +664,12 @@ LABEL MATCHED_RULE
 
   COPY_GLOBAL_GLOBAL #NEXT_STATE #CUR_STATE Wq
 
-  COMPARE_GLOBAL_LITERAL #CUR_STATE HALT_BITS
-  BRANCH_CMP HALT DISPATCH_MOVE
-
 LABEL DISPATCH_MOVE
-  COMPARE_GLOBAL_LITERAL #MOVE_DIR L_BITS
+  COMPARE_GLOBAL_GLOBAL #MOVE_DIR #LEFT_DIR Wd
   BRANCH_CMP MOVE_LEFT CHECK_RIGHT
 
 LABEL CHECK_RIGHT
-  COMPARE_GLOBAL_LITERAL #MOVE_DIR R_BITS
+  COMPARE_GLOBAL_GLOBAL #MOVE_DIR #RIGHT_DIR Wd
   BRANCH_CMP MOVE_RIGHT START_STEP
 
 LABEL MOVE_LEFT
@@ -640,6 +691,9 @@ LABEL STUCK
 
 One pass through `START_STEP` implements one simulated source-TM step, unless
 the source state is already halting or the encoded machine becomes stuck.
+Halting is checked only at the step boundary. A transition whose `#NEXT` is
+the guest halt state still performs its write, move, and state update; the next
+`START_STEP` then halts because `#CUR_STATE` matches `#HALT_STATE`.
 
 ## 10. Lowering to `.tm`
 
@@ -859,7 +913,10 @@ write #CMP_FLAG
 cleanup
 ```
 
-The first implementation counts fixed-width bit positions in control states.
+The first implementation counted fixed-width bit positions in control states.
+The ABI-compatible implementation still uses width-counting as a maximum guard,
+but field equality and copy completion are delimited by `#END_FIELD` or
+`#END_CELL`.
 
 ### 12.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
 
@@ -867,14 +924,20 @@ Behavior:
 
 ```text
 mark current #RULE as #ACTIVE_RULE
-for i in 0..width-1:
-    read global bit i
-    read local bit i in the active rule
-    compare
+for i in 0..width:
+    read global item i
+    read local item i in the active rule
+    compare bits or matching terminators
+    if matching terminators: succeed
+    if mismatch: fail
 write #CMP_FLAG
 restore #ACTIVE_RULE to #RULE
 return to #RULE
 ```
+
+`COMPARE_GLOBAL_GLOBAL lhs_marker rhs_marker width` uses the same loop without
+the `#ACTIVE_RULE` marker bookkeeping, because both compared fields live in
+`#REGS`.
 
 ### 12.4 `COPY_LOCAL_GLOBAL local_marker global_marker width`
 
@@ -882,9 +945,10 @@ Behavior:
 
 ```text
 mark current #RULE as #ACTIVE_RULE
-for i in 0..width-1:
-    read local bit i
-    write global bit i
+for i in 0..width:
+    read local item i
+    write global item i
+    if local item is the expected terminator: stop
 restore #ACTIVE_RULE to #RULE
 return to #RULE
 ```
@@ -907,11 +971,12 @@ repeat:
 Behavior:
 
 ```text
-for i in 0..width-1:
-    read the bit at offset i from the current headed cell
+for i in 0..width:
+    read the item at offset i from the current headed cell
+    if the item is #END_CELL: stop
     seek the target global field
-    write that bit
-    seek back to the simulated #HEAD cell when another bit remains
+    write that item
+    seek back to the simulated #HEAD cell when another item remains
 ```
 
 ### 12.7 `COPY_GLOBAL_TO_HEAD_SYMBOL global_marker width`
@@ -919,11 +984,12 @@ for i in 0..width-1:
 Behavior:
 
 ```text
-for i in 0..width-1:
-    read the global bit at offset i
+for i in 0..width:
+    read the global item at offset i
+    if the item is #END_FIELD: stop
     seek the current headed cell
-    write the corresponding symbol bit
-    return to the global field when another bit remains
+    write the corresponding symbol item
+    return to the global field when another item remains
 ```
 
 ### 12.8 `MOVE_SIM_HEAD_RIGHT`
