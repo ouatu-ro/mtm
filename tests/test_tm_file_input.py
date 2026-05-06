@@ -288,7 +288,7 @@ def test_primary_program_and_band_artifact_work_together(tmp_path: Path) -> None
     assert result["state"] == "U_HALT"
 
 
-def test_cli_run_preserves_program_side_abi_metadata(tmp_path: Path) -> None:
+def test_cli_run_preserves_program_side_abi_metadata(tmp_path: Path, capsys) -> None:
     tm_path = _write_tm_file(tmp_path)
     utm_path = tmp_path / "incrementer.utm.band"
     raw_tm_path = tmp_path / "utm.tm"
@@ -304,6 +304,46 @@ def test_cli_run_preserves_program_side_abi_metadata(tmp_path: Path) -> None:
             band_artifact.target_abi.dir_width,
             band_artifact.target_abi.grammar_version,
             "mismatched",
+        ),
+        minimal_abi=program_artifact.minimal_abi,
+    )
+    mismatched.write(raw_tm_path)
+
+    assert cli_main(["run", str(raw_tm_path), str(utm_path)]) == 0
+    output = capsys.readouterr().out
+    assert "FINAL STATUS: halted" in output
+    assert "FINAL STATE: U_HALT" in output
+
+
+def test_cli_run_rejects_program_abi_narrower_than_band(tmp_path: Path) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main([
+        "compile",
+        str(tm_path),
+        "-o",
+        str(utm_path),
+        "--tm-out",
+        str(raw_tm_path),
+        "--state-width",
+        "3",
+        "--symbol-width",
+        "4",
+        "--dir-width",
+        "2",
+    ]) == 0
+    band_artifact = UTMBandArtifact.read(utm_path)
+    program_artifact = UTMProgramArtifact.read(raw_tm_path)
+    mismatched = UTMProgramArtifact(
+        program=program_artifact.program,
+        target_abi=TMAbi(
+            band_artifact.target_abi.state_width - 1,
+            band_artifact.target_abi.symbol_width,
+            band_artifact.target_abi.dir_width,
+            band_artifact.target_abi.grammar_version,
+            "narrower",
         ),
         minimal_abi=program_artifact.minimal_abi,
     )

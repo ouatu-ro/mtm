@@ -15,7 +15,7 @@ from typing import Mapping
 from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HALT_STATE, HEAD, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RIGHT_DIR, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
 from .pretty import parse_left_tape, parse_registers, parse_rules, parse_tape
 from .raw_transition_tm import L as RAW_L, R as RAW_R, S as RAW_S, TMTransitionProgram, run_raw_tm
-from .source_encoding import Encoding, TMAbi, TMProgram, assert_abi_compatible, assign_ids, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi, width_for
+from .source_encoding import Encoding, TMAbi, TMProgram, assert_abi_compatible, assert_host_abi_supports_band, assign_ids, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi, width_for
 
 
 @dataclass(frozen=True, init=False)
@@ -313,7 +313,7 @@ class UTMProgramArtifact:
         """Run this universal-machine program on a band artifact."""
 
         if self.target_abi is not None and band_artifact.target_abi is not None:
-            assert_abi_compatible(self.target_abi, band_artifact.target_abi)
+            assert_host_abi_supports_band(self.target_abi, band_artifact.target_abi)
         config = band_artifact.to_raw_instance(self)
         return run_raw_tm(
             config.program,

@@ -51,7 +51,7 @@ Out of scope:
 - [x] S4: Lower delimiter-aware compare and copy to raw TM transitions.
   Keep exact-ABI behavior valid, but allow early terminator success for smaller
   bands under wider hosts. Use `#BLANK_SYMBOL` for tape expansion.
-- [ ] S5: Relax runtime compatibility checks.
+- [x] S5: Relax runtime compatibility checks.
   Accept `band_abi <= host_abi`, reject `band_abi > host_abi`, and keep raw TM
   execution independent of ABI metadata.
 - [ ] S6: Add focused tests and regenerate fixtures only where intentional.
@@ -134,6 +134,17 @@ Out of scope:
   'lowered_start_step_matches_host_block or compare_global_global_matches_host_block
   or lowered_compare_global_global_stops_at_matching_early_terminators or
   lowered_copy_global_to_head_symbol_preserves_end_cell_shape'`.
+- 2026-05-06 08:09 EEST: S5 completed. Runtime ABI compatibility now accepts
+  host widths greater than or equal to band widths while still rejecting
+  narrower hosts and grammar mismatches. Validation: `uv run python -m pytest
+  tests/test_semantic_objects.py -k
+  'runtime_abi_compatibility_allows_wider_host_and_rejects_narrower_host or
+  utm_program_artifact_run_allows_missing_program_abi_metadata or
+  utm_program_artifact_run_rejects_incompatible_abi_metadata or
+  utm_program_artifact_run_allows_wider_program_abi_metadata'`; `uv run
+  python -m pytest tests/test_tm_file_input.py -k
+  'cli_run_preserves_program_side_abi_metadata or
+  cli_run_rejects_program_abi_narrower_than_band'`.
 
 ## Findings / Debt
 

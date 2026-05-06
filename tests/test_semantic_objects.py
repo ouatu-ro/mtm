@@ -6,7 +6,7 @@ from mtm.meta_asm import CompareGlobalGlobal, build_universal_meta_asm
 from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import S, TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, compile_raw_guest, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
-from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
+from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible, assert_host_abi_supports_band
 from mtm.utm_band_layout import BLANK_SYMBOL, HALT_STATE, LEFT_DIR, RIGHT_DIR, compile_tm_to_universal_tape
 
 
@@ -75,6 +75,28 @@ def test_abi_compatibility_ignores_family_label_and_rejects_shape_mismatches() -
             assert "ABI mismatch" in str(exc)
         else:
             raise AssertionError("expected incompatible ABI to be rejected")
+
+
+def test_runtime_abi_compatibility_allows_wider_host_and_rejects_narrower_host() -> None:
+    band_abi = TMAbi(2, 2, 1, "mtm-v1", "band")
+    wider_host = TMAbi(3, 4, 2, "mtm-v1", "host")
+    narrower_hosts = (
+        ("state_width", TMAbi(1, 2, 1, "mtm-v1", "narrow-state")),
+        ("symbol_width", TMAbi(2, 1, 1, "mtm-v1", "narrow-symbol")),
+        ("dir_width", TMAbi(2, 2, 0, "mtm-v1", "narrow-dir")),
+        ("grammar_version", TMAbi(3, 4, 2, "mtm-v2", "wrong-grammar")),
+    )
+
+    assert_host_abi_supports_band(wider_host, band_abi)
+
+    for field, host_abi in narrower_hosts:
+        try:
+            assert_host_abi_supports_band(host_abi, band_abi)
+        except ValueError as exc:
+            assert "ABI mismatch" in str(exc)
+            assert field in str(exc)
+        else:
+            raise AssertionError(f"expected {field} mismatch to be rejected")
 
 
 def test_semantic_view_from_encoded_band() -> None:
@@ -418,12 +440,19 @@ def test_utm_program_artifact_round_trip_and_run(tmp_path) -> None:
 def test_utm_program_artifact_run_allows_missing_program_abi_metadata() -> None:
     band = load_fixture("incrementer").build_band()
     band_artifact = utm_artifact_from_band(band)
-    program = UniversalInterpreter.for_encoding(band.encoding).lower_for_band(band_artifact).program
+    exact_program_artifact = UniversalInterpreter.for_encoding(band.encoding).lower_for_band(band_artifact)
+    program = exact_program_artifact.program
     program_artifact = UTMProgramArtifact(program=program)
 
+    expected = exact_program_artifact.run(band_artifact, fuel=200_000)
     result = program_artifact.run(band_artifact, fuel=200_000)
+    final_band = type(band).from_runtime_tape(band.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
 
+    assert result == expected
     assert result["status"] == "halted"
+    assert final_view.current_state == "qDone"
+    assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
 def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
@@ -432,7 +461,7 @@ def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
     program = UniversalInterpreter.for_encoding(band.encoding).lower_for_band(band_artifact).program
     mismatches = (
         ("state_width", TMAbi(
-            band_artifact.target_abi.state_width + 1,
+            band_artifact.target_abi.state_width - 1,
             band_artifact.target_abi.symbol_width,
             band_artifact.target_abi.dir_width,
             band_artifact.target_abi.grammar_version,
@@ -440,7 +469,7 @@ def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
         )),
         ("symbol_width", TMAbi(
             band_artifact.target_abi.state_width,
-            band_artifact.target_abi.symbol_width + 1,
+            band_artifact.target_abi.symbol_width - 1,
             band_artifact.target_abi.dir_width,
             band_artifact.target_abi.grammar_version,
             "wrong-symbol",
@@ -448,7 +477,7 @@ def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
         ("dir_width", TMAbi(
             band_artifact.target_abi.state_width,
             band_artifact.target_abi.symbol_width,
-            band_artifact.target_abi.dir_width + 1,
+            band_artifact.target_abi.dir_width - 1,
             band_artifact.target_abi.grammar_version,
             "wrong-dir",
         )),
@@ -470,6 +499,29 @@ def test_utm_program_artifact_run_rejects_incompatible_abi_metadata() -> None:
             assert field in str(exc)
         else:
             raise AssertionError(f"expected {field} mismatch to be rejected")
+
+
+def test_utm_program_artifact_run_allows_wider_program_abi_metadata() -> None:
+    fixture = load_fixture("incrementer")
+    narrow_band = fixture.build_band()
+    narrow_band_artifact = utm_artifact_from_band(narrow_band)
+    wide_target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
+    wide_band = fixture.build_band(abi=wide_target)
+    interpreter = UniversalInterpreter.for_encoding(wide_band.encoding)
+    program_artifact = interpreter.lower(
+        interpreter.alphabet_for_band(narrow_band_artifact),
+        target_abi=wide_target,
+        minimal_abi=wide_band.minimal_abi,
+    )
+
+    result = program_artifact.run(narrow_band_artifact, fuel=200_000)
+    final_band = type(narrow_band).from_runtime_tape(narrow_band.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
+
+    assert result["status"] == "halted"
+    assert result["state"] == "U_HALT"
+    assert final_view.current_state == fixture.halt_state
+    assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
 
 
 def test_universal_interpreter_for_encoded_matches_direct_lowering() -> None:

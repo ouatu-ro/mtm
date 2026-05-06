@@ -174,6 +174,24 @@ def assert_abi_compatible(a: TMAbi, b: TMAbi) -> None:
         raise ValueError("ABI mismatch: " + "; ".join(mismatches))
 
 
+def assert_host_abi_supports_band(host_abi: TMAbi, band_abi: TMAbi) -> None:
+    """Raise when a host ABI cannot execute a band encoded for ``band_abi``."""
+
+    mismatches = []
+    if host_abi.grammar_version != band_abi.grammar_version:
+        mismatches.append(
+            f"grammar_version: {host_abi.grammar_version!r} != {band_abi.grammar_version!r}"
+        )
+    if host_abi.state_width < band_abi.state_width:
+        mismatches.append(f"state_width: host {host_abi.state_width!r} < band {band_abi.state_width!r}")
+    if host_abi.symbol_width < band_abi.symbol_width:
+        mismatches.append(f"symbol_width: host {host_abi.symbol_width!r} < band {band_abi.symbol_width!r}")
+    if host_abi.dir_width < band_abi.dir_width:
+        mismatches.append(f"dir_width: host {host_abi.dir_width!r} < band {band_abi.dir_width!r}")
+    if mismatches:
+        raise ValueError("ABI mismatch: " + "; ".join(mismatches))
+
+
 def width_for(count: int) -> int: return 1 if count <= 1 else ceil(log2(count))
 def assign_ids(values: Iterable[str | int]) -> dict[str | int, int]: return {value: index for index, value in enumerate(values)}
 
@@ -318,6 +336,6 @@ def encode_direction(encoding: Encoding, direction: int) -> tuple[str, ...]: ret
 
 
 __all__ = ["Encoding", "L", "R", "TMAbi", "TMProgram", "abi_compatible", "abi_from_literal",
-           "abi_to_literal", "assert_abi_compatible", "assign_ids", "bits", "build_encoding", "collect_alphabet",
-           "encode_direction", "encode_state", "encode_symbol", "infer_minimal_abi", "unbits", "width_for",
-           "Transition", "TransitionKey"]
+           "abi_to_literal", "assert_abi_compatible", "assert_host_abi_supports_band", "assign_ids",
+           "bits", "build_encoding", "collect_alphabet", "encode_direction", "encode_state", "encode_symbol",
+           "infer_minimal_abi", "unbits", "width_for", "Transition", "TransitionKey"]
