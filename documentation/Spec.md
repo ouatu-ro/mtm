@@ -1142,5 +1142,5 @@ Current result notes:
 - The full lowered L2 raw run is currently estimated in weeks on the local C
   raw runner.
 
-See `docs/l2-bootstrap-results.md` for the current measurements and backend
+See `docs/results/l2-bootstrap.md` for the current measurements and backend
 experiments.

@@ -75,7 +75,7 @@ The debugger already has a useful semantic stack:
 4. semantic band decode
 5. session/shell presentation
 
-See [debugger-stepper.md](/Users/bg/repos/mtm/docs/debugger-stepper.md).
+See [debugger-stepper.md](../architecture/debugger-stepper.md).
 
 This spec refines only layer 5.
 
@@ -581,12 +581,12 @@ One strong negative check:
 ## Relationship To Current REPL Spec
 
 The current REPL behavior remains defined by
-[debugger-repl-spec.md](/Users/bg/repos/mtm/docs/debugger-repl-spec.md).
+[debugger-repl.md](debugger-repl.md).
 
 This document defines the architectural shape that should produce that REPL.
 
 In short:
 
-- `debugger-repl-spec.md` defines what the debugger says
+- `debugger-repl.md` defines what the debugger says
 - this document defines how debugger read and presentation layers should be
   structured

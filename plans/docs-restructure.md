@@ -306,12 +306,12 @@ search summaries, and future site rendering.
 
 ## Steps
 
-- [ ] S1: Inspect and stabilize current doc state.
+- [x] S1: Inspect and stabilize current doc state.
   Decide whether `documentation/Spec.md`, `documentation/OBJECT_MODEL.md`, and
   `documentation/DOCS-SCRATCHPAD.MD` are drafts, moves, or canonical source
   files before moving anything.
 
-- [ ] S2: Create target directories and move existing whole-file docs.
+- [x] S2: Create target directories and move existing whole-file docs.
   Move debugger specs, debugger architecture notes, runbooks, results, and RFCs
   to their target directories with only heading/link/status adjustments.
 
@@ -375,8 +375,15 @@ If the optional site shell is added:
   made, per request.
 - 2026-05-06 19:55: Added optional MkDocs/static-site steps and front matter
   policy. No implementation performed and no commit made, per request.
-- 2026-05-06 20:10: Clarified scratchpad extraction mapping and switched the
+- 2026-05-06 19:57: Clarified scratchpad extraction mapping and switched the
   site-shell validation path to a pinned project dev dependency.
+- 2026-05-06 20:00: Completed S1/S2 inventory and move pass. Moved
+  `docs/debugger-stepper.md`, `docs/debugger-presentation-spec.md`,
+  `docs/debugger-repl-spec.md`, `docs/l2-incrementer-runbook.md`,
+  `docs/l2-bootstrap-results.md`, `docs/help-menu-rfc.md`, and
+  `documentation/OBJECT_MODEL.md` into the target `docs/` subdirectories;
+  `documentation/Spec.md` and `documentation/DOCS-SCRATCHPAD.MD` were left
+  in place for later steps.
 
 ## Findings / Debt
 
