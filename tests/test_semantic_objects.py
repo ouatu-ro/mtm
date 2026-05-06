@@ -155,7 +155,7 @@ def test_one_step_right_constructs_blank_right_cell_end_to_end() -> None:
         ("q1", blank): ("HALT", blank, R),
     }, initial_state="q0", halt_state="HALT", blank=blank)
 
-    result, view = _run_instance(TMInstance(program, band, "q0", "HALT"), fuel=5_000)
+    result, view = _run_instance(TMInstance(program, band, "q0", "HALT"), fuel=50_000)
 
     assert result["status"] == "halted"
     assert view.current_state == "HALT"

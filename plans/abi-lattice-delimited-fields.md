@@ -58,26 +58,22 @@ Out of scope:
   Cover wider-host/smaller-band incrementer, halt-after-final-write/move,
   blank-cell expansion width, exact-ABI regression, and metadata rejection when
   the band is wider than the host.
-- [ ] S7: Run validation and update this plan.
+- [x] S7: Run validation and update this plan.
   Record exact commands, results, remaining debt, and commit checkpoints once
   implementation begins.
 
 ## Validation
 
 - Typecheck:
-  - Not identified yet.
+  - `uv run python -m py_compile mtm/source_encoding.py mtm/meta_asm_host.py mtm/lowering/instruction_lowering.py tests/test_lowering.py tests/test_semantic_objects.py`
 - Lint:
   - Not identified yet.
 - Tests:
-  - `pytest tests/test_semantic_objects.py`
-  - `pytest tests/test_lowering.py`
-  - `pytest tests/test_meta_asm_host.py` if present, otherwise the nearest
-    MetaASM host test module.
-  - Focused CLI/runner test that proves a wider UTM host executes a narrower
-    incrementer band to `1100`.
+  - `uv run python -m pytest tests/test_semantic_objects.py tests/test_tm_file_input.py tests/test_lowering.py tests/test_meta_asm.py`
+  - `uv run python -m pytest`
 - Final checks:
   - `git status --short`
-  - `rg -n "HALT_BITS|L_BITS|R_BITS|strict ABI|all-zero blank" mtm tests docs Spec.md object_model.md`
+  - `rg -n "HALT_BITS|L_BITS|R_BITS|strict ABI|all-zero blank" mtm tests docs Spec.md OBJECT_MODEL.md object_model.md`
 
 ## Progress Log
 
@@ -162,6 +158,18 @@ Out of scope:
   wider_abi_incrementer_runs_end_to_end or halt_transition_moves_after_writing_on_left_tape
   or halt_transition_moves_after_writing_on_right_tape'`; `uv run python -m
   pytest tests/test_lowering.py -k 'move_sim_head'`.
+- 2026-05-06 08:35 EEST: S7 completed. Broad validation exposed stale fuel
+  limits for more expensive delimiter-copy paths and a source-trace assertion
+  that still expected one partial row; both were updated to match the new
+  completed-step behavior. Validation: `uv run python -m pytest
+  tests/test_semantic_objects.py::test_one_step_right_constructs_blank_right_cell_end_to_end
+  tests/test_tm_file_input.py::test_cli_trace_emits_raw_instruction_and_block_levels
+  tests/test_lowering.py::test_first_lowered_fragments_smoke`; `uv run python
+  -m pytest tests/test_semantic_objects.py tests/test_tm_file_input.py
+  tests/test_lowering.py tests/test_meta_asm.py` (`116 passed`); `uv run
+  python -m pytest` (`170 passed`); `git status --short`; `rg -n
+  "HALT_BITS|L_BITS|R_BITS|strict ABI|all-zero blank" mtm tests docs Spec.md
+  OBJECT_MODEL.md object_model.md` (no matches).
 
 ## Findings / Debt
 

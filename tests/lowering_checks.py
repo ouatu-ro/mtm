@@ -127,7 +127,7 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
 
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, 2), state="start", continuation_label="DONE")
-    result = run_raw_tm(builder.build("start"), runtime_tape, head=1, max_steps=500)
+    result = run_raw_tm(builder.build("start"), runtime_tape, head=1, max_steps=5_000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
     rows.append(["COPY_HEAD_SYMBOL_TO", result["status"], result["state"], result["head"], f"{CUR_SYMBOL}={''.join(final_left_band[cur_symbol_index + 1:cur_symbol_index + 3])}"])

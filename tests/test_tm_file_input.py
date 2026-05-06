@@ -549,8 +549,12 @@ def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> Non
     assert source_lines[0].startswith(
         "group\tstatus\traw_start\traw_end\traw_delta\tstate\tread\twrite\tmove\tnext_state\thead_before\thead_after"
     )
-    assert len(source_lines) == 2
+    assert len(source_lines) == 3
     first_source_step = source_lines[1].split("\t")
-    assert first_source_step[1] == "max_raw"
-    assert first_source_step[5:12] == ["qFindMargin", "1", "1", "0", "qFindMargin", "0", "0"]
+    assert first_source_step[1] == "stepped"
+    assert first_source_step[5:12] == ["qFindMargin", "1", "1", "1", "qFindMargin", "0", "1"]
     assert "\tSTART_STEP\t0\t0\tcompare_global_global\t" in source_lines[1]
+    second_source_step = source_lines[2].split("\t")
+    assert second_source_step[1] == "stepped"
+    assert second_source_step[5:12] == ["qFindMargin", "0", "0", "1", "qFindMargin", "1", "2"]
+    assert "\tSTART_STEP\t0\t0\tcompare_global_global\t" in source_lines[2]
