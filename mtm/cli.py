@@ -26,6 +26,124 @@ TRACE_SOURCE_DEFAULT_MAX_RAW = 5_000_000
 DEBUG_DEFAULT_MAX_RAW = DebuggerSession.DEFAULT_MAX_RAW
 
 
+class MTMHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Argparse formatter that keeps multiline examples readable."""
+
+
+TOP_LEVEL_HELP = """\
+Compile, inspect, and run Meta Turing Machine artifacts.
+
+Common workflows:
+  mtm l1 examples/incrementer_tm.py --out-dir out
+  mtm l2 out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band --out-dir out
+  mtm run out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band
+  mtm trace out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band --level raw --out out/raw.tsv
+  mtm dbg out/incrementer_tm.l1.tm out/incrementer_tm.l1.utm.band
+
+Run `mtm COMMAND -h` for command-specific inputs, outputs, and examples.
+"""
+
+
+COMMAND_EXAMPLES = {
+    "compile": """\
+Compile a Python source TM into a UTM band artifact.
+
+ABI width flags:
+  --state-width, --symbol-width, and --dir-width must be supplied together.
+
+Examples:
+  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band
+  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm --asm-out out/incrementer.asm
+  mtm compile examples/incrementer_tm.py -o out/wide.utm.band --state-width 3 --symbol-width 4 --dir-width 2
+""",
+    "emit-asm": """\
+Emit the width-specialized Meta-ASM interpreter for a Python source TM.
+
+ABI width flags:
+  --state-width, --symbol-width, and --dir-width must be supplied together.
+
+Examples:
+  mtm emit-asm examples/incrementer_tm.py -o out/incrementer.asm
+  mtm emit-asm examples/incrementer_tm.py -o out/wide.asm --state-width 3 --symbol-width 4 --dir-width 2
+""",
+    "emit-tm": """\
+Emit the lowered raw UTM transition table for a Python source TM.
+
+ABI width flags:
+  --state-width, --symbol-width, and --dir-width must be supplied together.
+
+Examples:
+  mtm emit-tm examples/incrementer_tm.py -o out/incrementer.tm
+  mtm emit-tm examples/incrementer_tm.py -o out/wide.tm --state-width 3 --symbol-width 4 --dir-width 2
+""",
+    "emit-source": """\
+Emit a safe source artifact from a Python source TM.
+
+Example:
+  mtm emit-source examples/incrementer_tm.py -o out/incrementer.mtm.source
+""",
+    "l1": """\
+Emit the standard L1 bundle from a Python source TM.
+
+Outputs:
+  STEM.mtm.source
+  STEM.l1.utm.band
+  STEM.l1.tm
+
+ABI width flags:
+  --state-width, --symbol-width, and --dir-width must be supplied together.
+
+Examples:
+  mtm l1 examples/incrementer_tm.py --out-dir out
+  mtm l1 examples/incrementer_tm.py --out-dir out --stem incrementer --state-width 3 --symbol-width 4 --dir-width 2
+""",
+    "l2": """\
+Emit L2 artifacts by compiling an L1 raw TM plus its L1 band as a raw guest.
+
+Outputs:
+  STEM.l2.utm.band
+  STEM.l2.tm
+
+Example:
+  mtm l2 out/incrementer.l1.tm out/incrementer.l1.utm.band --out-dir out
+""",
+    "run": """\
+Run a raw UTM .tm program on a .utm.band input artifact.
+
+Example:
+  mtm run out/incrementer.l1.tm out/incrementer.l1.utm.band --max-steps 200000
+""",
+    "trace": """\
+Emit a TSV trace for a raw UTM run.
+
+Levels:
+  raw          one row per raw transition
+  instruction  one row per Meta-ASM instruction boundary
+  block        one row per Meta-ASM block boundary
+  source|guest one row per simulated guest/source step
+
+Raw guard defaults:
+  raw/instruction/block: 100000
+  source/guest:          5000000
+
+Examples:
+  mtm trace out/incrementer.l1.tm out/incrementer.l1.utm.band --level raw --max-steps 500 --out out/raw.tsv --meta-out out/raw.json
+  mtm trace out/incrementer.l1.tm out/incrementer.l1.utm.band --level instruction --max-steps 50 --out out/instruction.tsv
+""",
+    "dbg": """\
+Start the interactive debugger REPL.
+
+Inputs:
+  mtm dbg FIXTURE
+  mtm dbg HOST.tm INPUT.utm.band
+
+Examples:
+  mtm dbg incrementer
+  mtm dbg out/incrementer.l1.tm out/incrementer.l1.utm.band --max-raw 100000
+""",
+}
+
+
 def _target_abi_from_args(args) -> TMAbi | None:
     widths = [getattr(args, "state_width", None), getattr(args, "symbol_width", None), getattr(args, "dir_width", None)]
     if all(width is None for width in widths):
@@ -50,9 +168,25 @@ def _compile_from_py(path: str | Path, *, abi: TMAbi | None = None) -> tuple[UTM
 
 
 def _add_abi_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--state-width", type=int)
-    parser.add_argument("--symbol-width", type=int)
-    parser.add_argument("--dir-width", type=int)
+    parser.add_argument("--state-width", type=int, metavar="WQ", help="target ABI state field width")
+    parser.add_argument("--symbol-width", type=int, metavar="WS", help="target ABI symbol field width")
+    parser.add_argument("--dir-width", type=int, metavar="WD", help="target ABI direction field width")
+
+
+def _add_command(
+    subparsers,
+    name: str,
+    *,
+    help: str,
+    description: str | None = None,
+) -> argparse.ArgumentParser:
+    return subparsers.add_parser(
+        name,
+        help=help,
+        description=description or help,
+        epilog=COMMAND_EXAMPLES[name],
+        formatter_class=MTMHelpFormatter,
+    )
 
 
 def _write_text(path: str | Path, text: str) -> None:
@@ -384,60 +518,65 @@ def _write_trace(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Compile and run MTM artifacts.")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        description="Compile and run MTM artifacts.",
+        epilog=TOP_LEVEL_HELP,
+        formatter_class=MTMHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command", required=True, title="commands", metavar="COMMAND")
 
-    compile_parser = sub.add_parser("compile", help="Compile a Python TM file into a .utm.band artifact.")
-    compile_parser.add_argument("input")
-    compile_parser.add_argument("-o", "--output", required=True)
-    compile_parser.add_argument("--asm-out")
-    compile_parser.add_argument("--tm-out")
+    compile_parser = _add_command(sub, "compile", help="Compile a Python TM file into a .utm.band artifact.")
+    compile_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
+    compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.utm.band", help="encoded UTM band artifact to write")
+    compile_parser.add_argument("--asm-out", metavar="OUTPUT.asm", help="also write the specialized Meta-ASM program")
+    compile_parser.add_argument("--tm-out", metavar="OUTPUT.tm", help="also write the lowered raw UTM transition table")
     _add_abi_args(compile_parser)
 
-    asm_parser = sub.add_parser("emit-asm", help="Emit width-specialized Meta-ASM for a Python TM file.")
-    asm_parser.add_argument("input")
-    asm_parser.add_argument("-o", "--output", required=True)
+    asm_parser = _add_command(sub, "emit-asm", help="Emit width-specialized Meta-ASM for a Python TM file.")
+    asm_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
+    asm_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.asm", help="Meta-ASM file to write")
     _add_abi_args(asm_parser)
 
-    tm_parser = sub.add_parser("emit-tm", help="Emit lowered raw UTM .tm for a Python TM file.")
-    tm_parser.add_argument("input")
-    tm_parser.add_argument("-o", "--output", required=True)
+    tm_parser = _add_command(sub, "emit-tm", help="Emit lowered raw UTM .tm for a Python TM file.")
+    tm_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
+    tm_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.tm", help="raw transition table to write")
     _add_abi_args(tm_parser)
 
-    source_parser = sub.add_parser("emit-source", help="Emit a safe .mtm.source artifact from a Python TM file.")
-    source_parser.add_argument("input")
-    source_parser.add_argument("-o", "--output", required=True)
+    source_parser = _add_command(sub, "emit-source", help="Emit a safe .mtm.source artifact from a Python TM file.")
+    source_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
+    source_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.mtm.source", help="source artifact to write")
 
-    l1_parser = sub.add_parser("l1", help="Emit source, l1 .utm.band, and l1 .tm artifacts from a Python TM file.")
-    l1_parser.add_argument("input")
-    l1_parser.add_argument("--out-dir", required=True)
-    l1_parser.add_argument("--stem")
+    l1_parser = _add_command(sub, "l1", help="Emit source, l1 .utm.band, and l1 .tm artifacts from a Python TM file.")
+    l1_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
+    l1_parser.add_argument("--out-dir", required=True, metavar="DIR", help="directory for the emitted L1 artifacts")
+    l1_parser.add_argument("--stem", metavar="NAME", help="artifact filename stem; defaults to the input stem")
     _add_abi_args(l1_parser)
 
-    l2_parser = sub.add_parser("l2", help="Emit l2 artifacts from l1 .tm and l1 .utm.band artifacts.")
-    l2_parser.add_argument("tm_file")
-    l2_parser.add_argument("band_file")
-    l2_parser.add_argument("--out-dir", required=True)
-    l2_parser.add_argument("--stem")
+    l2_parser = _add_command(sub, "l2", help="Emit l2 artifacts from l1 .tm and l1 .utm.band artifacts.")
+    l2_parser.add_argument("tm_file", metavar="L1.tm", help="L1 raw UTM transition artifact")
+    l2_parser.add_argument("band_file", metavar="L1.utm.band", help="L1 encoded band artifact")
+    l2_parser.add_argument("--out-dir", required=True, metavar="DIR", help="directory for the emitted L2 artifacts")
+    l2_parser.add_argument("--stem", metavar="NAME", help="artifact filename stem; defaults from the L1 band stem")
 
-    run_parser = sub.add_parser("run", help="Run a .tm program on a .utm.band artifact.")
-    run_parser.add_argument("tm_file")
-    run_parser.add_argument("input", nargs="?")
-    run_parser.add_argument("--max-steps", type=int, default=200_000)
+    run_parser = _add_command(sub, "run", help="Run a .tm program on a .utm.band artifact.")
+    run_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
+    run_parser.add_argument("input", metavar="INPUT.utm.band", help="encoded UTM band artifact")
+    run_parser.add_argument("--max-steps", type=int, default=200_000, metavar="N", help="raw transition fuel; default: 200000")
 
-    trace_parser = sub.add_parser("trace", help="Emit a TSV trace for a .tm program and .utm.band input.")
-    trace_parser.add_argument("tm_file")
-    trace_parser.add_argument("band_file")
-    trace_parser.add_argument("--out", required=True)
-    trace_parser.add_argument("--level", choices=("raw", "instruction", "block", "source", "guest"), default="raw")
-    trace_parser.add_argument("--max-steps", type=int, default=100)
-    trace_parser.add_argument("--max-raw", type=int)
-    trace_parser.add_argument("--meta-out")
+    trace_parser = _add_command(sub, "trace", help="Emit a TSV trace for a .tm program and .utm.band input.")
+    trace_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
+    trace_parser.add_argument("band_file", metavar="INPUT.utm.band", help="encoded UTM band artifact")
+    trace_parser.add_argument("--out", required=True, metavar="TRACE.tsv", help="trace TSV output path")
+    trace_parser.add_argument("--level", choices=("raw", "instruction", "block", "source", "guest"), default="raw", help="trace grouping level")
+    trace_parser.add_argument("--max-steps", type=int, default=100, metavar="N", help="maximum rows/groups to emit; default: 100")
+    trace_parser.add_argument("--max-raw", type=int, metavar="N", help="raw transition guard; default: 100000, or 5000000 for source/guest")
+    trace_parser.add_argument("--meta-out", metavar="TRACE.json", help="optional trace metadata sidecar")
 
-    dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture or .tm/.utm.band pair.")
-    dbg_parser.add_argument("inputs", nargs="*", metavar="INPUT")
-    dbg_parser.add_argument("--fixture", dest="fixture_name")
-    dbg_parser.add_argument("--max-raw", type=int, default=DEBUG_DEFAULT_MAX_RAW)
+    dbg_parser = _add_command(sub, "dbg", help="Start the MTM debugger REPL for a fixture or .tm/.utm.band pair.")
+    dbg_parser.usage = "mtm dbg [-h] [--max-raw N] FIXTURE\n       mtm dbg [-h] [--max-raw N] HOST.tm INPUT.utm.band\n       mtm dbg [-h] --fixture FIXTURE [--max-raw N]"
+    dbg_parser.add_argument("inputs", nargs="*", metavar="INPUT", help="fixture name, or HOST.tm INPUT.utm.band")
+    dbg_parser.add_argument("--fixture", dest="fixture_name", metavar="FIXTURE", help="debug a built-in fixture by name")
+    dbg_parser.add_argument("--max-raw", type=int, default=DEBUG_DEFAULT_MAX_RAW, metavar="N", help=f"raw transition guard for grouped debugger steps; default: {DEBUG_DEFAULT_MAX_RAW}")
 
     args = parser.parse_args(argv)
     abi = _target_abi_from_args(args)
