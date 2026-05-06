@@ -85,3 +85,9 @@ bootstrap notes.
 ## Documentation
 
 Start at [docs/index.md](docs/index.md).
+
+## Primary background:
+
+- Alan M. Turing, “On Computable Numbers, with an Application to the
+  Entscheidungsproblem”, 1936/1937.
+  https://www.cs.virginia.edu/~robins/Turing_Paper_1936.pdf
