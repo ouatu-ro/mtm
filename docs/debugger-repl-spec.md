@@ -36,7 +36,7 @@ terminal adapter.
 
 ## Entry
 
-Initial fixture mode:
+Fixture mode:
 
 ```bash
 mtm dbg incrementer
@@ -45,14 +45,15 @@ mtm dbg --fixture incrementer
 
 Both forms resolve through the same fixture setup path.
 
-Out of scope for the first REPL implementation:
+Artifact mode:
 
 ```bash
-mtm dbg --tm utm.tm --band input.utm.band
+mtm dbg utm.tm input.utm.band
 ```
 
-Artifact/raw modes may lack fixture metadata, source maps, or semantic layout
-metadata. They should be added as separate initialization modes later.
+Artifact mode loads a persisted `.tm` host and `.utm.band` input, rebuilds the
+matching lowering source map for that band's encoding, and starts the same
+debugger shell. It can use `--max-raw N` to override the grouped-step guard.
 
 ## Startup
 

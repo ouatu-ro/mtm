@@ -138,3 +138,35 @@ def test_cli_dbg_flag_and_positional_share_fixture_resolution(monkeypatch, capsy
     assert positional_calls["session_inits"] == flag_calls["session_inits"]
     assert positional_calls["startup_calls"] == ["incrementer"]
     assert flag_calls["startup_calls"] == ["incrementer"]
+
+
+def test_cli_dbg_accepts_tm_and_band_artifact_paths(monkeypatch, capsys):
+    calls = _install_debugger_stubs(monkeypatch)
+    trace_sessions = []
+
+    def fake_build_trace_session(tm_file, band_file, *, max_raw):
+        trace_sessions.append((tm_file, band_file, max_raw))
+        return SimpleNamespace(name="artifact-session")
+
+    monkeypatch.setattr(cli, "_build_trace_session", fake_build_trace_session)
+
+    exit_code = cli.main(["dbg", "host.tm", "input.utm.band", "--max-raw", "123"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert trace_sessions == [("host.tm", "input.utm.band", 123)]
+    assert calls["load_fixture"] == []
+    assert calls["shell_inits"] == 1
+    assert calls["startup_calls"] == ["host.tm on input.utm.band"]
+    assert output.strip() == "formatted:startup:host.tm on input.utm.band"
+
+
+def test_cli_dbg_rejects_fixture_flag_with_positional_inputs(monkeypatch, capsys):
+    _install_debugger_stubs(monkeypatch)
+
+    try:
+        cli.main(["dbg", "--fixture", "incrementer", "host.tm", "input.utm.band"])
+    except SystemExit as exc:
+        assert str(exc) == "dbg accepts either --fixture FIXTURE or positional inputs, not both"
+    else:
+        raise AssertionError("expected mixed fixture/artifact debugger input to fail")

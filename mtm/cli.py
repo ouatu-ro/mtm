@@ -23,6 +23,7 @@ from .universal import UniversalInterpreter
 
 TRACE_DEFAULT_MAX_RAW = 100_000
 TRACE_SOURCE_DEFAULT_MAX_RAW = 5_000_000
+DEBUG_DEFAULT_MAX_RAW = DebuggerSession.DEFAULT_MAX_RAW
 
 
 def _target_abi_from_args(args) -> TMAbi | None:
@@ -76,7 +77,7 @@ def _l2_artifact_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path]:
     return out / f"{stem}.l2.utm.band", out / f"{stem}.l2.tm"
 
 
-def _build_fixture_debugger_session(name: str) -> DebuggerSession:
+def _build_fixture_debugger_session(name: str, *, max_raw: int = DEBUG_DEFAULT_MAX_RAW) -> DebuggerSession:
     fixture = load_fixture(name)
     band = fixture.build_band()
     program = build_universal_meta_asm(band.encoding)
@@ -90,27 +91,42 @@ def _build_fixture_debugger_session(name: str) -> DebuggerSession:
         state=program.entry_label,
         source_map=lowered.source_map,
     )
-    return DebuggerSession(runner, encoding=band.encoding)
+    return DebuggerSession(runner, encoding=band.encoding, max_raw=max_raw)
 
 
-def _run_fixture_debugger(name: str) -> int:
-    session = _build_fixture_debugger_session(name)
+def _run_debugger(session: DebuggerSession, label: str) -> int:
     shell = DebuggerShell(session)
-    startup = shell.render_startup(name)
+    startup = shell.render_startup(label)
     formatter = getattr(shell, "format_output", None)
     print(formatter(startup) if callable(formatter) else startup)
     shell.cmdloop()
     return 0
 
 
-def _resolve_debugger_fixture_name(args) -> str:
+def _run_fixture_debugger(name: str, *, max_raw: int = DEBUG_DEFAULT_MAX_RAW) -> int:
+    return _run_debugger(_build_fixture_debugger_session(name, max_raw=max_raw), name)
+
+
+def _debugger_artifact_label(tm_file: str | Path, band_file: str | Path) -> str:
+    return f"{Path(tm_file).name} on {Path(band_file).name}"
+
+
+def _run_artifact_debugger(tm_file: str | Path, band_file: str | Path, *, max_raw: int) -> int:
+    session = _build_trace_session(tm_file, band_file, max_raw=max_raw)
+    return _run_debugger(session, _debugger_artifact_label(tm_file, band_file))
+
+
+def _run_debugger_from_args(args) -> int:
+    inputs = tuple(args.inputs)
     if args.fixture_name is not None:
-        if args.fixture is not None and args.fixture != args.fixture_name:
-            raise SystemExit("dbg accepts one fixture name via FIXTURE or --fixture, not both")
-        return args.fixture_name
-    if args.fixture is None:
-        raise SystemExit("dbg requires FIXTURE or --fixture FIXTURE")
-    return args.fixture
+        if inputs:
+            raise SystemExit("dbg accepts either --fixture FIXTURE or positional inputs, not both")
+        return _run_fixture_debugger(args.fixture_name, max_raw=args.max_raw)
+    if len(inputs) == 1:
+        return _run_fixture_debugger(inputs[0], max_raw=args.max_raw)
+    if len(inputs) == 2:
+        return _run_artifact_debugger(inputs[0], inputs[1], max_raw=args.max_raw)
+    raise SystemExit("dbg requires FIXTURE or TM_FILE BAND_FILE")
 
 
 def _source_fields(source) -> tuple[object, object, object, object, object, object]:
@@ -418,9 +434,10 @@ def main(argv: list[str] | None = None) -> int:
     trace_parser.add_argument("--max-raw", type=int)
     trace_parser.add_argument("--meta-out")
 
-    dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture.")
-    dbg_parser.add_argument("fixture", nargs="?")
+    dbg_parser = sub.add_parser("dbg", help="Start the MTM debugger REPL for a fixture or .tm/.utm.band pair.")
+    dbg_parser.add_argument("inputs", nargs="*", metavar="INPUT")
     dbg_parser.add_argument("--fixture", dest="fixture_name")
+    dbg_parser.add_argument("--max-raw", type=int, default=DEBUG_DEFAULT_MAX_RAW)
 
     args = parser.parse_args(argv)
     abi = _target_abi_from_args(args)
@@ -478,7 +495,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "dbg":
-        return _run_fixture_debugger(_resolve_debugger_fixture_name(args))
+        return _run_debugger_from_args(args)
 
     if args.command == "trace":
         return _write_trace(args)
