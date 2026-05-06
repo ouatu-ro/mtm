@@ -222,6 +222,35 @@ def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators
     assert final_left_band[cmp_index + 1] == "1"
 
 
+def test_lowered_compare_global_global_stops_at_matching_early_terminators() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_global_field(
+        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        HALT_STATE,
+        ("1",),
+    )
+    host = run_meta_asm_block_runtime(
+        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+    assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width), state="start", continuation_label="DONE")
+    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_STATE), max_steps=1000)
+    final_left_band, _ = split_runtime_tape(result["tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+
+    assert host["trace"][-1]["outcome"] == f"{CMP_FLAG}=1"
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert final_left_band[cmp_index + 1] == "1"
+
+
 def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() -> None:
     fixture = load_fixture("incrementer")
     band = fixture.build_band()
@@ -250,6 +279,40 @@ def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() ->
     assert final_left_band[cmp_index + 1] == "0"
 
 
+def test_lowered_compare_global_local_fails_when_one_field_ends_early() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_first_rule_field(
+        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        STATE,
+        ("1", "0"),
+    )
+    host = run_meta_asm_block_runtime(
+        Program(
+            (
+                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width))),
+            ),
+            entry_label="START",
+        ),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+    _assemble_sequence(builder, (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width)), start_state="START", exit_label="DONE")
+    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    result = run_raw_tm(builder.build("START"), prepared_tape, head=address_of(RULES), max_steps=2000)
+    final_left_band, _ = split_runtime_tape(result["tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+
+    assert host["trace"][-1]["outcome"] == f"{CMP_FLAG}=0"
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert final_left_band[cmp_index + 1] == "0"
+
+
 def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
     band = fixture.build_band()
@@ -268,6 +331,33 @@ def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> N
     )
 
     assert _global_payload(result["runtime_tape"], WRITE_SYMBOL) == ("1",)
+
+
+def test_lowered_copy_global_global_preserves_early_end_field_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_global_field(
+        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        WRITE_SYMBOL,
+        ("0",),
+    )
+    host = run_meta_asm_block_runtime(
+        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width),)),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+    assemble_instruction(builder, CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
+    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_SYMBOL), max_steps=1000)
+
+    assert _global_payload(host["runtime_tape"], WRITE_SYMBOL) == ("1",)
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert _global_payload(result["tape"], WRITE_SYMBOL) == ("1",)
 
 
 def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
@@ -290,6 +380,32 @@ def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
     assert _global_payload(result["runtime_tape"], CUR_SYMBOL) == ("1",)
 
 
+def test_lowered_copy_head_symbol_to_preserves_end_field_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_global_field(
+        _rewrite_head_cell_symbol(band.runtime_tape, ("1",)),
+        CUR_SYMBOL,
+        ("0",),
+    )
+    host = run_meta_asm_block_runtime(
+        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+    _assemble_sequence(builder, (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width)), start_state="START", exit_label="DONE")
+    result = run_raw_tm(builder.build("START"), prepared_tape, head=0, max_steps=2000)
+
+    assert _global_payload(host["runtime_tape"], CUR_SYMBOL) == ("1",)
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert _global_payload(result["tape"], CUR_SYMBOL) == ("1",)
+
+
 def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
     fixture = load_fixture("incrementer")
     band = fixture.build_band()
@@ -309,6 +425,31 @@ def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> 
     assert _head_symbol_payload(result["runtime_tape"]) == ("1",)
 
 
+def test_lowered_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_head_cell_symbol(
+        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        ("0",),
+    )
+    host = run_meta_asm_block_runtime(
+        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+    _assemble_sequence(builder, (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width)), start_state="START", exit_label="DONE")
+    result = run_raw_tm(builder.build("START"), prepared_tape, head=0, max_steps=2000)
+
+    assert _head_symbol_payload(host["runtime_tape"]) == ("1",)
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert _head_symbol_payload(result["tape"]) == ("1",)
+
+
 def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
     fixture = load_fixture("incrementer")
     band = fixture.build_band()
@@ -326,6 +467,21 @@ def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
         assert "terminator mismatch" in str(exc)
     else:
         raise AssertionError("expected delimiter mismatch to raise")
+
+
+def test_lowered_copy_local_global_stucks_on_delimiter_mismatch() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    builder = TMBuilder(alphabet)
+    prepared_tape = _rewrite_first_rule_field(band.runtime_tape, STATE, ("1",))
+
+    _assemble_sequence(builder, (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, band.encoding.state_width)), start_state="START", exit_label="DONE")
+    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    result = run_raw_tm(builder.build("START"), prepared_tape, head=address_of(RULES), max_steps=2000)
+
+    assert result["status"] == "stuck"
+    assert result["state"] != "DONE"
 
 
 def test_copy_head_symbol_to_matches_later_blank_cell() -> None:

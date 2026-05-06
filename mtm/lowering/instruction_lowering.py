@@ -9,8 +9,8 @@ TMBuilder.
 from __future__ import annotations
 
 from ..meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, Instruction, MoveSimHeadLeft, MoveSimHeadRight, Seek, SeekOneOf, WriteGlobal
-from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, END_TAPE_LEFT, END_CELL, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, RUNTIME_BLANK, TAPE, TAPE_LEFT, WRITE_SYMBOL
-from .combinators import branch_bit_at_offset, emit_expected_bit_branch, move_steps, seek, seek_until_one_of, seek_then_write_bit_at_offset, write_bit_at_offset, write_current_bit
+from ..utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_RULES, END_TAPE, END_TAPE_LEFT, END_CELL, END_FIELD, HEAD, MOVE_DIR, NEXT_STATE, NO_HEAD, REGS, RULE, RULES, RUNTIME_BLANK, TAPE, TAPE_LEFT, WRITE_SYMBOL
+from .combinators import emit_expected_bit_branch, move_steps, seek, seek_until_one_of, write_current_bit
 from .constants import ACTIVE_RULE, L, Label, R, S, global_direction
 from .contracts import HeadAt, HeadAtOneOf, HeadOnRuntimeTape
 from .ops import EmitAllOp, EmitAnyExceptOp, EmitOp, BranchAtOp
@@ -36,6 +36,29 @@ def _write_cmp_flag(draft: RoutineDraft, source: Label, *, bit: str, target: Lab
     write_state = draft.local("write_cmp_flag")
     draft.add(EmitOp(source, CMP_FLAG, write_state, CMP_FLAG, R))
     write_current_bit(draft, write_state, bit=bit, target=target, move=L)
+
+
+def _branch_delimited_token_at_offset(
+    draft: RoutineDraft,
+    source: Label,
+    *,
+    offset: int,
+    terminator: str,
+    move_after_read: int,
+    prefix: str,
+    index: int,
+) -> tuple[tuple[Label, str], tuple[Label, str], tuple[Label, str]]:
+    """Move right to a bounded payload slot and branch on bit or terminator."""
+
+    read_state = draft.local(f"{prefix}_read_{index}")
+    zero_state = draft.local(f"{prefix}_bit0_{index}")
+    one_state = draft.local(f"{prefix}_bit1_{index}")
+    terminator_state = draft.local(f"{prefix}_term_{index}")
+    move_steps(draft, source, steps=offset, direction="R", target=read_state)
+    draft.add(EmitOp(read_state, "0", zero_state, "0", move_after_read))
+    draft.add(EmitOp(read_state, "1", one_state, "1", move_after_read))
+    draft.add(EmitOp(read_state, terminator, terminator_state, terminator, move_after_read))
+    return (zero_state, "0"), (one_state, "1"), (terminator_state, terminator)
 
 
 def _encoded_blank(symbol_width: int) -> tuple[str, ...]:
@@ -269,16 +292,30 @@ def _copy_global_global_routine(state: Label, cont: Label, src_marker: str, dst_
     seek_regs = draft.local("seek_regs")
     _seek_regs_from_anywhere(draft, state, target=seek_regs)
     seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
-    for index in range(width):
-        branches = branch_bit_at_offset(draft, current, offset=index + 1, move_after_read=R if to_dst == "R" else L, prefix="src", index=index)
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            if index + 1 == width:
-                seek_then_write_bit_at_offset(draft, branch.state, marker=dst_marker, seek_direction=to_dst, bit=branch.bit, offset=index + 1, target=cont, write_move=S, prefix="dst", index=index)
-            else:
-                back_to_src = draft.local(f"back_to_src_{branch.bit}_{index}")
-                seek_then_write_bit_at_offset(draft, branch.state, marker=dst_marker, seek_direction=to_dst, bit=branch.bit, offset=index + 1, target=back_to_src, write_move=R if to_src == "R" else L, prefix="dst", index=index)
-                seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
+    for index in range(width + 1):
+        branches = _branch_delimited_token_at_offset(
+            draft,
+            current,
+            offset=index + 1,
+            terminator=END_FIELD,
+            move_after_read=R if to_dst == "R" else L,
+            prefix="src",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            dst_marker_state = draft.local(f"dst_marker_{index}_{branch_token}")
+            seek(draft, branch_state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
+            dst_read = draft.local(f"dst_read_{index}_{branch_token}")
+            move_steps(draft, dst_marker_state, steps=index + 1, direction="R", target=dst_read)
+            if branch_token == END_FIELD:
+                draft.add(EmitOp(dst_read, END_FIELD, cont, END_FIELD, S))
+                continue
+            if next_iter is None:
+                continue
+            back_to_src = draft.local(f"back_to_src_{index}_{branch_token}")
+            write_current_bit(draft, dst_read, bit=branch_token, target=back_to_src, move=R if to_src == "R" else L)
+            seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()
@@ -289,15 +326,34 @@ def _copy_local_global_routine(state: Label, cont: Label, local_marker: str, glo
     activate_rule = draft.local("activate_rule")
     current = activate_rule
     _activate_rule_at_head(draft, state, target=activate_rule)
-    for index in range(width):
+    for index in range(width + 1):
         local_marker_state = draft.local(f"local_marker_{index}")
         seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
-        branches = branch_bit_at_offset(draft, local_marker_state, offset=index + 1, move_after_read=L, prefix="local", index=index)
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            back_to_rule = draft.local(f"back_to_rule_{branch.bit}_{index}")
-            seek_then_write_bit_at_offset(draft, branch.state, marker=global_marker, seek_direction="L", bit=branch.bit, offset=index + 1, target=back_to_rule, write_move=S, prefix="global", index=index)
-            _seek_active_rule(draft, back_to_rule, target=cont if index + 1 == width else next_iter)
+        branches = _branch_delimited_token_at_offset(
+            draft,
+            local_marker_state,
+            offset=index + 1,
+            terminator=END_FIELD,
+            move_after_read=L,
+            prefix="local",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            global_marker_state = draft.local(f"global_marker_{index}_{branch_token}")
+            seek(draft, branch_state, markers={global_marker}, direction="L", target=global_marker_state)
+            global_read = draft.local(f"global_read_{index}_{branch_token}")
+            move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
+            if branch_token == END_FIELD:
+                after_true = draft.local(f"after_true_{index}")
+                draft.add(EmitOp(global_read, END_FIELD, after_true, END_FIELD, S))
+                _seek_active_rule(draft, after_true, target=cont)
+                continue
+            if next_iter is None:
+                continue
+            back_to_rule = draft.local(f"back_to_rule_{index}_{branch_token}")
+            write_current_bit(draft, global_read, bit=branch_token, target=back_to_rule, move=S)
+            _seek_active_rule(draft, back_to_rule, target=next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()
@@ -306,20 +362,32 @@ def _copy_local_global_routine(state: Label, cont: Label, local_marker: str, glo
 def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
     draft = RoutineDraft("copy_head_symbol_to", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
-    for index in range(width):
-        branches = branch_bit_at_offset(draft, current, offset=index + 2, move_after_read=L, prefix="head", index=index)
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            global_marker_state = draft.local(f"global_marker_{branch.bit}_{index}")
-            _seek_global_from_simulated_cell(draft, branch.state, marker=global_marker, target=global_marker_state)
-            if index + 1 == width:
-                write_bit_at_offset(draft, global_marker_state, bit=branch.bit, offset=index + 1, target=cont, write_move=S, prefix="global", index=index)
-            else:
-                back_to_head = draft.local(f"back_to_head_{branch.bit}_{index}")
-                back_to_cell = draft.local(f"back_to_cell_{branch.bit}_{index}")
-                write_bit_at_offset(draft, global_marker_state, bit=branch.bit, offset=index + 1, target=back_to_head, write_move=S, prefix="global", index=index)
-                _seek_head_from_global_area(draft, back_to_head, target=back_to_cell)
-                draft.add(EmitOp(back_to_cell, HEAD, next_iter, HEAD, L))
+    for index in range(width + 1):
+        branches = _branch_delimited_token_at_offset(
+            draft,
+            current,
+            offset=index + 2,
+            terminator=END_CELL,
+            move_after_read=L,
+            prefix="head",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            global_marker_state = draft.local(f"global_marker_{index}_{branch_token}")
+            _seek_global_from_simulated_cell(draft, branch_state, marker=global_marker, target=global_marker_state)
+            global_read = draft.local(f"global_read_{index}_{branch_token}")
+            move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
+            if branch_token == END_CELL:
+                draft.add(EmitOp(global_read, END_FIELD, cont, END_FIELD, S))
+                continue
+            if next_iter is None:
+                continue
+            back_to_head = draft.local(f"back_to_head_{index}_{branch_token}")
+            back_to_cell = draft.local(f"back_to_cell_{index}_{branch_token}")
+            write_current_bit(draft, global_read, bit=branch_token, target=back_to_head, move=S)
+            _seek_head_from_global_area(draft, back_to_head, target=back_to_cell)
+            draft.add(EmitOp(back_to_cell, HEAD, next_iter, HEAD, L))
         if next_iter is not None:
             current = next_iter
     return draft.build()
@@ -328,22 +396,34 @@ def _copy_head_symbol_to_routine(state: Label, cont: Label, global_marker: str, 
 def _copy_global_to_head_symbol_routine(state: Label, cont: Label, global_marker: str, width: int) -> Routine:
     draft = RoutineDraft("copy_global_to_head_symbol", entry=state, exits=(cont,), requires=HeadAt(CELL), ensures=HeadOnRuntimeTape())
     current = state
-    for index in range(width):
+    for index in range(width + 1):
         global_marker_state = draft.local(f"global_marker_{index}")
         _seek_global_from_simulated_cell(draft, current, marker=global_marker, target=global_marker_state)
-        branches = branch_bit_at_offset(draft, global_marker_state, offset=index + 1, move_after_read=R, prefix="global", index=index)
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            head_flag_state = draft.local(f"head_flag_{branch.bit}_{index}")
-            cell_state = draft.local(f"cell_state_{branch.bit}_{index}")
-            _seek_head_from_global_area(draft, branch.state, target=head_flag_state)
+        branches = _branch_delimited_token_at_offset(
+            draft,
+            global_marker_state,
+            offset=index + 1,
+            terminator=END_FIELD,
+            move_after_read=R,
+            prefix="global",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            head_flag_state = draft.local(f"head_flag_{index}_{branch_token}")
+            cell_state = draft.local(f"cell_state_{index}_{branch_token}")
+            _seek_head_from_global_area(draft, branch_state, target=head_flag_state)
             draft.add(EmitOp(head_flag_state, HEAD, cell_state, HEAD, L))
-            if index + 1 == width:
-                write_bit_at_offset(draft, cell_state, bit=branch.bit, offset=index + 2, target=cont, write_move=S, prefix="head", index=index)
-            else:
-                back_to_cell = draft.local(f"back_to_cell_{branch.bit}_{index}")
-                write_bit_at_offset(draft, cell_state, bit=branch.bit, offset=index + 2, target=back_to_cell, write_move=L, prefix="head", index=index)
-                seek(draft, back_to_cell, markers={CELL}, direction="L", target=next_iter)
+            head_read = draft.local(f"head_read_{index}_{branch_token}")
+            move_steps(draft, cell_state, steps=index + 2, direction="R", target=head_read)
+            if branch_token == END_FIELD:
+                draft.add(EmitOp(head_read, END_CELL, cont, END_CELL, S))
+                continue
+            if next_iter is None:
+                continue
+            back_to_cell = draft.local(f"back_to_cell_{index}_{branch_token}")
+            write_current_bit(draft, head_read, bit=branch_token, target=back_to_cell, move=L)
+            seek(draft, back_to_cell, markers={CELL}, direction="L", target=next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()
@@ -379,14 +459,6 @@ def _compare_global_literal_routine(state: Label, cont: Label, global_marker: st
 
 def _compare_global_global_routine(state: Label, cont: Label, src_marker: str, dst_marker: str, width: int) -> Routine:
     draft = RoutineDraft("compare_global_global", entry=state, exits=(cont,), requires=HeadOnRuntimeTape(), ensures=HeadAt(CMP_FLAG))
-    if src_marker == dst_marker:
-        seek_regs = draft.local("seek_regs")
-        seek_cmp = draft.local("seek_cmp")
-        _seek_regs_from_anywhere(draft, state, target=seek_regs)
-        seek(draft, seek_regs, markers={CMP_FLAG}, direction="R", target=seek_cmp)
-        _write_cmp_flag(draft, seek_cmp, bit="1", target=cont)
-        return draft.build()
-
     to_dst = global_direction(src_marker, dst_marker)
     to_src = global_direction(dst_marker, src_marker)
     dir_to_cmp = global_direction(dst_marker, CMP_FLAG)
@@ -394,37 +466,51 @@ def _compare_global_global_routine(state: Label, cont: Label, src_marker: str, d
     current = draft.local("seek_src")
     _seek_regs_from_anywhere(draft, state, target=seek_regs)
     seek(draft, seek_regs, markers={src_marker}, direction="R", target=current)
-    for index in range(width):
-        branches = branch_bit_at_offset(
+    for index in range(width + 1):
+        branches = _branch_delimited_token_at_offset(
             draft,
             current,
             offset=index + 1,
+            terminator=END_FIELD,
             move_after_read=R if to_dst == "R" else L,
             prefix="src",
             index=index,
         )
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            dst_marker_state = draft.local(f"dst_marker_{branch.bit}_{index}")
-            dst_read = draft.local(f"dst_read_{branch.bit}_{index}")
-            mismatch_bit = "1" if branch.bit == "0" else "0"
-            mismatch_seek = draft.local(f"mismatch_seek_{branch.bit}_{index}")
-            cmp_false_state = draft.local(f"false_cmp_{branch.bit}_{index}")
-            seek(draft, branch.state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            dst_marker_state = draft.local(f"dst_marker_{index}_{branch_token}")
+            dst_read = draft.local(f"dst_read_{index}_{branch_token}")
+            cmp_false_state = draft.local(f"false_cmp_{index}_{branch_token}")
+            seek(draft, branch_state, markers={dst_marker}, direction=to_dst, target=dst_marker_state)
             move_steps(draft, dst_marker_state, steps=index + 1, direction="R", target=dst_read)
-            draft.add(EmitOp(dst_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
-            seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
-            _write_cmp_flag(draft, cmp_false_state, bit="0", target=cont)
-            if next_iter is not None:
-                back_to_src = draft.local(f"back_to_src_{branch.bit}_{index}")
-                draft.add(EmitOp(dst_read, branch.bit, back_to_src, branch.bit, S))
-                seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
-            else:
-                match_seek = draft.local(f"match_seek_{branch.bit}_{index}")
-                cmp_true_state = draft.local(f"true_cmp_{branch.bit}_{index}")
-                draft.add(EmitOp(dst_read, branch.bit, match_seek, branch.bit, S))
+            if branch_token == END_FIELD:
+                match_seek = draft.local(f"match_seek_{index}")
+                mismatch_seek = draft.local(f"mismatch_seek_{index}")
+                cmp_true_state = draft.local(f"true_cmp_{index}")
+                draft.add(EmitOp(dst_read, END_FIELD, match_seek, END_FIELD, S))
+                draft.add(EmitOp(dst_read, "0", mismatch_seek, "0", S))
+                draft.add(EmitOp(dst_read, "1", mismatch_seek, "1", S))
                 seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
                 _write_cmp_flag(draft, cmp_true_state, bit="1", target=cont)
+                seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+                _write_cmp_flag(draft, cmp_false_state, bit="0", target=cont)
+                continue
+            mismatch_token = "1" if branch_token == "0" else "0"
+            mismatch_seek = draft.local(f"mismatch_seek_{index}_{branch_token}")
+            draft.add(EmitOp(dst_read, mismatch_token, mismatch_seek, mismatch_token, S))
+            draft.add(EmitOp(dst_read, END_FIELD, mismatch_seek, END_FIELD, S))
+            seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+            _write_cmp_flag(draft, cmp_false_state, bit="0", target=cont)
+            if next_iter is None:
+                match_seek = draft.local(f"match_seek_{index}_{branch_token}")
+                cmp_true_state = draft.local(f"true_cmp_{index}_{branch_token}")
+                draft.add(EmitOp(dst_read, branch_token, match_seek, branch_token, S))
+                seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+                _write_cmp_flag(draft, cmp_true_state, bit="0", target=cont)
+                continue
+            back_to_src = draft.local(f"back_to_src_{index}_{branch_token}")
+            draft.add(EmitOp(dst_read, branch_token, back_to_src, branch_token, S))
+            seek(draft, back_to_src, markers={src_marker}, direction=to_src, target=next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()
@@ -436,36 +522,60 @@ def _compare_global_local_routine(state: Label, cont: Label, global_marker: str,
     activate_rule = draft.local("activate_rule")
     current = activate_rule
     _activate_rule_at_head(draft, state, target=activate_rule)
-    for index in range(width):
+    for index in range(width + 1):
         local_marker_state = draft.local(f"local_marker_{index}")
         seek(draft, current, markers={local_marker}, direction="R", target=local_marker_state)
-        branches = branch_bit_at_offset(draft, local_marker_state, offset=index + 1, move_after_read=L, prefix="local", index=index)
-        next_iter = draft.local(f"next_{index}") if index + 1 < width else None
-        for branch in branches:
-            global_marker_state = draft.local(f"global_marker_{branch.bit}_{index}")
-            seek(draft, branch.state, markers={global_marker}, direction="L", target=global_marker_state)
-            global_read = draft.local(f"global_read_{branch.bit}_{index}")
+        branches = _branch_delimited_token_at_offset(
+            draft,
+            local_marker_state,
+            offset=index + 1,
+            terminator=END_FIELD,
+            move_after_read=L,
+            prefix="local",
+            index=index,
+        )
+        next_iter = draft.local(f"next_{index}") if index < width else None
+        for branch_state, branch_token in branches:
+            global_marker_state = draft.local(f"global_marker_{index}_{branch_token}")
+            seek(draft, branch_state, markers={global_marker}, direction="L", target=global_marker_state)
+            global_read = draft.local(f"global_read_{index}_{branch_token}")
             move_steps(draft, global_marker_state, steps=index + 1, direction="R", target=global_read)
-            mismatch_bit = "1" if branch.bit == "0" else "0"
-            mismatch_seek = draft.local(f"mismatch_seek_{branch.bit}_{index}")
-            draft.add(EmitOp(global_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
-            cmp_false_state = draft.local(f"false_cmp_{branch.bit}_{index}")
-            after_false = draft.local(f"after_false_{branch.bit}_{index}")
-            seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
-            _write_cmp_flag(draft, cmp_false_state, bit="0", target=after_false)
-            _seek_active_rule(draft, after_false, target=cont)
-            if next_iter is not None:
-                back_to_rule = draft.local(f"back_to_rule_{branch.bit}_{index}")
-                draft.add(EmitOp(global_read, branch.bit, back_to_rule, branch.bit, S))
-                _seek_active_rule(draft, back_to_rule, target=next_iter)
-            else:
-                match_seek = draft.local(f"match_seek_{branch.bit}_{index}")
-                cmp_true_state = draft.local(f"true_cmp_{branch.bit}_{index}")
-                after_true = draft.local(f"after_true_{branch.bit}_{index}")
-                draft.add(EmitOp(global_read, branch.bit, match_seek, branch.bit, S))
+            cmp_false_state = draft.local(f"false_cmp_{index}_{branch_token}")
+            after_false = draft.local(f"after_false_{index}_{branch_token}")
+            if branch_token == END_FIELD:
+                match_seek = draft.local(f"match_seek_{index}")
+                mismatch_seek = draft.local(f"mismatch_seek_{index}")
+                cmp_true_state = draft.local(f"true_cmp_{index}")
+                after_true = draft.local(f"after_true_{index}")
+                draft.add(EmitOp(global_read, END_FIELD, match_seek, END_FIELD, S))
+                draft.add(EmitOp(global_read, "0", mismatch_seek, "0", S))
+                draft.add(EmitOp(global_read, "1", mismatch_seek, "1", S))
                 seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
                 _write_cmp_flag(draft, cmp_true_state, bit="1", target=after_true)
                 _seek_active_rule(draft, after_true, target=cont)
+                seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+                _write_cmp_flag(draft, cmp_false_state, bit="0", target=after_false)
+                _seek_active_rule(draft, after_false, target=cont)
+                continue
+            mismatch_bit = "1" if branch_token == "0" else "0"
+            mismatch_seek = draft.local(f"mismatch_seek_{index}_{branch_token}")
+            draft.add(EmitOp(global_read, mismatch_bit, mismatch_seek, mismatch_bit, S))
+            draft.add(EmitOp(global_read, END_FIELD, mismatch_seek, END_FIELD, S))
+            seek(draft, mismatch_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_false_state)
+            _write_cmp_flag(draft, cmp_false_state, bit="0", target=after_false)
+            _seek_active_rule(draft, after_false, target=cont)
+            if next_iter is None:
+                match_seek = draft.local(f"match_seek_{index}_{branch_token}")
+                cmp_true_state = draft.local(f"true_cmp_{index}_{branch_token}")
+                after_true = draft.local(f"after_true_{index}_{branch_token}")
+                draft.add(EmitOp(global_read, branch_token, match_seek, branch_token, S))
+                seek(draft, match_seek, markers={CMP_FLAG}, direction=dir_to_cmp, target=cmp_true_state)
+                _write_cmp_flag(draft, cmp_true_state, bit="0", target=after_true)
+                _seek_active_rule(draft, after_true, target=cont)
+                continue
+            back_to_rule = draft.local(f"back_to_rule_{index}_{branch_token}")
+            draft.add(EmitOp(global_read, branch_token, back_to_rule, branch_token, S))
+            _seek_active_rule(draft, back_to_rule, target=next_iter)
         if next_iter is not None:
             current = next_iter
     return draft.build()

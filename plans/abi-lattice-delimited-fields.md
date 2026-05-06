@@ -48,7 +48,7 @@ Out of scope:
 - [x] S3: Implement delimiter-aware compare and copy in the MetaASM host.
   Model width-bounded comparison/copy using terminators as the actual field or
   cell boundary, including cell-field copy cases with distinct terminators.
-- [ ] S4: Lower delimiter-aware compare and copy to raw TM transitions.
+- [x] S4: Lower delimiter-aware compare and copy to raw TM transitions.
   Keep exact-ABI behavior valid, but allow early terminator success for smaller
   bands under wider hosts. Use `#BLANK_SYMBOL` for tape expansion.
 - [ ] S5: Relax runtime compatibility checks.
@@ -104,6 +104,25 @@ Out of scope:
   meta_asm_host_copy_local_global_raises_on_delimiter_mismatch or
   meta_asm_host_finds_and_reads_left_band_head_cell or
   meta_asm_host_moves_between_right_and_left_simulated_tape'`.
+- 2026-05-06 07:56 EEST: S4 completed. Raw TM lowering now mirrors the host
+  delimiter-aware compare/copy behavior for global/global, global/local,
+  local/global, and head-symbol copy paths. Validation: `uv run python -m
+  py_compile mtm/lowering/instruction_lowering.py tests/test_lowering.py`;
+  `uv run python -m pytest tests/test_lowering.py -k
+  'compare_global_global_matches_host_block or
+  lowered_compare_global_global_stops_at_matching_early_terminators or
+  meta_asm_host_compare_global_global_stops_at_matching_early_terminators or
+  lowered_compare_global_local_fails_when_one_field_ends_early or
+  meta_asm_host_compare_global_local_fails_when_one_field_ends_early or
+  lowered_copy_global_global_preserves_early_end_field_shape or
+  meta_asm_host_copy_global_global_preserves_early_end_field_shape or
+  lowered_copy_head_symbol_to_preserves_end_field_shape or
+  meta_asm_host_copy_head_symbol_to_preserves_end_field_shape or
+  lowered_copy_global_to_head_symbol_preserves_end_cell_shape or
+  meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape or
+  lowered_copy_local_global_stucks_on_delimiter_mismatch or
+  meta_asm_host_copy_local_global_raises_on_delimiter_mismatch or
+  lowered_start_step_matches_host_block'`.
 
 ## Findings / Debt
 
@@ -112,12 +131,12 @@ Out of scope:
   `R` literals would still reject a valid narrower band.
   Resolved: S1 added `#LEFT_DIR` and `#RIGHT_DIR`; S2 switched dispatch to
   compare `#MOVE_DIR` against those band fields.
-- [ ] D2: Cell-field copies use different terminators.
+- [x] D2: Cell-field copies use different terminators.
   Impact: `#END_CELL` and `#END_FIELD` are not interchangeable, so head-symbol
   copies must stop on the source terminator while preserving the destination's
   existing terminator shape.
-  Recommendation: Do now in S3/S4, but keep it narrow and avoid general
-  field-resizing machinery.
+  Resolved: S3 and S4 model and lower cell-field copies by stopping on the
+  source terminator while preserving the destination terminator shape.
 - [x] D3: `OBJECT_MODEL.md` still needs the same terminology update as
   `Spec.md`.
   Resolved: S1 updated the tracked object-model document with the band-owned
