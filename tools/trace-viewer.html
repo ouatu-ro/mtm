@@ -69,6 +69,14 @@
       font-size: 13px;
     }
 
+    .control-group {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
     input[type="number"] {
       width: 84px;
       padding: 6px 8px;
@@ -78,8 +86,28 @@
       color: var(--text);
     }
 
+    input[type="range"] {
+      width: 112px;
+      accent-color: var(--accent);
+    }
+
     input[type="file"] {
       max-width: 220px;
+    }
+
+    select {
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+    }
+
+    .range-value {
+      min-width: 3ch;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 700;
     }
 
     button {
@@ -96,6 +124,7 @@
     button:disabled { cursor: not-allowed; opacity: 0.45; }
 
     .viewer-stack {
+      position: relative;
       display: grid;
       gap: 12px;
       min-height: 0;
@@ -612,6 +641,39 @@
       max-width: 100%;
     }
 
+    .weee-indicator {
+      position: absolute;
+      left: 50%;
+      top: 28%;
+      z-index: 4;
+      pointer-events: none;
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(0.86) rotate(-3deg);
+      background: linear-gradient(90deg, #ff5e7e, #ffd166, #7ee787, #6ecbff, #c89cff, #ff8bd2);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-family: ui-rounded, "SF Pro Rounded", ui-sans-serif, system-ui, sans-serif;
+      font-size: clamp(36px, 7vw, 96px);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 22px rgba(255, 255, 255, 0.16);
+    }
+
+    @keyframes weee-jiggle {
+      0% { opacity: 1; transform: translate(-50%, -50%) scale(0.96) rotate(-8deg); }
+      12% { opacity: 1; transform: translate(-51%, -50%) scale(1.08) rotate(6deg); }
+      25% { transform: translate(-49%, -52%) scale(1.02) rotate(-5deg); }
+      42% { transform: translate(-51%, -49%) scale(1.08) rotate(5deg); }
+      62% { opacity: 1; transform: translate(-50%, -51%) scale(1) rotate(-3deg); }
+      100% { opacity: 1; transform: translate(-50%, -50%) scale(0.96) rotate(7deg); }
+    }
+
+    .weee-indicator.active {
+      opacity: 1;
+      animation: weee-jiggle 680ms ease-in-out infinite;
+    }
+
     .legend {
       display: flex;
       flex-wrap: wrap;
@@ -709,7 +771,18 @@
       <button id="step10Btn">+10</button>
       <button id="step100Btn">+100</button>
       <button id="step1000Btn">+1000</button>
-      <label>Speed <input id="speedInput" type="number" min="1" max="120" value="12"> steps/s</label>
+      <button id="stepOpBtn">+Op</button>
+      <button id="stepInstrBtn">+Instr</button>
+      <button id="stepBlockBtn">+Block</button>
+      <label class="control-group">Speed <input id="speedInput" type="range" min="1" max="100" value="12"><span id="speedValue" class="range-value">12</span></label>
+      <label class="control-group">Outer
+        <select id="outerModeSelect">
+          <option value="normal">normal</option>
+          <option value="secondary">speed</option>
+          <option value="skip">skip</option>
+        </select>
+      </label>
+      <label class="control-group">Outer speed <input id="outerSpeedInput" type="range" min="1" max="100" value="60"><span id="outerSpeedValue" class="range-value">60</span></label>
       <label>Cells <input id="cellsInput" type="number" min="7" max="151" value="51"></label>
     </section>
 
@@ -739,6 +812,7 @@
       <section id="tapeViewport" class="tape-viewport">
         <div id="tape" class="tape"></div>
       </section>
+      <div id="weeeIndicator" class="weee-indicator" aria-hidden="true">Weee</div>
 
       <section class="trace-info">
             <div class="inspector-section">
@@ -842,6 +916,7 @@
       lastActualWrite: null,
       lastRenderedHeadSymbol: null,
       lastInfoValues: new Map(),
+      bridgeCrossing: null,
       timer: null,
       renderedStart: 0,
       renderedEnd: 0,
@@ -859,8 +934,16 @@
       step10Btn: document.getElementById("step10Btn"),
       step100Btn: document.getElementById("step100Btn"),
       step1000Btn: document.getElementById("step1000Btn"),
+      stepOpBtn: document.getElementById("stepOpBtn"),
+      stepInstrBtn: document.getElementById("stepInstrBtn"),
+      stepBlockBtn: document.getElementById("stepBlockBtn"),
       speedInput: document.getElementById("speedInput"),
+      speedValue: document.getElementById("speedValue"),
+      outerModeSelect: document.getElementById("outerModeSelect"),
+      outerSpeedInput: document.getElementById("outerSpeedInput"),
+      outerSpeedValue: document.getElementById("outerSpeedValue"),
       cellsInput: document.getElementById("cellsInput"),
+      weeeIndicator: document.getElementById("weeeIndicator"),
       rowMetric: document.getElementById("rowMetric"),
       blankInfoCell: document.getElementById("blankInfoCell"),
       stateMetric: document.getElementById("stateMetric"),
@@ -910,6 +993,17 @@
       ["#CMP_FLAG", "cmpFlagRegisterCell", "cmpFlagRegisterMetric"],
       ["#TMP", "tmpRegisterCell", "tmpRegisterMetric"],
     ];
+
+    const TAPE_MARKERS = new Set([
+      "#TAPE",
+      "#END_TAPE",
+      "#TAPE_LEFT",
+      "#END_TAPE_LEFT",
+      "#CELL",
+      "#END_CELL",
+      "#HEAD",
+      "#NO_HEAD",
+    ]);
 
     const SYMBOL_STYLE = {
       "0": ["0", "#9fd0ff"],
@@ -986,6 +1080,8 @@
       state.lastActualWrite = null;
       state.lastRenderedHeadSymbol = null;
       state.lastInfoValues = new Map();
+      state.bridgeCrossing = null;
+      setWeeeActive(false);
       render({ center: true });
     }
 
@@ -1042,6 +1138,21 @@
       element.replaceChildren(symbolChip(symbol, options));
     }
 
+    function applyOneRow(row) {
+      const write = row.write ?? "";
+      const beforeHead = state.head;
+      const previous = tapeSymbol(beforeHead);
+      if (write === blankSymbol()) {
+        state.tape.delete(beforeHead);
+      } else if (write !== "") {
+        state.tape.set(beforeHead, write);
+      }
+      if (write !== "" && write !== previous) {
+        return { address: beforeHead, read: previous, write };
+      }
+      return null;
+    }
+
     function step(count) {
       if (!state.meta || !state.rows.length) {
         stop();
@@ -1053,19 +1164,12 @@
       let lastActualWrite = state.lastActualWrite;
       for (let i = 0; i < count && state.index < state.rows.length; i += 1) {
         const row = state.rows[state.index];
-        const write = row.write ?? "";
-        const beforeHead = state.head;
-        const previous = tapeSymbol(beforeHead);
-        if (write === blankSymbol()) {
-          state.tape.delete(beforeHead);
-        } else if (write !== "") {
-          state.tape.set(beforeHead, write);
-        }
-        if (write !== "" && write !== previous) {
-          changedAddresses.add(beforeHead);
-          lastChangedAddress = beforeHead;
+        const actualWrite = applyOneRow(row);
+        if (actualWrite) {
+          changedAddresses.add(actualWrite.address);
+          lastChangedAddress = actualWrite.address;
           writeCount += 1;
-          lastActualWrite = { address: beforeHead, read: previous, write };
+          lastActualWrite = actualWrite;
         }
         state.head = row.head_after === "" ? state.head : Number(row.head_after);
         state.currentState = row.next_state || row.state || state.currentState;
@@ -1150,6 +1254,49 @@
       return null;
     }
 
+    function sourceRowAt(index) {
+      if (!state.rows.length) return null;
+      const start = Math.min(Math.max(index, 0), state.rows.length - 1);
+      for (let cursor = start; cursor >= 0; cursor -= 1) {
+        if (rowHasSource(state.rows[cursor])) return state.rows[cursor];
+      }
+      return null;
+    }
+
+    function sourceKey(row, kind) {
+      if (!row) return "";
+      if (kind === "block") return row.block || "";
+      if (kind === "instr") return [
+        row.block,
+        row.instruction_index,
+        row.instruction,
+      ].join("\u0001");
+      return [
+        row.block,
+        row.instruction_index,
+        row.routine_index,
+        row.routine_name,
+        row.op_index,
+        row.instruction,
+      ].join("\u0001");
+    }
+
+    function sourceStepCount(kind) {
+      if (!state.rows.length || state.index >= state.rows.length) return 0;
+      const base = sourceKey(sourceRowAt(state.index), kind);
+      let count = 0;
+      while (state.index + count < state.rows.length) {
+        const key = sourceKey(sourceRowAt(state.index + count), kind);
+        if (count > 0 && key !== base) break;
+        count += 1;
+      }
+      return Math.max(1, count);
+    }
+
+    function stepSource(kind) {
+      step(sourceStepCount(kind));
+    }
+
     function lastTransitionRow() {
       const start = Math.min(state.index - 1, state.rows.length - 1);
       for (let index = start; index >= 0; index -= 1) {
@@ -1176,6 +1323,132 @@
         addresses.push(address);
       }
       return { value: bits.length ? bits.join("") : "-", addresses };
+    }
+
+    function markerAddress(marker) {
+      const entry = [...state.tape.entries()].find(([, symbol]) => symbol === marker);
+      return entry ? entry[0] : null;
+    }
+
+    function tapeBounds() {
+      const rightStart = markerAddress("#TAPE");
+      const leftStart = markerAddress("#TAPE_LEFT");
+      let rightEnd = null;
+      let leftEnd = null;
+      if (rightStart !== null) {
+        for (let address = rightStart; address < rightStart + 10000; address += 1) {
+          if (tapeSymbol(address) === "#END_TAPE") {
+            rightEnd = address;
+            break;
+          }
+        }
+      }
+      if (leftStart !== null) {
+        for (let address = leftStart; address > leftStart - 10000; address -= 1) {
+          if (tapeSymbol(address) === "#END_TAPE_LEFT") {
+            leftEnd = address;
+            break;
+          }
+        }
+      }
+      return { rightStart, rightEnd, leftStart, leftEnd };
+    }
+
+    function rowHeadBefore(index) {
+      if (index <= 0) return Number(state.meta?.initial_head ?? 0);
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const value = state.rows[cursor]?.head_after;
+        if (value !== "" && value !== undefined) return Number(value);
+      }
+      return Number(state.meta?.initial_head ?? 0);
+    }
+
+    function addressInTape(address, bounds) {
+      return (
+        bounds.rightStart !== null && bounds.rightEnd !== null && address >= bounds.rightStart && address <= bounds.rightEnd
+      ) || (
+        bounds.leftStart !== null && bounds.leftEnd !== null && address <= bounds.leftStart && address >= bounds.leftEnd
+      );
+    }
+
+    function isTapeBridgeRow(row) {
+      const text = [
+        row?.block,
+        row?.instruction,
+        row?.routine_name,
+        row?.state,
+        row?.next_state,
+      ].join(" ").toLowerCase();
+      return (
+        text.includes("seek_left_origin") ||
+        text.includes("seek_regs_right")
+      ) && (
+        text.includes("find_head") ||
+        text.includes("compare_global_literal") ||
+        text.includes("move_left") ||
+        text.includes("move_right") ||
+        row?.read === "#TAPE" ||
+        row?.read === "#TAPE_LEFT" ||
+        row?.write === "#TAPE" ||
+        row?.write === "#TAPE_LEFT"
+      );
+    }
+
+    function rowTouchesMarker(row, marker) {
+      return row?.read === marker || row?.write === marker;
+    }
+
+    function bridgeTargetForRow(row) {
+      if (!isTapeBridgeRow(row)) return null;
+      const text = [
+        row?.block,
+        row?.instruction,
+        row?.routine_name,
+        row?.state,
+        row?.next_state,
+      ].join(" ").toLowerCase();
+      if (rowTouchesMarker(row, "#TAPE") && (row?.move === "-1" || text.includes("seek_left_origin"))) {
+        return "#TAPE_LEFT";
+      }
+      if (rowTouchesMarker(row, "#TAPE_LEFT") && (row?.move === "1" || text.includes("seek_regs_right"))) {
+        return "#TAPE";
+      }
+      return null;
+    }
+
+    function maybeStartBridgeCrossing(row) {
+      if (state.bridgeCrossing) return;
+      const target = bridgeTargetForRow(row);
+      if (!target) return;
+      state.bridgeCrossing = { target };
+      setWeeeActive(true);
+    }
+
+    function maybeFinishBridgeCrossing(row) {
+      if (!state.bridgeCrossing) return;
+      if (!rowTouchesMarker(row, state.bridgeCrossing.target)) return;
+      state.bridgeCrossing = null;
+      setWeeeActive(false);
+    }
+
+    function isOuterBoringRow(index, bounds = tapeBounds()) {
+      const row = state.rows[index];
+      if (!row) return false;
+      if (state.bridgeCrossing) return false;
+      if (TAPE_MARKERS.has(row.read) || TAPE_MARKERS.has(row.write)) return false;
+      if (isTapeBridgeRow(row)) return false;
+      return !addressInTape(rowHeadBefore(index), bounds);
+    }
+
+    function outerSkipCount() {
+      if (!state.rows.length || state.index >= state.rows.length) return 0;
+      const bounds = tapeBounds();
+      let count = 0;
+      while (state.index + count < state.rows.length && count < 5000) {
+        if (!isOuterBoringRow(state.index + count, bounds)) break;
+        count += 1;
+      }
+      return Math.max(1, count);
     }
 
     function pulseIf(element, condition) {
@@ -1254,6 +1527,61 @@
       setPulsingTextMetric("op", fields.opInfoCell, fields.opMetric, row?.op_index || "-");
     }
 
+    function speedValue(input) {
+      return Math.max(1, Math.min(100, Number(input.value) || 1));
+    }
+
+    function autoOuterSpeed() {
+      return Math.min(100, speedValue(fields.speedInput) * 3);
+    }
+
+    function effectiveOuterSpeed() {
+      if (fields.outerModeSelect.value === "skip") return autoOuterSpeed();
+      return speedValue(fields.outerSpeedInput);
+    }
+
+    function updateSpeedLabels() {
+      fields.speedValue.textContent = String(speedValue(fields.speedInput));
+      const skipMode = fields.outerModeSelect.value === "skip";
+      fields.outerSpeedValue.textContent = String(skipMode ? autoOuterSpeed() : speedValue(fields.outerSpeedInput));
+      fields.outerSpeedInput.disabled = fields.outerModeSelect.value !== "secondary";
+    }
+
+    function playDelayMs() {
+      if (
+        fields.outerModeSelect.value !== "normal" &&
+        (state.bridgeCrossing || isTapeBridgeRow(state.rows[state.index]) || isOuterBoringRow(state.index))
+      ) {
+        return 1000 / effectiveOuterSpeed();
+      }
+      return 1000 / speedValue(fields.speedInput);
+    }
+
+    function setWeeeActive(active) {
+      fields.weeeIndicator.classList.toggle("active", active);
+    }
+
+    function stepOne() {
+      if (fields.outerModeSelect.value === "skip" && isOuterBoringRow(state.index)) {
+        const count = outerSkipCount();
+        step(count);
+      } else {
+        maybeStartBridgeCrossing(state.rows[state.index]);
+        step(1);
+        maybeFinishBridgeCrossing(state.rows[state.index - 1]);
+      }
+    }
+
+    function stepVisibleRaw() {
+      if (fields.outerModeSelect.value === "skip" && isOuterBoringRow(state.index)) {
+        step(outerSkipCount());
+      } else {
+        maybeStartBridgeCrossing(state.rows[state.index]);
+        step(1);
+        maybeFinishBridgeCrossing(state.rows[state.index - 1]);
+      }
+    }
+
     function play() {
       if (!state.meta || !state.rows.length) return;
       if (state.timer) {
@@ -1261,10 +1589,9 @@
         return;
       }
       const tick = () => {
-        const speed = Math.max(1, Number(fields.speedInput.value) || 1);
-        step(1);
+        stepVisibleRaw();
         if (state.timer) {
-          state.timer = setTimeout(tick, 1000 / speed);
+          state.timer = setTimeout(tick, playDelayMs());
         }
       };
       fields.playBtn.textContent = "Pause";
@@ -1393,15 +1720,22 @@
 
     fields.resetBtn.addEventListener("click", reset);
     fields.playBtn.addEventListener("click", play);
-    fields.step1Btn.addEventListener("click", () => step(1));
+    fields.step1Btn.addEventListener("click", stepOne);
     fields.step10Btn.addEventListener("click", () => step(10));
     fields.step100Btn.addEventListener("click", () => step(100));
     fields.step1000Btn.addEventListener("click", () => step(1000));
+    fields.stepOpBtn.addEventListener("click", () => stepSource("op"));
+    fields.stepInstrBtn.addEventListener("click", () => stepSource("instr"));
+    fields.stepBlockBtn.addEventListener("click", () => stepSource("block"));
+    fields.speedInput.addEventListener("input", updateSpeedLabels);
+    fields.outerSpeedInput.addEventListener("input", updateSpeedLabels);
+    fields.outerModeSelect.addEventListener("change", updateSpeedLabels);
     fields.cellsInput.addEventListener("change", () => {
       render();
     });
     window.addEventListener("resize", () => render({ follow: Boolean(state.timer) }));
 
+    updateSpeedLabels();
     render();
   </script>
 </body>
