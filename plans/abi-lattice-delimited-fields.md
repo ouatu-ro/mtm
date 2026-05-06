@@ -123,6 +123,17 @@ Out of scope:
   lowered_copy_local_global_stucks_on_delimiter_mismatch or
   meta_asm_host_copy_local_global_raises_on_delimiter_mismatch or
   lowered_start_step_matches_host_block'`.
+- 2026-05-06 08:08 EEST: S4 follow-up completed. Fixed `DISPATCH_MOVE` block
+  setup to seek right to `#MOVE_DIR` after `MATCHED_RULE`, since the old
+  post-copy halt comparison no longer positions the head to the right of the
+  move register. Validation: `uv run python -m pytest
+  tests/test_semantic_objects.py::test_utm_program_artifact_round_trip_and_run
+  tests/test_semantic_objects.py::test_universal_interpreter_for_encoded_matches_direct_lowering
+  tests/test_semantic_objects.py::test_wider_abi_incrementer_runs_end_to_end`;
+  `uv run python -m pytest tests/test_lowering.py -k
+  'lowered_start_step_matches_host_block or compare_global_global_matches_host_block
+  or lowered_compare_global_global_stops_at_matching_early_terminators or
+  lowered_copy_global_to_head_symbol_preserves_end_cell_shape'`.
 
 ## Findings / Debt
 

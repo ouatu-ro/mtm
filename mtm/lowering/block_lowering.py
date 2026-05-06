@@ -70,7 +70,9 @@ def block_entry_setup(block: Block) -> Instruction | None:
         return SeekOneOf((ACTIVE_RULE, END_RULES), "R")
     if block.label in {"CHECK_STATE", "CHECK_READ", "NEXT_RULE", "MATCHED_RULE"}:
         return Seek(ACTIVE_RULE, "R")
-    if block.label in {"DISPATCH_MOVE", "CHECK_RIGHT"}:
+    if block.label == "DISPATCH_MOVE":
+        return Seek(MOVE_DIR, "R")
+    if block.label == "CHECK_RIGHT":
         return Seek(MOVE_DIR, "L")
     return None
 
