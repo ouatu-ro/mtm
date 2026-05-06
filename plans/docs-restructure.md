@@ -337,7 +337,7 @@ search summaries, and future site rendering.
   MkDocs Material, Mermaid support, and plain Markdown pages. Add MkDocs
   Material as a pinned dev dependency. Do not add custom frontend code.
 
-- [ ] S8: Adapt scratchpad into the docs landing page.
+- [x] S8: Adapt scratchpad into the docs landing page.
   Use `documentation/DOCS-SCRATCHPAD.MD` as the seed for `docs/index.md` or
   `docs/specs/overview.md`, preserving the high-level explanation and staged
   pipeline diagrams while linking to deeper pages.
@@ -415,20 +415,24 @@ If the optional site shell is added:
 - 2026-05-06 20:24: Completed S7 MkDocs shell. Added pinned
   `mkdocs-material==9.7.6` as a dev dependency, added `mkdocs.yml`, ignored
   generated `site/`, and validated with `uv run mkdocs build --strict`.
+- 2026-05-06 20:26: Completed S8 scratchpad extraction. Moved the landing-page
+  seed from `documentation/DOCS-SCRATCHPAD.MD` into `docs/index.md` and
+  `docs/specs/overview.md`, then removed the old `documentation/` source files
+  after confirming their content is represented under `docs/`.
 
 ## Findings / Debt
 
-- [ ] D1: Existing `documentation/` directory conflicts with canonical `docs/`
+- [x] D1: Existing `documentation/` directory conflicts with canonical `docs/`
   target.
   Impact: Keeping both roots will confuse readers and link maintenance.
-  Recommendation: Resolve during S1 by choosing whether `documentation/` files
-  are drafts to move into `docs/` or temporary files to remove after migration.
+  Resolved: The remaining `documentation/` source files were removed after the
+  content was represented in `docs/`.
 
-- [ ] D2: Tool docs do not currently exist as first-class documentation.
+- [x] D2: Tool docs do not currently exist as first-class documentation.
   Impact: The trace viewer and C runner experiments are discoverable only by
   reading tools or runbooks.
-  Recommendation: Add concise `docs/tools/*` pages in S4, with commands
-  delegated to runbooks.
+  Resolved: S4 added `docs/tools/index.md`, `docs/tools/trace-viewer.md`, and
+  `docs/tools/c-runners.md`.
 
 - [x] D3: `tools/__pycache__` appeared during inventory.
   Impact: Generated Python cache files should not be documented or committed.
