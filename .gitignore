@@ -10,3 +10,4 @@ env/
 .coverage
 dist/
 build/
+site/

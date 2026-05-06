@@ -1,0 +1,50 @@
+site_name: MTM
+site_description: Meta Turing Machine documentation
+repo_url: https://github.com/bgrins/mtm
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - CLI: user-guide/cli.md
+      - Debugger: user-guide/debugger.md
+  - Specs:
+      - Index: specs/spec.md
+      - Overview: specs/overview.md
+      - Object Model: specs/object-model.md
+      - ABI and Artifacts: specs/abi-and-artifacts.md
+      - Meta-ASM and Lowering: specs/meta-asm-and-lowering.md
+      - Recursive Towers: specs/recursive-towers.md
+      - Invariants and Correctness: specs/invariants-and-correctness.md
+      - Debugger REPL: specs/debugger-repl.md
+      - Debugger Presentation: specs/debugger-presentation.md
+  - Architecture:
+      - Debugger Stepper: architecture/debugger-stepper.md
+  - Runbooks:
+      - L2 Incrementer: runbooks/l2-incrementer.md
+  - Results:
+      - Index: results/index.md
+      - L2 Bootstrap: results/l2-bootstrap.md
+  - Tools:
+      - Index: tools/index.md
+      - Trace Viewer: tools/trace-viewer.md
+      - C Runners: tools/c-runners.md
+  - RFCs:
+      - Help Menu: rfc/help-menu.md

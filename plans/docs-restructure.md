@@ -332,7 +332,7 @@ search summaries, and future site rendering.
   Check for broken in-repo links, stale `documentation/` references, duplicate
   docs, accidental code/tool drift, and generated cache files.
 
-- [ ] S7: Add MkDocs site shell.
+- [x] S7: Add MkDocs site shell.
   Add `mkdocs.yml` with navigation matching the `docs/` structure. Prefer
   MkDocs Material, Mermaid support, and plain Markdown pages. Add MkDocs
   Material as a pinned dev dependency. Do not add custom frontend code.
@@ -412,6 +412,9 @@ If the optional site shell is added:
   only historical plan references, and `git check-ignore -v tools/__pycache__
   mtm/__pycache__ examples/__pycache__ tests/__pycache__` confirmed Python
   cache directories are ignored.
+- 2026-05-06 20:24: Completed S7 MkDocs shell. Added pinned
+  `mkdocs-material==9.7.6` as a dev dependency, added `mkdocs.yml`, ignored
+  generated `site/`, and validated with `uv run mkdocs build --strict`.
 
 ## Findings / Debt
 
@@ -432,11 +435,12 @@ If the optional site shell is added:
   Resolved: S6 confirmed `tools/__pycache__` and other Python cache directories
   are ignored by `.gitignore`; no tracked cleanup was needed.
 
-- [ ] D4: Documentation website dependencies are undecided.
+- [x] D4: Documentation website dependencies are undecided.
   Impact: Adding MkDocs can be done via `uvx` with no repo dependency, or as a
   project dev dependency for repeatability.
-  Recommendation: Resolve during S7 by adding a pinned project dev dependency
-  and validating with `uv run mkdocs build --strict`.
+  Resolved: S7 added `mkdocs-material==9.7.6` to the dev dependency group,
+  updated `uv.lock`, and validated the site through `uv run mkdocs build
+  --strict`.
 
 ## Completion Criteria
 
