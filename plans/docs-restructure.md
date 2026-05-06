@@ -342,7 +342,7 @@ search summaries, and future site rendering.
   `docs/specs/overview.md`, preserving the high-level explanation and staged
   pipeline diagrams while linking to deeper pages.
 
-- [ ] S9: Verify local site navigation.
+- [x] S9: Verify local site navigation.
   Run the chosen MkDocs preview/build command, confirm navigation/search works,
   and record any plugin or dependency choices. Do not add publish automation in
   this step.
@@ -419,6 +419,11 @@ If the optional site shell is added:
   seed from `documentation/DOCS-SCRATCHPAD.MD` into `docs/index.md` and
   `docs/specs/overview.md`, then removed the old `documentation/` source files
   after confirming their content is represented under `docs/`.
+- 2026-05-06 20:30: Completed S9 site verification. `uv run mkdocs build
+  --strict` passed, generated `site/index.html`, `site/search/search_index.json`,
+  `site/specs/spec/index.html`, and `site/user-guide/cli/index.html` were
+  present, and `git status --short --untracked-files=all` stayed clean because
+  `site/` is ignored.
 
 ## Findings / Debt
 
