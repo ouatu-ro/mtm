@@ -201,8 +201,18 @@ Current code:
   - `write_symbol`
   - `next_state`
   - `move_dir`
+  - `halt_state`
+  - `blank_symbol`
+  - `left_dir`
+  - `right_dir`
   - `cmp_flag`
   - `tmp_bits`
+
+These registers now include both mutable execution state and guest-owned
+constants copied from the band's encoding. `halt_state`, `blank_symbol`,
+`left_dir`, and `right_dir` are part of the encoded register block so later
+host logic can compare against the guest's actual field payloads instead of
+baked host-width literals.
 
 ### `UTMEncodedRule`
 

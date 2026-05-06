@@ -7,7 +7,7 @@ from mtm.pretty import pretty_runtime_tape
 from mtm.raw_transition_tm import S, TMBuilder, TMTransitionProgram
 from mtm.semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMProgramArtifact, build_raw_guest_encoding, compile_raw_guest, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, infer_minimal_abi, infer_raw_guest_minimal_abi, utm_artifact_from_band, utm_encoded_from_band
 from mtm.source_encoding import abi_compatible, abi_from_literal, abi_to_literal, assert_abi_compatible
-from mtm.utm_band_layout import compile_tm_to_universal_tape
+from mtm.utm_band_layout import BLANK_SYMBOL, HALT_STATE, LEFT_DIR, RIGHT_DIR, compile_tm_to_universal_tape
 
 
 def _run_instance(instance: TMInstance, *, fuel: int = 500_000):
@@ -86,10 +86,29 @@ def test_semantic_view_from_encoded_band() -> None:
     assert view.current_state == "qFindMargin"
     assert view.registers.cur_state == "qFindMargin"
     assert view.registers.cur_symbol == "_"
+    assert view.registers.halt_state == "qDone"
+    assert view.registers.blank_symbol == "_"
+    assert view.registers.left_dir == L
+    assert view.registers.right_dir == R
     assert len(view.rules) == 6
     assert view.simulated_tape.cells[:4] == ("1", "0", "1", "1")
     assert view.simulated_head == 0
     assert view.simulated_tape.head == 0
+
+
+def test_encoded_register_band_carries_guest_owned_constants() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    view = decoded_view_from_encoded_band(band)
+
+    assert HALT_STATE in band.left_band
+    assert BLANK_SYMBOL in band.left_band
+    assert LEFT_DIR in band.left_band
+    assert RIGHT_DIR in band.left_band
+    assert view.registers.halt_state == fixture.halt_state
+    assert view.registers.blank_symbol == fixture.band.blank
+    assert view.registers.left_dir == L
+    assert view.registers.right_dir == R
 
 
 def test_trivial_halted_blank_input_preserves_blank_cell() -> None:
@@ -327,6 +346,10 @@ def test_compile_raw_guest_preserves_sparse_tape_and_head_blank() -> None:
     view = encoded.decoded_view()
 
     assert view.current_state == "start"
+    assert view.registers.halt_state == "halt"
+    assert view.registers.blank_symbol == program.blank
+    assert view.registers.left_dir == -1
+    assert view.registers.right_dir == 1
     assert view.simulated_tape.left_band == ("1", program.blank)
     assert view.simulated_tape.right_band == ("0", program.blank, program.blank)
     assert view.simulated_tape.head == 2

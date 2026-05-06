@@ -24,7 +24,8 @@ TAPE, END_TAPE, CELL = "#TAPE", "#END_TAPE", "#CELL"
 END_FIELD, END_CELL = "#END_FIELD", "#END_CELL"
 
 CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE = "#CUR_STATE", "#CUR_SYMBOL", "#WRITE_SYMBOL", "#NEXT_STATE"
-MOVE_DIR, CMP_FLAG, TMP = "#MOVE_DIR", "#CMP_FLAG", "#TMP"
+MOVE_DIR, HALT_STATE, BLANK_SYMBOL = "#MOVE_DIR", "#HALT_STATE", "#BLANK_SYMBOL"
+LEFT_DIR, RIGHT_DIR, CMP_FLAG, TMP = "#LEFT_DIR", "#RIGHT_DIR", "#CMP_FLAG", "#TMP"
 STATE, READ, WRITE, NEXT, MOVE = "#STATE", "#READ", "#WRITE", "#NEXT", "#MOVE"
 HEAD, NO_HEAD = "#HEAD", "#NO_HEAD"
 RUNTIME_BLANK = "_RUNTIME_BLANK"
@@ -35,7 +36,7 @@ UTM_STRUCTURAL_ALPHABET = (
     TAPE_LEFT, END_TAPE_LEFT, TAPE, END_TAPE, CELL,
     END_FIELD, END_CELL,
     CUR_STATE, CUR_SYMBOL, WRITE_SYMBOL, NEXT_STATE,
-    MOVE_DIR, CMP_FLAG, TMP,
+    MOVE_DIR, HALT_STATE, BLANK_SYMBOL, LEFT_DIR, RIGHT_DIR, CMP_FLAG, TMP,
     STATE, READ, WRITE, NEXT, MOVE,
     HEAD, NO_HEAD,
 )
@@ -86,6 +87,10 @@ def build_register_band(encoding: Encoding) -> list[str]:
         *wrap_field(WRITE_SYMBOL, encode_symbol(encoding, encoding.blank)),
         *wrap_field(NEXT_STATE, encode_state(encoding, encoding.initial_state)),
         *wrap_field(MOVE_DIR, encode_direction(encoding, L)),
+        *wrap_field(HALT_STATE, encode_state(encoding, encoding.halt_state)),
+        *wrap_field(BLANK_SYMBOL, encode_symbol(encoding, encoding.blank)),
+        *wrap_field(LEFT_DIR, encode_direction(encoding, L)),
+        *wrap_field(RIGHT_DIR, encode_direction(encoding, R)),
         *wrap_field(CMP_FLAG, ("0",)),
         *wrap_field(TMP, ("0",) * temp_width),
         END_REGS,
@@ -199,9 +204,9 @@ def compile_tm_to_universal_tape(
     return EncodedBand(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
 
 
-__all__ = ["CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_CELL", "END_FIELD", "END_REGS", "END_RULE",
-           "END_RULES", "END_TAPE", "EncodedBand", "HEAD", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
-           "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TAPE_LEFT",
+__all__ = ["BLANK_SYMBOL", "CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_CELL", "END_FIELD", "END_REGS", "END_RULE",
+           "END_RULES", "END_TAPE", "EncodedBand", "HALT_STATE", "HEAD", "LEFT_DIR", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
+           "RIGHT_DIR", "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TAPE_LEFT",
            "END_TAPE_LEFT", "TMP", "WRITE", "WRITE_SYMBOL", "build_left_tape_band_from_source_band",
            "UTM_STRUCTURAL_ALPHABET", "build_register_band", "build_rule_band", "build_tape_band_from_source_band",
            "compile_tm_to_universal_tape", "materialize_runtime_tape", "place_on_negative_side",

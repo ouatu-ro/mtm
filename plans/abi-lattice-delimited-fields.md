@@ -38,7 +38,7 @@ Out of scope:
 
 ## Steps
 
-- [ ] S1: Update object model and band layout constants.
+- [x] S1: Update object model and band layout constants.
   Add `#HALT_STATE`, `#BLANK_SYMBOL`, `#LEFT_DIR`, and `#RIGHT_DIR` to the
   structural alphabet, register-band layout, semantic register objects,
   pretty/parsing helpers, and generated fixture expectations.
@@ -83,6 +83,10 @@ Out of scope:
 
 - 2026-05-06 07:25 EEST: Plan created. `Spec.md` updated first by request;
   no commit created because the user explicitly asked not to commit yet.
+- 2026-05-06 07:35 EEST: S1 completed. Added band-owned constants to the
+  register layout, semantic register decode/re-encode, pretty parsing, object
+  model docs, and focused semantic-object tests. Validation:
+  `uv run python -m pytest tests/test_semantic_objects.py tests/test_tm_file_input.py`.
 
 ## Findings / Debt
 
@@ -97,11 +101,10 @@ Out of scope:
   existing terminator shape.
   Recommendation: Do now in S3/S4, but keep it narrow and avoid general
   field-resizing machinery.
-- [ ] D3: `object_model.md` still needs the same terminology update as
-  `spec.md`.
-  Impact: The implementation spec and object model will disagree until the
-  object model documents band-owned constants and ABI lattice compatibility.
-  Recommendation: Do in S1 before code changes land.
+- [x] D3: `OBJECT_MODEL.md` still needs the same terminology update as
+  `Spec.md`.
+  Resolved: S1 updated the tracked object-model document with the band-owned
+  constant register fields.
 
 ## Completion Criteria
 

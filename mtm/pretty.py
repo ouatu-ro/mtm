@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand
+from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HALT_STATE, HEAD, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RIGHT_DIR, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand
 from .source_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
@@ -41,6 +41,10 @@ def parse_registers(encoding: Encoding, left_band: list[str]) -> tuple[dict[str,
         (WRITE_SYMBOL, "WRITE_SYMBOL", encoding.id_symbols),
         (NEXT_STATE, "NEXT_STATE", encoding.id_states),
         (MOVE_DIR, "MOVE_DIR", encoding.id_dirs),
+        (HALT_STATE, "HALT_STATE", encoding.id_states),
+        (BLANK_SYMBOL, "BLANK_SYMBOL", encoding.id_symbols),
+        (LEFT_DIR, "LEFT_DIR", encoding.id_dirs),
+        (RIGHT_DIR, "RIGHT_DIR", encoding.id_dirs),
     ]
     for marker, name, id_map in fields:
         bits, index = take_field(left_band, index, marker)
@@ -165,6 +169,10 @@ def pretty_registers(encoding: Encoding, left_band: list[str]) -> str:
         ["WRITE_SYMBOL", repr(registers["WRITE_SYMBOL"]), format_bits(encode_symbol(encoding, registers["WRITE_SYMBOL"]))],
         ["NEXT_STATE", repr(registers["NEXT_STATE"]), format_bits(encode_state(encoding, registers["NEXT_STATE"]))],
         ["MOVE_DIR", dir_name(registers["MOVE_DIR"]), format_bits(encode_direction(encoding, registers["MOVE_DIR"]))],
+        ["HALT_STATE", repr(registers["HALT_STATE"]), format_bits(encode_state(encoding, registers["HALT_STATE"]))],
+        ["BLANK_SYMBOL", repr(registers["BLANK_SYMBOL"]), format_bits(encode_symbol(encoding, registers["BLANK_SYMBOL"]))],
+        ["LEFT_DIR", dir_name(registers["LEFT_DIR"]), format_bits(encode_direction(encoding, registers["LEFT_DIR"]))],
+        ["RIGHT_DIR", dir_name(registers["RIGHT_DIR"]), format_bits(encode_direction(encoding, registers["RIGHT_DIR"]))],
         ["CMP_FLAG", registers["CMP_FLAG"], registers["CMP_FLAG"]],
         ["TMP", format_bits(registers["TMP"]), format_bits(registers["TMP"])],
     ]

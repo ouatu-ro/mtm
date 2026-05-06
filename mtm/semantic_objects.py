@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Mapping
 
-from .utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HEAD, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
+from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HALT_STATE, HEAD, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, READ, REGS, RIGHT_DIR, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand, wrap_field
 from .pretty import parse_left_tape, parse_registers, parse_rules, parse_tape
 from .raw_transition_tm import L as RAW_L, R as RAW_R, S as RAW_S, TMTransitionProgram, run_raw_tm
 from .source_encoding import Encoding, TMAbi, TMProgram, assert_abi_compatible, assign_ids, encode_direction, encode_state, encode_symbol, infer_minimal_abi as infer_minimal_encoding_abi, width_for
@@ -139,6 +139,10 @@ class UTMRegisters:
     write_symbol: str
     next_state: str
     move_dir: int
+    halt_state: str
+    blank_symbol: str
+    left_dir: int
+    right_dir: int
     cmp_flag: str
     tmp_bits: tuple[str, ...]
 
@@ -355,6 +359,10 @@ def _register_band_from_semantics(encoding: Encoding, registers: UTMRegisters) -
         *wrap_field(WRITE_SYMBOL, encode_symbol(encoding, registers.write_symbol)),
         *wrap_field(NEXT_STATE, encode_state(encoding, registers.next_state)),
         *wrap_field(MOVE_DIR, encode_direction(encoding, registers.move_dir)),
+        *wrap_field(HALT_STATE, encode_state(encoding, registers.halt_state)),
+        *wrap_field(BLANK_SYMBOL, encode_symbol(encoding, registers.blank_symbol)),
+        *wrap_field(LEFT_DIR, encode_direction(encoding, registers.left_dir)),
+        *wrap_field(RIGHT_DIR, encode_direction(encoding, registers.right_dir)),
         *wrap_field(CMP_FLAG, (registers.cmp_flag,)),
         *wrap_field(TMP, registers.tmp_bits),
         END_REGS,
@@ -563,6 +571,10 @@ def compile_raw_guest(
             write_symbol=instance.program.blank,
             next_state=instance.state,
             move_dir=RAW_L,
+            halt_state=instance.program.halt_state,
+            blank_symbol=instance.program.blank,
+            left_dir=RAW_L,
+            right_dir=RAW_R,
             cmp_flag="0",
             tmp_bits=("0",) * max(encoding.state_width, encoding.symbol_width, encoding.direction_width),
         ),
@@ -605,6 +617,10 @@ def decoded_view_from_encoded_band(band: EncodedBand) -> DecodedBandView:
             write_symbol=registers["WRITE_SYMBOL"],
             next_state=registers["NEXT_STATE"],
             move_dir=registers["MOVE_DIR"],
+            halt_state=registers["HALT_STATE"],
+            blank_symbol=registers["BLANK_SYMBOL"],
+            left_dir=registers["LEFT_DIR"],
+            right_dir=registers["RIGHT_DIR"],
             cmp_flag=registers["CMP_FLAG"],
             tmp_bits=tuple(registers["TMP"]),
         ),
