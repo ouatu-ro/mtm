@@ -1,0 +1,224 @@
+# L2 Incrementer Runbook
+
+This note captures the concrete path from `examples/incrementer_tm.py` to L2,
+plus the current size and runtime expectations for proving `1011 -> 1100`.
+
+## Build L1 and L2 Artifacts
+
+```bash
+out=/tmp/mtm-incrementer-l2
+rm -rf "$out"
+
+uv run mtm l1 examples/incrementer_tm.py \
+  --out-dir "$out" \
+  --stem incrementer
+
+uv run mtm l2 \
+  "$out/incrementer.l1.tm" \
+  "$out/incrementer.l1.utm.band" \
+  --out-dir "$out" \
+  --stem incrementer
+```
+
+Expected artifacts:
+
+```text
+incrementer.mtm.source
+incrementer.l1.tm
+incrementer.l1.utm.band
+incrementer.l2.tm
+incrementer.l2.utm.band
+```
+
+## Validate L1
+
+The L1 raw UTM currently completes the incrementer:
+
+```bash
+uv run mtm run \
+  "$out/incrementer.l1.tm" \
+  "$out/incrementer.l1.utm.band" \
+  --max-steps 1000000
+```
+
+Measured result:
+
+```text
+FINAL STATUS: halted
+FINAL STATE: U_HALT
+STEPS: 35600
+FINAL TAPE: 1 1 0 0 _ _ _ _
+```
+
+So L1 proves the source input `1011____` becomes `1100____`.
+
+## What L2 Represents
+
+L2 is not a second copy of the source incrementer. It is the universal machine
+interpreting the L1 raw machine.
+
+```text
+source incrementer
+  -> L1 UTM artifacts
+  -> L1 raw transition program plus L1 raw runtime tape
+  -> encoded as the guest program and guest tape inside L2
+```
+
+For the current incrementer:
+
+```text
+L1 raw transitions          8,590
+L1 raw steps to halt       35,600
+
+L2 encoded rules            8,590
+L2 raw transitions         33,039
+L2 band tokens            362,442
+L2 .utm.band size       2,520,040 bytes
+L2 .tm size             4,645,570 bytes
+
+MetaASM blocks                 13
+MetaASM static instructions    33
+```
+
+The 33 MetaASM instructions are the static universal interpreter. At L2 they
+loop over the 8,590 encoded L1 raw transitions for every simulated L1 raw step.
+
+## MetaASM Runtime Estimate
+
+The current MetaASM host can now run L2 with a simulated head on either side of
+the split tape. A bounded run no longer fails on the initial negative head.
+
+A trace-derived estimate for the full L2 incrementer is:
+
+```text
+simulated L1 raw steps              35,600
+estimated L2 MetaASM instructions  634,438,903
+average MetaASM instructions/step       17,821
+```
+
+Measured host speed on the current L2 band:
+
+```text
+100,000 MetaASM instructions ~= 14.25 seconds
+```
+
+That gives a rough full-run estimate:
+
+```text
+634,438,903 / 100,000 * 14.25s ~= 90,000s ~= 25 hours
+```
+
+This is a ballpark estimate, not a promise. The host still performs honest rule
+lookup over the large encoded L1 raw transition table.
+
+## Real L2 Raw TM Estimate
+
+The emitted L2 raw TM is much more expensive. The expensive benchmark currently
+shows:
+
+```bash
+uv run python benchmarks/raw_transition_optimization.py \
+  --expensive \
+  --l2-source-steps 1
+```
+
+Measured baseline:
+
+```text
+1 lowered MetaASM instruction ~= 2,245,707 raw L2 steps
+```
+
+Combining that with the MetaASM instruction estimate:
+
+```text
+634,438,903 * 2,245,707 ~= 1.4e15 raw L2 steps
+```
+
+At the current Python raw runner speed, this is not a practical local run. It
+is on the order of decades, not hours. The real L2 TM is the semantic artifact;
+the MetaASM host is the practical way to try to close the full `1011 -> 1100`
+end-to-end check without new optimization work.
+
+## Fast L1 Raw Guest C Check
+
+For a quick check of the guest computation encoded by L2, generate a C data
+header from the L1 artifacts and compile the fixed-array runner:
+
+```bash
+uv run python tools/generate_l1_raw_guest_data.py \
+  "$out/incrementer.l1.tm" \
+  "$out/incrementer.l1.utm.band" \
+  -o "$out/l1_raw_guest_data.h"
+
+cc -O3 -std=c11 \
+  -I "$out" \
+  tools/l1_raw_guest_runner.c \
+  -o "$out/l1_raw_guest_runner"
+
+"$out/l1_raw_guest_runner"
+```
+
+Current measured output:
+
+```text
+status=halted steps=35600 raw_head=-135
+```
+
+The dumped nonnegative raw band begins with the encoded cells for `1 1 0 0`.
+This is intentionally not the full L2 proof: it runs the L1 raw guest directly
+in C. It is useful as a fast sanity check before spending time on the L2
+MetaASM path.
+
+## Fast L2 MetaASM C Check
+
+To run the actual L2 band through the universal MetaASM algorithm using fixed C
+arrays, generate a header from the L2 band and compile the runner:
+
+```bash
+uv run python tools/generate_l2_meta_asm_data.py \
+  "$out/incrementer.l2.utm.band" \
+  -o "$out/l2_meta_asm_data.h"
+
+cc -O3 -std=c11 \
+  -I "$out" \
+  tools/l2_meta_asm_runner.c \
+  -o "$out/l2_meta_asm_runner"
+```
+
+One million MetaASM instructions:
+
+```bash
+"$out/l2_meta_asm_runner" 1000000
+```
+
+Measured result:
+
+```text
+status=fuel_exhausted meta_steps=1000000 guest_steps=352
+```
+
+Full L2 MetaASM run with a high cap:
+
+```bash
+"$out/l2_meta_asm_runner" 800000000
+```
+
+Measured result:
+
+```text
+status=halted meta_steps=634438903 guest_steps=35600
+```
+
+With `cc -O3`, this currently takes about one second on the local machine. The
+final right simulated raw band starts:
+
+```text
+#TAPE #CELL #HEAD 1 0 #END_CELL
+#CELL #NO_HEAD 1 0 #END_CELL
+#CELL #NO_HEAD 0 1 #END_CELL
+#CELL #NO_HEAD 0 1 #END_CELL
+```
+
+Those L1 symbol bits decode as `1 1 0 0`, so this is the fast end-to-end L2
+MetaASM proof for the incrementer. It is still not the fully lowered L2 raw TM
+run; it is the universal MetaASM semantics over the L2 `.utm.band`.
