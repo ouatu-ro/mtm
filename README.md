@@ -1,19 +1,23 @@
 # MTM
 
-Meta Turing Machine (MTM) is a compiler toolchain for building and inspecting
-Universal Turing Machines.
+Meta Turing Machine (MTM) is a compiler toolchain for building, running, and
+inspecting Universal Turing Machines (UTMs).
 
-MTM has working pieces for:
+The project takes a source Turing machine, encodes it onto a UTM tape, generates
+a universal interpreter for that encoding, lowers the interpreter into ordinary
+TM transitions, and then lets you run, trace, and debug the result.
 
-- a small Meta-ASM language for generating a UTM
-- a universal interpreter over encoded TM bands
-- multi-pass lowering from Meta-ASM into raw TM transitions
+Current highlights:
+
+- Meta-ASM: a small assembly language for generating a UTM
+- a universal interpreter over encoded TM tapes, stored as `.utm.band` artifacts
+- multi-pass lowering from Meta-ASM into raw `.tm` transition tables
 - recursive bootstrapping experiments, including C-accelerated runners
 - debugging and trace tools: `mtm dbg`, `mtm trace`, and the browser trace viewer
 
 ## Install
 
-Install `uv`, then sync and run from the repo:
+Install `uv`, then sync the project and check the CLI:
 
 ```sh
 uv sync
@@ -22,7 +26,11 @@ uv run mtm -h
 
 ## Quick Start
 
-Compile the incrementer example into an encoded band plus a runnable raw UTM:
+Compile the incrementer example into:
+
+- `out/incrementer.utm.band`: encoded input tape for the UTM
+- `out/incrementer.tm`: runnable raw UTM transition table
+- `out/incrementer.asm`: generated Meta-ASM, for inspection
 
 ```sh
 mkdir -p out
@@ -32,13 +40,13 @@ uv run mtm compile examples/incrementer_tm.py \
   --asm-out out/incrementer.asm
 ```
 
-Run it:
+Run the raw UTM on the encoded tape:
 
 ```sh
 uv run mtm run out/incrementer.tm out/incrementer.utm.band
 ```
 
-Emit a raw trace and metadata sidecar:
+Emit a raw transition trace plus metadata sidecar:
 
 ```sh
 uv run mtm trace out/incrementer.tm out/incrementer.utm.band \
@@ -48,22 +56,32 @@ uv run mtm trace out/incrementer.tm out/incrementer.utm.band \
   --meta-out out/incrementer.raw.json
 ```
 
-Debug a built-in fixture:
+Open the debugger on a built-in fixture:
 
 ```sh
 uv run mtm dbg incrementer
 ```
 
-Built-in fixtures live in `mtm/fixtures/`; source examples live in `examples/`.
-
 ## Inputs
 
-Normal compilation starts from Python TM files such as
-`examples/incrementer_tm.py`. Raw `.tm` programs can also become guests in the
-advanced recursive path, where an existing `.tm` and `.utm.band` pair is wrapped
-into a higher-level encoded band.
+Normal compilation starts from Python TM source files, such as:
 
-The L2/bootstrap path is experimental and documented separately:
-[docs/runbooks/l2-incrementer.md](docs/runbooks/l2-incrementer.md).
+- `examples/incrementer_tm.py`
+- `examples/palindrome_tm.py`
 
-Docs start here: [docs/index.md](docs/index.md).
+Built-in debugger fixtures live in `mtm/fixtures/` and currently include:
+
+- `incrementer`
+- `palindrome`
+
+Raw `.tm` programs can also become guests in the advanced recursive path. In
+that path, an existing `.tm` plus `.utm.band` pair is wrapped into a higher-level
+encoded tape. This is the experimental L2/bootstrap workflow, not the normal
+compile/run path.
+
+See [docs/runbooks/l2-incrementer.md](docs/runbooks/l2-incrementer.md) for the
+bootstrap notes.
+
+## Documentation
+
+Start at [docs/index.md](docs/index.md).
