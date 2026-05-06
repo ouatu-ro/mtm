@@ -328,7 +328,7 @@ search summaries, and future site rendering.
   Update references to moved docs. Keep or add root stubs only if old root paths
   are still useful compatibility targets.
 
-- [ ] S6: Validate and clean up migration debris.
+- [x] S6: Validate and clean up migration debris.
   Check for broken in-repo links, stale `documentation/` references, duplicate
   docs, accidental code/tool drift, and generated cache files.
 
@@ -407,6 +407,11 @@ If the optional site shell is added:
   `rg -n "documentation/|Spec.md|OBJECT_MODEL.md|debugger-repl-spec|l2-incrementer-runbook|l2-bootstrap-results|debugger-stepper.md|help-menu-rfc" docs README.md documentation plans/docs-restructure.md || true`,
   `find docs -maxdepth 3 -type f | sort`, and
   `git status --short --untracked-files=all`.
+- 2026-05-06 20:18: Completed S6 validation sweep. `git diff --check` passed,
+  `git status --short --untracked-files=all` was clean, stale-path search found
+  only historical plan references, and `git check-ignore -v tools/__pycache__
+  mtm/__pycache__ examples/__pycache__ tests/__pycache__` confirmed Python
+  cache directories are ignored.
 
 ## Findings / Debt
 
@@ -422,10 +427,10 @@ If the optional site shell is added:
   Recommendation: Add concise `docs/tools/*` pages in S4, with commands
   delegated to runbooks.
 
-- [ ] D3: `tools/__pycache__` appeared during inventory.
+- [x] D3: `tools/__pycache__` appeared during inventory.
   Impact: Generated Python cache files should not be documented or committed.
-  Recommendation: Confirm ignore/cleanup during S6 without touching tool source
-  files.
+  Resolved: S6 confirmed `tools/__pycache__` and other Python cache directories
+  are ignored by `.gitignore`; no tracked cleanup was needed.
 
 - [ ] D4: Documentation website dependencies are undecided.
   Impact: Adding MkDocs can be done via `uvx` with no repo dependency, or as a
