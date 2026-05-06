@@ -49,7 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("tm_file", help="Path to a raw .tm artifact.")
     parser.add_argument("band_file", help="Path to the initial .utm.band artifact.")
     parser.add_argument("-o", "--output", required=True, help="Output .c path.")
-    parser.add_argument("--backend", choices=("packed-array", "computed-goto"), default="packed-array")
+    parser.add_argument("--backend", choices=("packed-array", "computed-goto", "state-fn", "state-switch"), default="packed-array")
     parser.add_argument("--margin", type=int, default=1000, help="Blank fixed-tape margin on both sides.")
     parser.add_argument("--right-dump-cells", type=int, default=None, help="How many decoded nonnegative cells to print.")
     parser.add_argument("--raw-dump-cells", type=int, default=0, help="How many raw nonnegative tape cells to print.")
@@ -273,8 +273,9 @@ def _common_runtime() -> list[str]:
         "",
         "static void print_result(const char *status, long long steps, int head, int state, clock_t start_clock, const Symbol *tape) {",
         "  double seconds = (double)(clock() - start_clock) / CLOCKS_PER_SEC;",
+        "  const char *state_name = (state >= 0 && state < STATE_COUNT) ? STATES[state] : \"<stuck>\";",
         "  printf(\"backend=%s status=%s steps=%lld head=%d raw_head=%d state=%s seconds=%.6f msteps_per_s=%.3f\\n\",",
-        "         BACKEND, status, steps, head, head - ORIGIN, STATES[state], seconds, seconds > 0 ? (steps / seconds) / 1000000.0 : 0.0);",
+        "         BACKEND, status, steps, head, head - ORIGIN, state_name, seconds, seconds > 0 ? (steps / seconds) / 1000000.0 : 0.0);",
         "  dump_decoded_right_tape(tape);",
         "  dump_raw_right_tape(tape);",
         "}",
@@ -334,6 +335,172 @@ def _emit_packed_array(data: CData) -> str:
 
 def _label_name(offset: int) -> str:
     return f"T_{offset}"
+
+
+def _state_fn_name(state_id: int) -> str:
+    return f"run_state_{state_id}"
+
+
+def _state_transition_offsets(data: CData, state_id: int) -> list[int]:
+    start = state_id * data.symbol_count
+    end = start + data.symbol_count
+    return [offset for offset in range(start, end) if data.table_next[offset] >= 0]
+
+
+def _emit_state_fn(data: CData) -> str:
+    lines = _common_preamble(data, backend="state-fn")
+    lines.extend(_common_runtime())
+    lines.extend([
+        "",
+        "#define STUCK_STATE -1",
+        "typedef int State;",
+        "typedef State (*StateFn)(Symbol *tape, int *head);",
+        "",
+    ])
+    for state_id in range(data.state_count):
+        lines.append(f"static State {_state_fn_name(state_id)}(Symbol *tape, int *head);")
+    lines.append("")
+    lines.append("static StateFn STATE_FNS[] = {")
+    for state_id in range(data.state_count):
+        lines.append(f"  {_state_fn_name(state_id)},")
+    lines.append("};")
+
+    for state_id in range(data.state_count):
+        if state_id == data.halt_state:
+            lines.extend([
+                "",
+                f"static State {_state_fn_name(state_id)}(Symbol *tape, int *head) {{",
+                "  (void)tape;",
+                "  (void)head;",
+                f"  return {data.halt_state};",
+                "}",
+            ])
+            continue
+
+        lines.extend([
+            "",
+            f"static State {_state_fn_name(state_id)}(Symbol *tape, int *head) {{",
+            "  switch (tape[*head]) {",
+        ])
+        for offset in _state_transition_offsets(data, state_id):
+            read_symbol = offset - state_id * data.symbol_count
+            lines.extend([
+                f"    case {read_symbol}:",
+                f"      tape[*head] = (Symbol){data.table_write[offset]};",
+                f"      *head += {data.table_move_code[offset] - 1};",
+                f"      return {data.table_next[offset]};",
+            ])
+        lines.extend([
+            "    default:",
+            "      return STUCK_STATE;",
+            "  }",
+            "}",
+        ])
+
+    lines.extend([
+        "",
+        "int main(int argc, char **argv) {",
+        "  long long max_steps = parse_max_steps(argc, argv);",
+        "  Symbol *tape = init_tape();",
+        "  int state = START_STATE;",
+        "  int head = START_HEAD;",
+        "  long long steps = 0;",
+        "  clock_t start_clock = clock();",
+        "  while (state != HALT) {",
+        "    if (max_steps >= 0 && steps >= max_steps) {",
+        "      print_result(\"fuel_exhausted\", steps, head, state, start_clock, tape);",
+        "      free(tape);",
+        "      return 0;",
+        "    }",
+        "    if (head < 0 || head >= TAPE_SIZE) {",
+        "      fprintf(stderr, \"head out of range: head=%d raw_head=%d steps=%lld state=%s\\n\", head, head - ORIGIN, steps, state >= 0 && state < STATE_COUNT ? STATES[state] : \"<stuck>\");",
+        "      free(tape);",
+        "      return 3;",
+        "    }",
+        "    if (state < 0 || state >= STATE_COUNT || STATE_FNS[state] == NULL) {",
+        "      print_result(\"stuck\", steps, head, state, start_clock, tape);",
+        "      free(tape);",
+        "      return 4;",
+        "    }",
+        "    state = STATE_FNS[state](tape, &head);",
+        "    steps++;",
+        "  }",
+        "  print_result(\"halted\", steps, head, state, start_clock, tape);",
+        "  free(tape);",
+        "  return 0;",
+        "}",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _emit_state_switch(data: CData) -> str:
+    lines = _common_preamble(data, backend="state-switch")
+    lines.extend(_common_runtime())
+    lines.extend([
+        "",
+        "#define STUCK_STATE -1",
+        "",
+        "int main(int argc, char **argv) {",
+        "  long long max_steps = parse_max_steps(argc, argv);",
+        "  Symbol *tape = init_tape();",
+        "  int state = START_STATE;",
+        "  int head = START_HEAD;",
+        "  long long steps = 0;",
+        "  clock_t start_clock = clock();",
+        "  while (state != HALT) {",
+        "    if (max_steps >= 0 && steps >= max_steps) {",
+        "      print_result(\"fuel_exhausted\", steps, head, state, start_clock, tape);",
+        "      free(tape);",
+        "      return 0;",
+        "    }",
+        "    if (head < 0 || head >= TAPE_SIZE) {",
+        "      fprintf(stderr, \"head out of range: head=%d raw_head=%d steps=%lld state=%s\\n\", head, head - ORIGIN, steps, state >= 0 && state < STATE_COUNT ? STATES[state] : \"<stuck>\");",
+        "      free(tape);",
+        "      return 3;",
+        "    }",
+        "    switch (state) {",
+    ])
+    for state_id in range(data.state_count):
+        if state_id == data.halt_state:
+            continue
+        lines.extend([
+            f"      case {state_id}:",
+            "        switch (tape[head]) {",
+        ])
+        for offset in _state_transition_offsets(data, state_id):
+            read_symbol = offset - state_id * data.symbol_count
+            lines.extend([
+                f"          case {read_symbol}:",
+                f"            tape[head] = (Symbol){data.table_write[offset]};",
+                f"            head += {data.table_move_code[offset] - 1};",
+                f"            state = {data.table_next[offset]};",
+                "            break;",
+            ])
+        lines.extend([
+            "          default:",
+            "            state = STUCK_STATE;",
+            "            break;",
+            "        }",
+            "        break;",
+        ])
+    lines.extend([
+        "      default:",
+        "        state = STUCK_STATE;",
+        "        break;",
+        "    }",
+        "    steps++;",
+        "    if (state == STUCK_STATE) {",
+        "      print_result(\"stuck\", steps, head, state, start_clock, tape);",
+        "      free(tape);",
+        "      return 4;",
+        "    }",
+        "  }",
+        "  print_result(\"halted\", steps, head, state, start_clock, tape);",
+        "  free(tape);",
+        "  return 0;",
+        "}",
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def _emit_computed_goto(data: CData) -> str:
@@ -414,6 +581,10 @@ def emit_c(data: CData, *, backend: str) -> str:
         return _emit_packed_array(data)
     if backend == "computed-goto":
         return _emit_computed_goto(data)
+    if backend == "state-fn":
+        return _emit_state_fn(data)
+    if backend == "state-switch":
+        return _emit_state_switch(data)
     raise ValueError(f"unknown backend {backend!r}")
 
 

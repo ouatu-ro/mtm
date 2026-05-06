@@ -297,7 +297,7 @@ enough to measure.
 ## Self-Contained Raw C Backends
 
 `tools/generate_raw_tm_c.py` emits a standalone C file for a `.tm`/`.utm.band`
-pair. It has two backends:
+pair. It currently has four backends:
 
 ```bash
 uv run python tools/generate_raw_tm_c.py \
@@ -364,3 +364,61 @@ practical yet. `cc -O3 -std=gnu11` on the 124k-transition L2 host was stopped
 after about 4.5 minutes, and `cc -O1` on the smaller 25k-transition L1 host was
 stopped after about 1 minute. The current label-per-transition shape gives the
 compiler too much global control flow to optimize.
+
+The `state-fn` backend emits one C function per raw TM state. Each function
+switches on the current tape symbol and returns the next raw state:
+
+```bash
+uv run python tools/generate_raw_tm_c.py \
+  "$out/incrementer.l2.tm" \
+  "$out/incrementer.l1.utm.band" \
+  -o "$out/state_fn_l2host_l1band.c" \
+  --backend state-fn \
+  --right-dump-cells 8 \
+  --raw-dump-cells 48
+
+cc -O3 -std=c11 \
+  "$out/state_fn_l2host_l1band.c" \
+  -o "$out/state_fn_l2host_l1band"
+
+"$out/state_fn_l2host_l1band" 1000000
+```
+
+Current `state-fn` cross-ABI result:
+
+```text
+backend=state-fn status=halted steps=54915 ... state=U_HALT
+decoded_right: 1 1 0 0 _ _ _ _
+```
+
+Current `state-fn` real L2 bounded slice:
+
+```text
+backend=state-fn status=fuel_exhausted steps=1000000000 ...
+msteps_per_s=327.661
+```
+
+That validates the state-as-code shape, but the function-pointer dispatch costs
+more than the dense table on this workload.
+
+The `state-switch` backend emits raw TM states as cases in one large
+`switch(state)`, with a nested `switch(tape[head])`. It validates at `-O0` on
+the L2-host/L1-band cross-ABI artifact:
+
+```text
+backend=state-switch status=halted steps=54915 ... state=U_HALT
+decoded_right: 1 1 0 0 _ _ _ _
+msteps_per_s=26.038
+```
+
+Compile-time measurements on the L2-host/L1-band artifact:
+
+```text
+cc -O0 -std=c11: 5.118s total
+cc -O3 -std=c11: 1:25:09.32 total
+```
+
+So `-O3` does finish, but only after about 85 minutes for the 15 MB cross-ABI C
+file. That makes this backend impractical for iteration, and it still leaves the
+full L2-band file to test. Like computed-goto, it exposes too much generated
+control flow to the optimizer in one translation unit.
