@@ -80,7 +80,8 @@ In scope:
 - Add root stubs only if old paths are likely to be referenced externally.
 - Add lightweight YAML front matter to migrated pages.
 - Add an optional MkDocs Material site shell after the Markdown structure is
-  stable.
+  stable, using a pinned project dev dependency instead of an ad hoc `uvx`
+  dependency.
 
 Out of scope:
 
@@ -149,6 +150,10 @@ docs/l2-bootstrap-results.md
 
 docs/help-menu-rfc.md
   -> docs/rfc/help-menu.md
+
+documentation/DOCS-SCRATCHPAD.MD
+  -> docs/index.md for the landing-page explanation
+  -> docs/specs/overview.md for reusable pipeline/architecture text
 ```
 
 Create as indexes/summaries:
@@ -222,6 +227,7 @@ Preserve wording unless needed for path changes in:
 
 - `documentation/OBJECT_MODEL.md`
 - `documentation/Spec.md` section bodies
+- `documentation/DOCS-SCRATCHPAD.MD`
 - `docs/debugger-presentation-spec.md`
 - `docs/debugger-repl-spec.md`
 - `docs/debugger-stepper.md`
@@ -258,6 +264,8 @@ Do not modify:
   commit.
 - `docs/results/l2-bootstrap.md` should preserve the existing narrative and not
   be duplicated.
+- MkDocs Material should be added as a pinned dev dependency in `pyproject.toml`
+  and `uv.lock`, rather than invoked as an unpinned external tool.
 - `docs/specs/results.md` is not needed in the first-pass structure; use
   `docs/results/index.md` instead.
 - MkDocs Material is the preferred site wrapper if/when a website is added,
@@ -324,10 +332,10 @@ search summaries, and future site rendering.
   Check for broken in-repo links, stale `documentation/` references, duplicate
   docs, accidental code/tool drift, and generated cache files.
 
-- [ ] S7: Add optional MkDocs site shell.
+- [ ] S7: Add MkDocs site shell.
   Add `mkdocs.yml` with navigation matching the `docs/` structure. Prefer
-  MkDocs Material, Mermaid support, and plain Markdown pages. Do not add custom
-  frontend code.
+  MkDocs Material, Mermaid support, and plain Markdown pages. Add MkDocs
+  Material as a pinned dev dependency. Do not add custom frontend code.
 
 - [ ] S8: Adapt scratchpad into the docs landing page.
   Use `documentation/DOCS-SCRATCHPAD.MD` as the seed for `docs/index.md` or
@@ -359,8 +367,7 @@ If examples are edited:
 
 If the optional site shell is added:
 
-- `uvx --from mkdocs-material mkdocs build --strict`
-  or the repo-native equivalent if MkDocs is added as a project dependency.
+- `uv run mkdocs build --strict`
 
 ## Progress Log
 
@@ -368,6 +375,8 @@ If the optional site shell is added:
   made, per request.
 - 2026-05-06 19:55: Added optional MkDocs/static-site steps and front matter
   policy. No implementation performed and no commit made, per request.
+- 2026-05-06 20:10: Clarified scratchpad extraction mapping and switched the
+  site-shell validation path to a pinned project dev dependency.
 
 ## Findings / Debt
 
@@ -391,8 +400,8 @@ If the optional site shell is added:
 - [ ] D4: Documentation website dependencies are undecided.
   Impact: Adding MkDocs can be done via `uvx` with no repo dependency, or as a
   project dev dependency for repeatability.
-  Recommendation: Decide during S7. Prefer `uvx` first unless publishing or CI
-  builds require pinned dependencies.
+  Recommendation: Resolve during S7 by adding a pinned project dev dependency
+  and validating with `uv run mkdocs build --strict`.
 
 ## Completion Criteria
 
