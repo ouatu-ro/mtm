@@ -1,5 +1,8 @@
 # Meta-TM Compiler Spec
 
+Canonical split docs now live under `docs/specs/`; this file remains source
+material during the migration.
+
 ## 1. Goal
 
 Build a staged system where a source-level Turing machine is compiled into an

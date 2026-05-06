@@ -324,7 +324,7 @@ search summaries, and future site rendering.
   `docs/tools/index.md`, `docs/tools/trace-viewer.md`,
   `docs/tools/c-runners.md`, and user-guide entrypoints.
 
-- [ ] S5: Update links and root entrypoints.
+- [x] S5: Update links and root entrypoints.
   Update references to moved docs. Keep or add root stubs only if old root paths
   are still useful compatibility targets.
 
@@ -401,6 +401,12 @@ If the optional site shell is added:
   `find docs -maxdepth 3 -type f | sort`,
   `rg -n "tools/trace-viewer.html|tools/l1_raw_guest_runner.c|docs/specs/spec.md|docs/tools" docs plans/docs-restructure.md`,
   and `git status --short --untracked-files=all`.
+- 2026-05-06 20:15: Completed S5 entrypoint cleanup. Added a compact root
+  `README.md` that links to `docs/index.md`, and added a tiny canonical-path
+  notice to `documentation/Spec.md`. Validation passed with `git diff --check`,
+  `rg -n "documentation/|Spec.md|OBJECT_MODEL.md|debugger-repl-spec|l2-incrementer-runbook|l2-bootstrap-results|debugger-stepper.md|help-menu-rfc" docs README.md documentation plans/docs-restructure.md || true`,
+  `find docs -maxdepth 3 -type f | sort`, and
+  `git status --short --untracked-files=all`.
 
 ## Findings / Debt
 
