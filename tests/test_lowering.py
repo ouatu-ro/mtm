@@ -1,4 +1,4 @@
-from mtm import TMBand, load_fixture
+from mtm import TMAbi, TMBand, load_fixture
 from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, lower_program_with_source_map, program_to_cfgs, validate_cfg, validate_program_cfgs
 from mtm.meta_asm import Block, BranchCmp, CompareGlobalGlobal, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
 from mtm.meta_asm import build_universal_meta_asm
@@ -6,7 +6,7 @@ from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
 from mtm.semantic_objects import decoded_view_from_encoded_band
 from mtm.source_encoding import encode_symbol
-from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
+from mtm.utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -92,6 +92,28 @@ def _head_symbol_payload(runtime_tape) -> tuple[str, ...]:
     start = head_index + 2
     end = right_band.index(END_CELL, start)
     return tuple(right_band[start:end])
+
+
+def _head_cell_payload_anywhere(runtime_tape) -> tuple[str, ...]:
+    left_band, right_band = split_runtime_tape(runtime_tape)
+    for band in (left_band, right_band):
+        for index, token in enumerate(band):
+            if token == HEAD:
+                start = index + 1
+                end = band.index(END_CELL, start)
+                return tuple(band[start:end])
+    raise AssertionError("expected runtime tape to contain a simulated head")
+
+
+def _build_wider_host_band(source_band: TMBand):
+    fixture = load_fixture("incrementer")
+    return compile_tm_to_universal_tape(
+        fixture.tm_program,
+        source_band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+        abi=TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]"),
+    )
 
 
 def _assemble_sequence(builder: TMBuilder, instructions, *, start_state: str, exit_label: str) -> None:
@@ -249,6 +271,42 @@ def test_lowered_compare_global_global_stops_at_matching_early_terminators() -> 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
     assert final_left_band[cmp_index + 1] == "1"
+
+
+def test_move_sim_head_right_expands_with_band_blank_symbol_payload() -> None:
+    band = _build_wider_host_band(TMBand.from_dict({0: "1"}, head=0, blank="_"))
+    prepared_tape = _rewrite_global_field(band.runtime_tape, BLANK_SYMBOL, ("0", "0"))
+    instructions = (FindHeadCell(), MoveSimHeadRight(band.encoding.symbol_width))
+    program = Program((Block("START", instructions),), entry_label="START")
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE, NO_HEAD})
+    builder = TMBuilder(alphabet)
+
+    host = run_meta_asm_block_runtime(program, band.encoding, prepared_tape, label="START", max_steps=20)
+    _assemble_sequence(builder, instructions, start_state="start", exit_label="DONE")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(band, 0), max_steps=2_000)
+
+    assert host["runtime_tape"] == result["tape"]
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert _head_cell_payload_anywhere(result["tape"]) == ("0", "0")
+
+
+def test_move_sim_head_left_expands_with_band_blank_symbol_payload() -> None:
+    band = _build_wider_host_band(TMBand.from_dict({-1: "1", 0: "0"}, head=-1, blank="_"))
+    prepared_tape = _rewrite_global_field(band.runtime_tape, BLANK_SYMBOL, ("0", "0"))
+    instructions = (FindHeadCell(), MoveSimHeadLeft(band.encoding.symbol_width))
+    program = Program((Block("START", instructions),), entry_label="START")
+    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE, NO_HEAD})
+    builder = TMBuilder(alphabet)
+
+    host = run_meta_asm_block_runtime(program, band.encoding, prepared_tape, label="START", max_steps=20)
+    _assemble_sequence(builder, instructions, start_state="start", exit_label="DONE")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_left_cell_address(band, 0), max_steps=5_000)
+
+    assert host["runtime_tape"] == result["tape"]
+    assert result["status"] == "stuck"
+    assert result["state"] == "DONE"
+    assert _head_cell_payload_anywhere(result["tape"]) == ("0", "0")
 
 
 def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() -> None:
@@ -582,7 +640,7 @@ def test_move_sim_head_right_constructs_blank_at_end_tape_boundary() -> None:
     prepared_tape = _set_head_cell(band, last_cell)
     assemble_instruction(builder, MoveSimHeadRight(band.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(band, last_cell), max_steps=500)
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(band, last_cell), max_steps=5_000)
 
     _, final_right_band = split_runtime_tape(result["tape"])
 
@@ -601,7 +659,7 @@ def test_move_sim_head_left_constructs_blank_at_tape_left_boundary() -> None:
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, MoveSimHeadLeft(band.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_cell_address(band, 0), max_steps=500)
+    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_cell_address(band, 0), max_steps=5_000)
 
     final_left_band, _ = split_runtime_tape(result["tape"])
     left_cell_index = final_left_band.index(CELL)

@@ -244,7 +244,7 @@ def collect_alphabet(
     """Collect source states and symbols that must receive binary IDs."""
 
     symbols = list(tm_program.symbols(source_symbols=source_symbols, blank=blank))
-    # The lowerer constructs fresh blank cells by writing all-zero symbol bits.
+    # Keep blank first so its band-owned #BLANK_SYMBOL payload is canonical.
     symbols = [blank, *(symbol for symbol in symbols if symbol != blank)]
     return list(tm_program.states(initial_state=initial_state, halt_state=halt_state)), symbols
 

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
+from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
-from .source_encoding import encode_symbol
 
 
 def left_index(left_band: list[str], address: int) -> int:
@@ -195,12 +194,11 @@ def head_symbol_region(left_band: list[str], right_band: list[str], head_address
     return DelimitedRegion(side, start, end, END_CELL, "head symbol")
 
 
-def blank_cell(encoding, head_marker: str) -> list[str]:
-    return [CELL, head_marker, *encode_symbol(encoding, encoding.blank), END_CELL]
+def blank_cell(left_band: list[str], head_marker: str) -> list[str]:
+    return [CELL, head_marker, *get_global_bits(left_band, BLANK_SYMBOL), END_CELL]
 
 
 def move_simulated_head(encoding, left_band: list[str], right_band: list[str], head_address: int, direction: int) -> tuple[list[str], list[str], int]:
-    blank_bits = encode_symbol(encoding, encoding.blank)
     left_band = list(left_band)
     right_band = list(right_band)
 
@@ -222,7 +220,7 @@ def move_simulated_head(encoding, left_band: list[str], right_band: list[str], h
             right_cells = simulated_right_cell_indices(right_band)
             if not right_cells:
                 end_tape = right_band.index(END_TAPE)
-                right_band[end_tape:end_tape] = blank_cell(encoding, NO_HEAD)
+                right_band[end_tape:end_tape] = blank_cell(left_band, NO_HEAD)
                 right_cells = simulated_right_cell_indices(right_band)
             next_index = right_cells[0]
             right_band[next_index + 1] = HEAD
@@ -230,7 +228,7 @@ def move_simulated_head(encoding, left_band: list[str], right_band: list[str], h
 
         if cell_position == 0:
             insert_at = 1
-            left_band[insert_at:insert_at] = [CELL, HEAD, *blank_bits, END_CELL]
+            left_band[insert_at:insert_at] = blank_cell(left_band, HEAD)
             return left_band, right_band, runtime_address(left_band, "left", insert_at)
 
         next_index = left_cells[cell_position - 1]
@@ -246,7 +244,7 @@ def move_simulated_head(encoding, left_band: list[str], right_band: list[str], h
             next_index = right_cells[cell_position + 1]
         else:
             end_tape = right_band.index(END_TAPE)
-            right_band[end_tape:end_tape] = [CELL, HEAD, *blank_bits, END_CELL]
+            right_band[end_tape:end_tape] = blank_cell(left_band, HEAD)
             next_index = end_tape
         right_band[next_index + 1] = HEAD
         return left_band, right_band, next_index
@@ -263,7 +261,7 @@ def move_simulated_head(encoding, left_band: list[str], right_band: list[str], h
         return left_band, right_band, runtime_address(left_band, "left", next_index)
 
     insert_at = left_band.index(TAPE_LEFT)
-    left_band[insert_at:insert_at] = [CELL, HEAD, *blank_bits, END_CELL]
+    left_band[insert_at:insert_at] = blank_cell(left_band, HEAD)
     return left_band, right_band, runtime_address(left_band, "left", insert_at)
 
 

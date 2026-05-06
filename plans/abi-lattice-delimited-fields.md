@@ -54,7 +54,7 @@ Out of scope:
 - [x] S5: Relax runtime compatibility checks.
   Accept `band_abi <= host_abi`, reject `band_abi > host_abi`, and keep raw TM
   execution independent of ABI metadata.
-- [ ] S6: Add focused tests and regenerate fixtures only where intentional.
+- [x] S6: Add focused tests and regenerate fixtures only where intentional.
   Cover wider-host/smaller-band incrementer, halt-after-final-write/move,
   blank-cell expansion width, exact-ABI regression, and metadata rejection when
   the band is wider than the host.
@@ -145,6 +145,23 @@ Out of scope:
   python -m pytest tests/test_tm_file_input.py -k
   'cli_run_preserves_program_side_abi_metadata or
   cli_run_rejects_program_abi_narrower_than_band'`.
+- 2026-05-06 08:23 EEST: S6 completed. Fresh simulated tape expansion now
+  copies the band-owned `#BLANK_SYMBOL` payload in both the MetaASM host and
+  lowered raw TM, with focused wider-host/narrow-blank tests and right-side
+  halt write/move coverage. Existing movement tests now use fuel that matches
+  the more expensive runtime blank-copy path. Validation: `uv run python -m
+  py_compile mtm/source_encoding.py mtm/meta_asm_host.py
+  mtm/lowering/instruction_lowering.py tests/test_lowering.py
+  tests/test_semantic_objects.py`; `uv run python -m pytest
+  tests/test_lowering.py -k 'move_sim_head_right_expands_with_band_blank_symbol_payload
+  or move_sim_head_left_expands_with_band_blank_symbol_payload or
+  lowered_start_step_matches_host_block or compare_global_global_matches_host_block
+  or lowered_compare_global_global_stops_at_matching_early_terminators'`; `uv
+  run python -m pytest tests/test_semantic_objects.py -k
+  'wider_host_runs_narrow_incrementer_band_end_to_end or
+  wider_abi_incrementer_runs_end_to_end or halt_transition_moves_after_writing_on_left_tape
+  or halt_transition_moves_after_writing_on_right_tape'`; `uv run python -m
+  pytest tests/test_lowering.py -k 'move_sim_head'`.
 
 ## Findings / Debt
 

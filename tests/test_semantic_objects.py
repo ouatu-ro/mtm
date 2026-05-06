@@ -181,6 +181,22 @@ def test_halt_transition_moves_after_writing_on_left_tape() -> None:
     assert view.simulated_tape.head == -2
 
 
+def test_halt_transition_moves_after_writing_on_right_tape() -> None:
+    blank = "_"
+    band = TMBand.from_dict({}, head=0, blank=blank)
+    program = TMProgram({
+        ("q0", blank): ("HALT", "A", R),
+    }, initial_state="q0", halt_state="HALT", blank=blank)
+
+    result, view = _run_instance(TMInstance(program, band, "q0", "HALT"), fuel=10_000)
+
+    assert result["status"] == "halted"
+    assert view.current_state == "HALT"
+    assert view.simulated_tape.left_band == ()
+    assert view.simulated_tape.right_band == ("A", blank)
+    assert view.simulated_tape.head == 1
+
+
 def test_utm_encoded_and_artifact_helpers() -> None:
     band = load_fixture("incrementer").build_band()
     minimal_abi = TMAbi(2, 2, 1, "mtm-v1", "incrementer-min")
@@ -707,6 +723,37 @@ def test_wider_abi_incrementer_runs_end_to_end() -> None:
 
     assert encoded.minimal_abi == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
     assert encoded.target_abi == target
+    assert result["status"] == "halted"
+    assert result["state"] == "U_HALT"
+    assert final_view.current_state == fixture.halt_state
+    assert final_view.simulated_tape.cells[:8] == ("1", "1", "0", "0", "_", "_", "_", "_")
+
+
+def test_wider_host_runs_narrow_incrementer_band_end_to_end() -> None:
+    fixture = load_fixture("incrementer")
+    wide_target = TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]")
+    instance = TMInstance(
+        program=fixture.tm_program,
+        band=fixture.band,
+        initial_state=fixture.initial_state,
+        halt_state=fixture.halt_state,
+    )
+
+    narrow_encoded = Compiler().compile(instance)
+    band_artifact = narrow_encoded.to_band_artifact()
+    wide_encoded = Compiler(target_abi=wide_target).compile(instance)
+    interpreter = UniversalInterpreter.for_encoded(wide_encoded)
+    program_artifact = interpreter.lower(
+        interpreter.alphabet_for_band(band_artifact),
+        target_abi=wide_target,
+        minimal_abi=band_artifact.minimal_abi,
+    )
+    result = program_artifact.run(band_artifact, fuel=200_000)
+    final_band = type(narrow_encoded.to_encoded_band()).from_runtime_tape(narrow_encoded.encoding, result["tape"])
+    final_view = decoded_view_from_encoded_band(final_band)
+
+    assert program_artifact.target_abi == wide_target
+    assert band_artifact.target_abi == TMAbi(2, 2, 1, "mtm-v1", "U[Wq=2,Ws=2,Wd=1]")
     assert result["status"] == "halted"
     assert result["state"] == "U_HALT"
     assert final_view.current_state == fixture.halt_state
