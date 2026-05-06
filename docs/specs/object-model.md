@@ -539,9 +539,7 @@ rich typed artifact with a stable parser and round-trip contract.
 
 ## 8. Debugger Read Model
 
-The debugger no longer centers its UI around bespoke summary objects. Its core
-execution object is the raw trace, and the UI is derived from facts and
-queries.
+The debugger UI is derived from raw trace facts and typed queries.
 
 ### `RawTraceRunner`
 

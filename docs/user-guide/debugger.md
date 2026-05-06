@@ -119,5 +119,4 @@ The browser trace viewer can load the TSV plus JSON sidecar. See
 
 - [CLI Guide](cli.md)
 - [Debugger REPL Spec](../specs/debugger-repl.md)
-- [Debugger Presentation Model Spec](../specs/debugger-presentation.md)
 - [Debugger Stepper Layers](../architecture/debugger-stepper.md)

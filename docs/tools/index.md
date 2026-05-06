@@ -17,7 +17,6 @@ They are documentation for the current inventory, not a promise of a stable tool
 ## Debugger design docs
 
 - [Debugger REPL Spec](../specs/debugger-repl.md)
-- [Debugger Presentation Model Spec](../specs/debugger-presentation.md)
 - [Debugger Stepper Layers](../architecture/debugger-stepper.md)
 
 ## C runners and generators

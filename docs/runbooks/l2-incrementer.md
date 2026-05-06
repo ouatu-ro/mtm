@@ -32,7 +32,7 @@ incrementer.l2.utm.band
 
 ## Validate L1
 
-The L1 raw UTM currently completes the incrementer:
+The L1 raw UTM completes the incrementer:
 
 ```bash
 uv run mtm run \
@@ -85,8 +85,7 @@ loop over the 8,590 encoded L1 raw transitions for every simulated L1 raw step.
 
 ## MetaASM Runtime Estimate
 
-The current MetaASM host can now run L2 with a simulated head on either side of
-the split tape. A bounded run no longer fails on the initial negative head.
+The MetaASM host supports simulated heads on either side of the split tape.
 
 A trace-derived estimate for the full L2 incrementer is:
 
@@ -158,7 +157,7 @@ cc -O3 -std=c11 \
 "$out/l1_raw_guest_runner"
 ```
 
-Current measured output:
+Measured output:
 
 ```text
 status=halted steps=35600 raw_head=-135
@@ -245,7 +244,7 @@ cc -O3 -std=c11 \
 ```
 
 That cross-level run uses the wider L2 UTM raw host against the narrower L1
-band. Current measured output:
+band. Measured output:
 
 ```text
 status=halted steps=54915 ... state=U_HALT
@@ -271,7 +270,7 @@ cc -O3 -std=c11 \
 "$out/raw_tm_runner" 1000000000
 ```
 
-Current measured slice:
+Measured slice:
 
 ```text
 status=fuel_exhausted steps=1000000000 ... msteps_per_s=941.659
@@ -297,7 +296,7 @@ enough to measure.
 ## Self-Contained Raw C Backends
 
 `tools/generate_raw_tm_c.py` emits a standalone C file for a `.tm`/`.utm.band`
-pair. It currently has four backends:
+pair. It supports four backends:
 
 ```bash
 uv run python tools/generate_raw_tm_c.py \

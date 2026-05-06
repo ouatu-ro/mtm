@@ -483,10 +483,8 @@ write #CMP_FLAG
 cleanup
 ```
 
-The first implementation counted fixed-width bit positions in control states.
-The ABI-compatible implementation still uses width-counting as a maximum guard,
-but field equality and copy completion are delimited by `#END_FIELD` or
-`#END_CELL`.
+The implementation uses width-counting as a maximum guard, while field equality
+and copy completion are delimited by `#END_FIELD` or `#END_CELL`.
 
 ### 12.3 `COMPARE_GLOBAL_LOCAL global_marker local_marker width`
 

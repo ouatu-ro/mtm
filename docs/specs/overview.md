@@ -450,7 +450,4 @@ Primary objects:
 - `UTMProgramArtifact`
 - `RawTMInstance`
 - `DecodedBandView`
-
-Planned missing objects:
-
 - `SourceArtifact`
