@@ -45,7 +45,7 @@ Out of scope:
 - [x] S2: Remove guest-width literals from the universal interpreter.
   Replace baked halt and direction literal checks with band-field comparisons.
   Add or expose `COMPARE_GLOBAL_GLOBAL` if needed by MetaASM and lowering.
-- [ ] S3: Implement delimiter-aware compare and copy in the MetaASM host.
+- [x] S3: Implement delimiter-aware compare and copy in the MetaASM host.
   Model width-bounded comparison/copy using terminators as the actual field or
   cell boundary, including cell-field copy cases with distinct terminators.
 - [ ] S4: Lower delimiter-aware compare and copy to raw TM transitions.
@@ -91,6 +91,19 @@ Out of scope:
   the universal program to band-field halt and direction comparisons, updated
   debugger/trace expectations, and kept compare semantics exact-width for now.
   Validation: `uv run python -m pytest tests/test_meta_asm.py tests/test_semantic_objects.py::test_universal_dispatch_treats_non_left_non_right_direction_as_stay tests/test_lowering.py::test_lowered_start_step_matches_host_block tests/test_lowering.py::test_compare_global_global_matches_host_block tests/test_debugger_session.py::test_session_status_query_and_render_include_cursor_latest_and_max_raw tests/test_debugger_session.py::test_session_where_renders_setup_for_entry_location tests/test_debugger_presenter.py::test_presenter_status_doc_exposes_block_structure tests/test_raw_trace.py::test_format_trace_view_renders_semantic_summary_for_decoded_band tests/test_tm_file_input.py::test_cli_trace_emits_raw_instruction_and_block_levels`.
+- 2026-05-06 07:49 EEST: S3 completed. MetaASM host compare/copy now uses
+  delimiter-aware, width-bounded field and cell regions while preserving
+  destination terminator shape. Validation: `uv run python -m py_compile
+  mtm/meta_asm_host.py tests/test_lowering.py`; `uv run python -m pytest
+  tests/test_lowering.py -k 'compare_global_global_matches_host_block or
+  meta_asm_host_compare_global_global_stops_at_matching_early_terminators or
+  meta_asm_host_compare_global_local_fails_when_one_field_ends_early or
+  meta_asm_host_copy_global_global_preserves_early_end_field_shape or
+  meta_asm_host_copy_head_symbol_to_preserves_end_field_shape or
+  meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape or
+  meta_asm_host_copy_local_global_raises_on_delimiter_mismatch or
+  meta_asm_host_finds_and_reads_left_band_head_cell or
+  meta_asm_host_moves_between_right_and_left_simulated_tape'`.
 
 ## Findings / Debt
 

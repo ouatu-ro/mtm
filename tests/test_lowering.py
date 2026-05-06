@@ -1,12 +1,12 @@
 from mtm import TMBand, load_fixture
 from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, lower_program_with_source_map, program_to_cfgs, validate_cfg, validate_program_cfgs
-from mtm.meta_asm import Block, BranchCmp, CompareGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
+from mtm.meta_asm import Block, BranchCmp, CompareGlobalGlobal, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
 from mtm.semantic_objects import decoded_view_from_encoded_band
 from mtm.source_encoding import encode_symbol
-from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, HALT_STATE, HEAD, NO_HEAD, RULES, TAPE_LEFT, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
+from mtm.utm_band_layout import CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -51,6 +51,47 @@ def _set_global_bits_on_runtime_tape(band, runtime_tape, marker: str, bits: str)
     start = left_band.index(marker) + 1
     left_band[start:start + len(bits)] = list(bits)
     return materialize_runtime_tape(left_band, right_band)
+
+
+def _rewrite_global_field(runtime_tape, marker: str, payload: tuple[str, ...]):
+    left_band, right_band = split_runtime_tape(runtime_tape)
+    start = left_band.index(marker) + 1
+    end = left_band.index(END_FIELD, start)
+    left_band[start:end + 1] = [*payload, END_FIELD]
+    return materialize_runtime_tape(left_band, right_band)
+
+
+def _rewrite_first_rule_field(runtime_tape, marker: str, payload: tuple[str, ...]):
+    left_band, right_band = split_runtime_tape(runtime_tape)
+    rule_index = left_band.index(RULE)
+    start = left_band.index(marker, rule_index + 1) + 1
+    end = left_band.index(END_FIELD, start)
+    left_band[start:end + 1] = [*payload, END_FIELD]
+    return materialize_runtime_tape(left_band, right_band)
+
+
+def _rewrite_head_cell_symbol(runtime_tape, payload: tuple[str, ...]):
+    left_band, right_band = split_runtime_tape(runtime_tape)
+    head_index = next(index - 1 for index, token in enumerate(right_band) if token == HEAD)
+    start = head_index + 2
+    end = right_band.index(END_CELL, start)
+    right_band[start:end + 1] = [*payload, END_CELL]
+    return materialize_runtime_tape(left_band, right_band)
+
+
+def _global_payload(runtime_tape, marker: str) -> tuple[str, ...]:
+    left_band, _ = split_runtime_tape(runtime_tape)
+    start = left_band.index(marker) + 1
+    end = left_band.index(END_FIELD, start)
+    return tuple(left_band[start:end])
+
+
+def _head_symbol_payload(runtime_tape) -> tuple[str, ...]:
+    _left_band, right_band = split_runtime_tape(runtime_tape)
+    head_index = next(index - 1 for index, token in enumerate(right_band) if token == HEAD)
+    start = head_index + 2
+    end = right_band.index(END_CELL, start)
+    return tuple(right_band[start:end])
 
 
 def _assemble_sequence(builder: TMBuilder, instructions, *, start_state: str, exit_label: str) -> None:
@@ -156,6 +197,135 @@ def test_compare_global_global_matches_host_block() -> None:
         assert result["status"] == "stuck"
         assert result["state"] == "DONE"
         assert final_left_band[cmp_index + 1] == expected_cmp
+
+
+def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_global_field(
+        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        HALT_STATE,
+        ("1",),
+    )
+
+    result = run_meta_asm_block_runtime(
+        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+
+    final_left_band, _ = split_runtime_tape(result["runtime_tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+
+    assert final_left_band[cmp_index + 1] == "1"
+
+
+def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_first_rule_field(
+        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        STATE,
+        ("1", "0"),
+    )
+
+    result = run_meta_asm_block_runtime(
+        Program(
+            (
+                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width))),
+            ),
+            entry_label="START",
+        ),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+
+    final_left_band, _ = split_runtime_tape(result["runtime_tape"])
+    cmp_index = final_left_band.index(CMP_FLAG)
+
+    assert final_left_band[cmp_index + 1] == "0"
+
+
+def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_global_field(
+        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        WRITE_SYMBOL,
+        ("0",),
+    )
+
+    result = run_meta_asm_block_runtime(
+        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width),)),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+
+    assert _global_payload(result["runtime_tape"], WRITE_SYMBOL) == ("1",)
+
+
+def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_global_field(
+        _rewrite_head_cell_symbol(band.runtime_tape, ("1",)),
+        CUR_SYMBOL,
+        ("0",),
+    )
+
+    result = run_meta_asm_block_runtime(
+        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+
+    assert _global_payload(result["runtime_tape"], CUR_SYMBOL) == ("1",)
+
+
+def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_head_cell_symbol(
+        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        ("0",),
+    )
+
+    result = run_meta_asm_block_runtime(
+        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
+        band.encoding,
+        prepared_tape,
+        label="START",
+        max_steps=5,
+    )
+
+    assert _head_symbol_payload(result["runtime_tape"]) == ("1",)
+
+
+def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
+    fixture = load_fixture("incrementer")
+    band = fixture.build_band()
+    prepared_tape = _rewrite_first_rule_field(band.runtime_tape, STATE, ("1",))
+
+    try:
+        run_meta_asm_block_runtime(
+            Program((Block("START", (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, band.encoding.state_width))),), entry_label="START"),
+            band.encoding,
+            prepared_tape,
+            label="START",
+            max_steps=5,
+        )
+    except ValueError as exc:
+        assert "terminator mismatch" in str(exc)
+    else:
+        raise AssertionError("expected delimiter mismatch to raise")
 
 
 def test_copy_head_symbol_to_matches_later_blank_cell() -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .utm_band_layout import CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
@@ -16,10 +18,75 @@ def token_at(left_band: list[str], right_band: list[str], address: int) -> str:
     return right_band[address] if address >= 0 else left_band[left_index(left_band, address)]
 
 
-def field_slice(left_band: list[str], marker: str) -> slice:
+@dataclass(frozen=True)
+class DelimitedRegion:
+    band_name: str
+    start: int
+    end: int
+    terminator: str
+    label: str
+
+
+def _band_for_region(left_band: list[str], right_band: list[str], region: DelimitedRegion) -> list[str]:
+    return left_band if region.band_name == "left" else right_band
+
+
+def _region_token(left_band: list[str], right_band: list[str], region: DelimitedRegion, offset: int) -> str:
+    band = _band_for_region(left_band, right_band, region)
+    index = region.start + offset
+    if index > region.end:
+        raise ValueError(f"offset {offset} crosses terminator for {region.label}")
+    return band[index]
+
+
+def _write_region_token(left_band: list[str], right_band: list[str], region: DelimitedRegion, offset: int, token: str) -> tuple[list[str], list[str]]:
+    if region.start + offset >= region.end:
+        raise ValueError(f"cannot write through terminator for {region.label}")
+    if region.band_name == "left":
+        left_band = list(left_band)
+        left_band[region.start + offset] = token
+        return left_band, right_band
+    right_band = list(right_band)
+    right_band[region.start + offset] = token
+    return left_band, right_band
+
+
+def _compare_delimited_regions(left_band: list[str], right_band: list[str], left_region: DelimitedRegion, right_region: DelimitedRegion, width: int) -> bool:
+    for offset in range(width + 1):
+        left_token = _region_token(left_band, right_band, left_region, offset)
+        right_token = _region_token(left_band, right_band, right_region, offset)
+        left_done = left_token == left_region.terminator
+        right_done = right_token == right_region.terminator
+        if left_done or right_done:
+            return left_done and right_done
+        if left_token != right_token:
+            return False
+    return False
+
+
+def _copy_delimited_region(left_band: list[str], right_band: list[str], src_region: DelimitedRegion, dst_region: DelimitedRegion, width: int) -> tuple[list[str], list[str]]:
+    for offset in range(width + 1):
+        src_token = _region_token(left_band, right_band, src_region, offset)
+        dst_token = _region_token(left_band, right_band, dst_region, offset)
+        src_done = src_token == src_region.terminator
+        dst_done = dst_token == dst_region.terminator
+        if src_done or dst_done:
+            if src_done and dst_done:
+                return left_band, right_band
+            raise ValueError(f"terminator mismatch while copying {src_region.label} to {dst_region.label}")
+        left_band, right_band = _write_region_token(left_band, right_band, dst_region, offset, src_token)
+    raise ValueError(f"missing terminator within width {width} while copying {src_region.label} to {dst_region.label}")
+
+
+def global_field_region(left_band: list[str], marker: str) -> DelimitedRegion:
     start = left_band.index(marker) + 1
     end = left_band.index(END_FIELD, start)
-    return slice(start, end)
+    return DelimitedRegion("left", start, end, END_FIELD, marker)
+
+
+def field_slice(left_band: list[str], marker: str) -> slice:
+    region = global_field_region(left_band, marker)
+    return slice(region.start, region.end)
 
 
 def get_global_bits(left_band: list[str], marker: str) -> tuple[str, ...]:
@@ -83,6 +150,10 @@ def current_rule_index(left_band: list[str], head_address: int | None) -> int:
 
 
 def local_field_slice(left_band: list[str], rule_index: int, marker: str) -> slice:
+    return slice(*local_field_bounds(left_band, rule_index, marker))
+
+
+def local_field_bounds(left_band: list[str], rule_index: int, marker: str) -> tuple[int, int]:
     rule_end = left_band.index(END_RULE, rule_index + 1)
     index = rule_index + 1
     while index < rule_end:
@@ -90,13 +161,14 @@ def local_field_slice(left_band: list[str], rule_index: int, marker: str) -> sli
             end = left_band.index(END_FIELD, index + 1)
             if end > rule_end:
                 raise ValueError(f"field {marker} crosses rule boundary")
-            return slice(index + 1, end)
+            return index + 1, end
         index += 1
     raise ValueError(f"missing local field {marker}")
 
 
-def get_local_bits(left_band: list[str], rule_index: int, marker: str) -> tuple[str, ...]:
-    return tuple(left_band[local_field_slice(left_band, rule_index, marker)])
+def local_field_region(left_band: list[str], rule_index: int, marker: str) -> DelimitedRegion:
+    start, end = local_field_bounds(left_band, rule_index, marker)
+    return DelimitedRegion("left", start, end, END_FIELD, marker)
 
 
 def find_next_rule(left_band: list[str], head_address: int | None) -> int:
@@ -115,21 +187,12 @@ def is_simulated_cell(left_band: list[str], right_band: list[str], head_address:
     return 0 <= index < len(band) and band[index] == CELL
 
 
-def read_head_symbol_bits(left_band: list[str], right_band: list[str], head_address: int, width: int) -> tuple[str, ...]:
+def head_symbol_region(left_band: list[str], right_band: list[str], head_address: int) -> DelimitedRegion:
     side, index = band_position(left_band, right_band, head_address)
     band = right_band if side == "right" else left_band
-    return tuple(band[index + 2:index + 2 + width])
-
-
-def write_head_symbol_bits(left_band: list[str], right_band: list[str], head_address: int, bits: tuple[str, ...]) -> tuple[list[str], list[str]]:
-    side, index = band_position(left_band, right_band, head_address)
-    if side == "left":
-        left_band = list(left_band)
-        left_band[index + 2:index + 2 + len(bits)] = list(bits)
-        return left_band, right_band
-    right_band = list(right_band)
-    right_band[index + 2:index + 2 + len(bits)] = list(bits)
-    return left_band, right_band
+    start = index + 2
+    end = band.index(END_CELL, start)
+    return DelimitedRegion(side, start, end, END_CELL, "head symbol")
 
 
 def blank_cell(encoding, head_marker: str) -> list[str]:
@@ -261,19 +324,17 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
             case CompareGlobalGlobal(src_marker, dst_marker, width):
-                src_bits = get_global_bits(left_band, src_marker)
-                dst_bits = get_global_bits(left_band, dst_marker)
-                if len(src_bits) != width:
-                    raise ValueError(f"wrong width for {src_marker}: expected {width}, got {len(src_bits)}")
-                if len(dst_bits) != width:
-                    raise ValueError(f"wrong width for {dst_marker}: expected {width}, got {len(dst_bits)}")
-                cmp_bit = "1" if src_bits == dst_bits else "0"
+                src_region = global_field_region(left_band, src_marker)
+                dst_region = global_field_region(left_band, dst_marker)
+                cmp_bit = "1" if _compare_delimited_regions(left_band, right_band, src_region, dst_region, width) else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
-            case CompareGlobalLocal(global_marker, local_marker, _width):
+            case CompareGlobalLocal(global_marker, local_marker, width):
                 rule_index = current_rule_index(left_band, head_address)
-                cmp_bit = "1" if get_global_bits(left_band, global_marker) == get_local_bits(left_band, rule_index, local_marker) else "0"
+                global_region = global_field_region(left_band, global_marker)
+                local_region = local_field_region(left_band, rule_index, local_marker)
+                cmp_bit = "1" if _compare_delimited_regions(left_band, right_band, global_region, local_region, width) else "0"
                 left_band = set_global_bits(left_band, CMP_FLAG, (cmp_bit,))
                 instruction_index += 1
                 outcome = f"{CMP_FLAG}={cmp_bit}"
@@ -294,19 +355,27 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
             case CopyHeadSymbolTo(global_marker, width):
                 if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("COPY_HEAD_SYMBOL_TO requires the runtime head to be at a simulated #CELL")
-                symbol_bits = read_head_symbol_bits(left_band, right_band, head_address, width)
-                left_band = set_global_bits(left_band, global_marker, symbol_bits)
+                left_band, right_band = _copy_delimited_region(
+                    left_band,
+                    right_band,
+                    head_symbol_region(left_band, right_band, head_address),
+                    global_field_region(left_band, global_marker),
+                    width,
+                )
                 instruction_index += 1
-                outcome = f"{global_marker}={''.join(symbol_bits)}"
+                outcome = f"{global_marker}<-head_symbol"
             case CopyGlobalToHeadSymbol(global_marker, width):
                 if not is_simulated_cell(left_band, right_band, head_address):
                     raise ValueError("COPY_GLOBAL_TO_HEAD_SYMBOL requires the runtime head to be at a simulated #CELL")
-                symbol_bits = get_global_bits(left_band, global_marker)
-                if len(symbol_bits) != width:
-                    raise ValueError(f"wrong width for {global_marker}: expected {width}, got {len(symbol_bits)}")
-                left_band, right_band = write_head_symbol_bits(left_band, right_band, head_address, symbol_bits)
+                left_band, right_band = _copy_delimited_region(
+                    left_band,
+                    right_band,
+                    global_field_region(left_band, global_marker),
+                    head_symbol_region(left_band, right_band, head_address),
+                    width,
+                )
                 instruction_index += 1
-                outcome = f"head_symbol={''.join(symbol_bits)}"
+                outcome = f"head_symbol<-{global_marker}"
             case FindFirstRule():
                 rule_index = find_first_rule(left_band)
                 head_address = rule_index - len(left_band)
@@ -317,13 +386,25 @@ def _run_meta_asm(program: Program, encoding, runtime_tape: dict[int, str], *, m
                 head_address = rule_index - len(left_band)
                 instruction_index += 1
                 outcome = f"head at {left_band[rule_index]}"
-            case CopyLocalGlobal(local_marker, global_marker, _width):
+            case CopyLocalGlobal(local_marker, global_marker, width):
                 rule_index = current_rule_index(left_band, head_address)
-                left_band = set_global_bits(left_band, global_marker, get_local_bits(left_band, rule_index, local_marker))
+                left_band, right_band = _copy_delimited_region(
+                    left_band,
+                    right_band,
+                    local_field_region(left_band, rule_index, local_marker),
+                    global_field_region(left_band, global_marker),
+                    width,
+                )
                 instruction_index += 1
                 outcome = f"{global_marker}<-{local_marker}"
-            case CopyGlobalGlobal(src_marker, dst_marker, _width):
-                left_band = set_global_bits(left_band, dst_marker, get_global_bits(left_band, src_marker))
+            case CopyGlobalGlobal(src_marker, dst_marker, width):
+                left_band, right_band = _copy_delimited_region(
+                    left_band,
+                    right_band,
+                    global_field_region(left_band, src_marker),
+                    global_field_region(left_band, dst_marker),
+                    width,
+                )
                 instruction_index += 1
                 outcome = f"{dst_marker}<-{src_marker}"
             case WriteGlobal(global_marker, literal_bits):
