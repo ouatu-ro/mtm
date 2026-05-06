@@ -222,3 +222,74 @@ final right simulated raw band starts:
 Those L1 symbol bits decode as `1 1 0 0`, so this is the fast end-to-end L2
 MetaASM proof for the incrementer. It is still not the fully lowered L2 raw TM
 run; it is the universal MetaASM semantics over the L2 `.utm.band`.
+
+## Fast Raw TM C Runner
+
+For bounded runs of the actual lowered raw transition table, generate dense C
+dispatch data for a `.tm`/`.utm.band` pair and compile the generic runner:
+
+```bash
+uv run python tools/generate_raw_tm_runner_data.py \
+  "$out/incrementer.l2.tm" \
+  "$out/incrementer.l1.utm.band" \
+  -o "$out/raw_tm_runner_data.h" \
+  --right-dump-cells 8 \
+  --raw-dump-cells 48
+
+cc -O3 -std=c11 \
+  -I "$out" \
+  tools/raw_tm_runner.c \
+  -o "$out/raw_tm_runner"
+
+"$out/raw_tm_runner" 1000000
+```
+
+That cross-level run uses the wider L2 UTM raw host against the narrower L1
+band. Current measured output:
+
+```text
+status=halted steps=54915 ... state=U_HALT
+decoded_right: 1 1 0 0 _ _ _ _
+```
+
+So the real lowered wider host also accepts the smaller band.
+
+For a bounded slice of the expensive real L2 raw run:
+
+```bash
+uv run python tools/generate_raw_tm_runner_data.py \
+  "$out/incrementer.l2.tm" \
+  "$out/incrementer.l2.utm.band" \
+  -o "$out/raw_tm_runner_data.h" \
+  --right-dump-cells 8
+
+cc -O3 -std=c11 \
+  -I "$out" \
+  tools/raw_tm_runner.c \
+  -o "$out/raw_tm_runner"
+
+"$out/raw_tm_runner" 1000000000
+```
+
+Current measured slice:
+
+```text
+status=fuel_exhausted steps=1000000000 ... msteps_per_s=941.659
+decoded_right: #TAPE #CELL #HEAD 1 0 #END_CELL #CELL #NO_HEAD
+```
+
+Combining that measured speed with the current raw-step estimate:
+
+```text
+634,438,903 MetaASM instructions * 2,245,707 raw L2 steps/instruction
+  = 1,424,763,885,539,421 raw L2 steps
+
+1.424e15 raw steps / 941.659e6 raw steps/sec
+  ~= 1,513,036 sec
+  ~= 420 hours
+  ~= 17.5 days
+```
+
+This still does not make a full lowered L2 raw run small; it changes the local
+estimate from "decades in Python" to "weeks in C" and makes honest slices cheap
+enough to measure.
