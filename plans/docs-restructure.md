@@ -319,7 +319,7 @@ search summaries, and future site rendering.
   Create the first-pass spec files under `docs/specs/` by copying the mapped
   sections. Do not rewrite content beyond path references and headings.
 
-- [ ] S4: Create indexes and tool docs.
+- [x] S4: Create indexes and tool docs.
   Add `docs/index.md`, `docs/specs/spec.md`, `docs/results/index.md`,
   `docs/tools/index.md`, `docs/tools/trace-viewer.md`,
   `docs/tools/c-runners.md`, and user-guide entrypoints.
@@ -393,6 +393,14 @@ If the optional site shell is added:
   `find docs/specs -maxdepth 1 -type f | sort`,
   `rg -n "^## [0-9]+\\." docs/specs || true`, and
   `git status --short --untracked-files=all`.
+- 2026-05-06 20:04: Completed S4 navigational docs. Added
+  `docs/index.md`, `docs/specs/spec.md`, `docs/results/index.md`,
+  `docs/tools/index.md`, `docs/tools/trace-viewer.md`,
+  `docs/tools/c-runners.md`, `docs/user-guide/cli.md`, and
+  `docs/user-guide/debugger.md`; validation passed with `git diff --check`,
+  `find docs -maxdepth 3 -type f | sort`,
+  `rg -n "tools/trace-viewer.html|tools/l1_raw_guest_runner.c|docs/specs/spec.md|docs/tools" docs plans/docs-restructure.md`,
+  and `git status --short --untracked-files=all`.
 
 ## Findings / Debt
 
