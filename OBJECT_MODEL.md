@@ -1,7 +1,8 @@
 # Object Model
 
 This document describes the current object model for the Meta Turing Machine
-project and the few missing objects that matter for future self-hosting work.
+project and the remaining cleanup points around artifacts, decoding, and run
+results.
 
 The key separation is:
 
@@ -47,10 +48,12 @@ The intended split is:
 - `.utm.band` carries guest-specific encoding metadata
 - `.tm` carries host-family ABI metadata, when known
 
-The current implementation is close, but not fully there yet:
+Current persistence policy:
 
-- `.utm.band` already persists `encoding`, `target_abi`, and `minimal_abi`
-- `.tm` currently persists only raw execution data, not ABI metadata
+- `.utm.band` persists `encoding`, `left_band`, `right_band`, `start_head`,
+  `target_abi`, and `minimal_abi`
+- `.tm` persists raw execution data and can round-trip host-family ABI metadata
+  when written through `UTMProgramArtifact`
 
 ## 2. Source Guest Objects
 
@@ -391,6 +394,7 @@ Uses:
 - runner-facing raw execution configuration
 - recursive-self-hosting guest input for compiling a raw machine into another
   UTM layer
+- input to `compile_raw_guest(...)`
 
 ### Raw Run Result
 
@@ -462,10 +466,18 @@ not as an object field.
 It should carry:
 
 - concrete encoded band contents
+- `start_head`
 - `Encoding`
 - `target_abi`
 - `minimal_abi`
 - file format version
+
+The left band contains the encoded negative simulated tape region, followed by
+`#TAPE_LEFT`, encoded registers, and encoded transition rules. The right band
+contains the encoded nonnegative simulated tape region. The simulated object
+head is stored with `#HEAD` / `#NO_HEAD` markers inside those tape regions; the
+artifact `start_head` is the host runtime head address used when starting the
+UTM.
 
 ### `UTMProgramArtifact`
 
@@ -486,10 +498,9 @@ program_artifact.write(path) -> None
 program_artifact.run(band_artifact, fuel=...) -> dict[str, object]
 ```
 
-Current limitation:
-
-- the in-memory object can carry ABI metadata
-- current `.tm` serialization does not round-trip that metadata
+`UTMProgramArtifact.write(...)` persists ABI metadata when it is known, and
+`UTMProgramArtifact.read(...)` restores it. Plain `write_tm(...)` /
+`read_tm(...)` remain available for raw transition tables with no ABI metadata.
 
 ### `.tm` Metadata Policy
 
@@ -511,7 +522,9 @@ So the intended policy is:
 - `.tm` carries host-family ABI metadata, when known
 - raw execution depends on neither encoding nor ABI
 
-Current implementation still writes only raw execution data.
+`UTMProgramArtifact` follows this policy by writing optional `target_abi` and
+`minimal_abi` fields. Raw `.tm` helpers still preserve the smaller raw-only
+contract.
 
 ### `ASM` Text Export
 
@@ -616,14 +629,13 @@ program_artifact.write("utm.tm")
 result = program_artifact.run(band_artifact, fuel=100_000)
 ```
 
-## 11. Missing Objects That Still Matter
+## 11. Recursive Guest Objects
 
-Two missing abstractions now matter more than any large artifact hierarchy.
+The recursive/self-hosting path now has explicit source and raw guest objects.
 
 ### `SourceArtifact`
 
-The project still lacks a real serializable source-level bundle corresponding
-to today’s authoring-time `.py` input:
+Serializable source-level bundle corresponding to source guest input:
 
 - `TMProgram`
 - `TMBand`
@@ -631,7 +643,15 @@ to today’s authoring-time `.py` input:
 - `halt_state`
 - optional `name` / `note`
 
-Today `.py` is an authoring format, not a stable source artifact format.
+Current code:
+
+- class: `mtm.semantic_objects.SourceArtifact`
+- artifact format: `mtm-source-v1`
+- helpers: `SourceArtifact.write(...)`, `SourceArtifact.read(...)`,
+  `write_source_artifact(...)`, `read_source_artifact(...)`
+
+`.py` files remain useful authoring fixtures, but they are no longer the only
+way to persist source guest input.
 
 ### `RawTMInstance`
 
@@ -649,68 +669,17 @@ Conceptually:
 - `head: int`
 - `state: str`
 
-The current compiler compiles source guests into UTM input. Recursive
-self-hosting requires a second compiler path that compiles raw guests into UTM
-input.
+Raw guests can be compiled into semantic UTM input with `compile_raw_guest(...)`.
+This is the path used to obtain the next-level band from an already-lowered
+ordinary TM.
 
 ## 12. Known Gaps
 
 The sections above describe the intended current object contract. The
-implementation is close, but a few important gaps remain:
-
-### Compiler state fallback
-
-`Compiler` currently resolves `initial_state` and `halt_state` from:
-
-- `TMInstance`
-- `Compiler` defaults
-
-It does not yet fall back to `TMProgram.initial_state` or
-`TMProgram.halt_state`, even though those fields exist on `TMProgram`.
-
-### ABI grammar-version validation
-
-The current compiler validates ABI field widths, but does not yet enforce
-`grammar_version` equality when checking whether a selected `TMAbi` is
-compatible with the inferred minimal ABI.
-
-### Source blank consistency
-
-A source guest should be well-formed only when:
-
-```text
-TMProgram.blank == TMBand.blank
-```
-
-Current compilation logic uses the band blank as the concrete blank during
-encoding and does not yet validate that the program and band blanks agree.
-
-### `.tm` metadata persistence
-
-The intended policy is that `.tm` may carry host-family ABI metadata when
-known. Current `.tm` serialization still stores only:
-
-- raw transition table
-- start state
-- halt state
-- alphabet
-- blank symbol
-
-In-memory `UTMProgramArtifact` objects can carry `target_abi` and
-`minimal_abi`, but that metadata does not yet round-trip through persisted
-`.tm` files.
-
-### Artifact compatibility checks
-
-When both `.tm` and `.utm.band` carry ABI metadata, tooling should reject
-mismatched:
-
-- `grammar_version`
-- `state_width`
-- `symbol_width`
-- `dir_width`
-
-before execution starts. Current runtime paths do not yet enforce that check.
+implementation now covers the main artifact and recursive-compilation contracts:
+state fallback, source blank validation, source artifact persistence, raw guest
+compilation, `.tm` ABI metadata round-trip, grammar-version rejection, and
+host-vs-band ABI lattice checks are implemented.
 
 ### Decode entry points
 
@@ -721,8 +690,10 @@ direct artifact-level method such as `artifact.decoded_view()`.
 ### Typed run results
 
 Raw execution currently returns plain dictionaries with keys like `status`,
-`state`, `head`, `tape`, and `steps`. A first-class typed `RunResult` object is
-still a possible cleanup, but it is not the current API.
+`state`, `head`, `tape`, and `steps`. The debugger has typed trace result
+objects, but the generic raw runner and `UTMProgramArtifact.run(...)` still use
+dictionary results. A first-class typed `RunResult` object is still a possible
+cleanup, but it is not the current generic run API.
 
 ## 13. Short Mapping
 
@@ -741,4 +712,4 @@ still a possible cleanup, but it is not the current API.
 - `TransitionSourceMap` = raw-row-to-lowered-source provenance
 - `RawTraceRunner` = reversible raw debugger
 - `TraceFacts` / `DebuggerQueries` = debugger read model
-- `SourceArtifact` = missing serializable source guest format
+- `SourceArtifact` = serializable source guest format

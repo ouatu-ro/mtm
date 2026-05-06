@@ -264,11 +264,15 @@ Semantic decoding depends on encoding.
 Compatibility checks depend on ABI.
 ```
 
-`UTMBandArtifact` serializes the semantic UTM object into a split runtime band:
+`UTMBandArtifact` serializes the semantic UTM object into a concrete split
+encoded band:
 
 ```text
-left band:   negative simulated tape + registers + transition rules
-right band:  nonnegative simulated object tape
+left band:   encoded negative simulated tape region
+             + #TAPE_LEFT
+             + registers
+             + transition rules
+right band:  encoded nonnegative simulated tape region
 ```
 
 Runtime materialization:
@@ -280,12 +284,16 @@ Runtime materialization:
 ```
 
 The left band is placed at negative addresses. The right band starts at address
-`0`.
+`0`. The simulated tape head is represented by a `#HEAD` marker inside either
+the negative simulated tape region or the nonnegative tape region. The raw
+runtime start head for the host is stored separately as `start_head`, usually at
+the registry entry point rather than at the simulated tape head.
 
 Current `.utm.band` files persist:
 
 - concrete encoded band contents
 - `encoding`
+- `start_head`
 - `target_abi`
 - `minimal_abi`
 - file format version
@@ -810,26 +818,27 @@ UTMProgramArtifact(
 )
 ```
 
-Current `.tm` serialization still persists only:
+Current `.tm` serialization persists:
 
 - raw transition table
 - start state
 - halt state
 - alphabet
 - blank
+- optional `target_abi`
+- optional `minimal_abi`
 
 ABI on `.tm` is optional compatibility/provenance metadata and must not be an
 execution dependency.
 
 If both a `.tm` artifact and a `.utm.band` artifact carry `target_abi`,
-tooling should reject mismatched:
+tooling should reject:
 
-- `grammar_version`
-- `state_width`
-- `symbol_width`
-- `dir_width`
+- mismatched `grammar_version`
+- `band_abi > host_abi`
 
-before execution starts. If `.tm` ABI metadata is absent, execution is still
+before execution starts. A host with wider state, symbol, or direction widths
+may run a narrower band. If `.tm` ABI metadata is absent, execution is still
 allowed and compatibility remains unchecked.
 
 ## 11. Artifact Naming and Tower Workflow
@@ -840,7 +849,7 @@ Recommended artifact names:
 
 ```text
 incrementer.py            authoring format
-incrementer.mtm.source    future serializable source artifact
+incrementer.mtm.source    serializable source artifact
 
 incrementer.l1.utm.band   encoded source guest for level 1
 incrementer.l1.tm         lowered host for level 1
@@ -857,7 +866,7 @@ incrementer.py
   -> incrementer.l1.tm
 ```
 
-Level-2 compilation requires the missing raw-guest path:
+Level-2 compilation uses the raw-guest path:
 
 ```text
 guest program = incrementer.l1.tm
@@ -1089,9 +1098,9 @@ else:
 
 The run continues until halt, stuck, or fuel exhaustion.
 
-## 15. Initial Milestone
+## 15. Milestones and Current Results
 
-The first complete target:
+The initial complete target compiles and runs a source TM under one UTM layer:
 
 ```python
 abi = Compiler().infer_abi(instance)
@@ -1104,19 +1113,34 @@ program_artifact = interpreter.lower_for_band(band_artifact)
 result = program_artifact.run(band_artifact, fuel=...)
 ```
 
-Expected demonstration:
+Expected and current demonstration:
 
 ```text
 1011₂ + 1 = 1100₂
 ```
 
-The next target emits and runs the lowered program:
+The level-1 artifact path emits and runs the lowered program:
 
 ```python
 program_artifact.write("incrementer.l1.tm")
 result = program_artifact.run(band_artifact, fuel=...)
 ```
 
-The next major target after that is recursive self-hosting through
-`RawTMInstance` and levelled artifacts such as `incrementer.l2.utm.band`
-and `incrementer.l2.tm`.
+Recursive self-hosting through `RawTMInstance` and levelled artifacts now emits
+L2 artifacts such as:
+
+```text
+incrementer.l2.utm.band
+incrementer.l2.tm
+```
+
+Current result notes:
+
+- L1 raw execution reaches `1100`.
+- L2 MetaASM C execution reaches the encoded L1 final tape for `1100`.
+- The real lowered L2 raw host can run the narrower L1 band and reaches `1100`.
+- The full lowered L2 raw run is currently estimated in weeks on the local C
+  raw runner.
+
+See `docs/l2-bootstrap-results.md` for the current measurements and backend
+experiments.
