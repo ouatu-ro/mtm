@@ -37,14 +37,16 @@
       margin: 0;
       background: var(--bg);
       color: var(--text);
+      overflow: hidden;
     }
 
     main {
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
-      min-height: 100vh;
+      height: 100vh;
       gap: 12px;
       padding: 16px;
+      overflow: hidden;
     }
 
     .toolbar, .trace-info {
@@ -55,10 +57,45 @@
     }
 
     .toolbar {
+      display: grid;
+      grid-template-columns: minmax(300px, 1fr) minmax(360px, 1fr) minmax(560px, 1.7fr) minmax(230px, 0.55fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .toolbar-section {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
+      min-width: 0;
+    }
+
+    .toolbar-section.playback-section {
+      justify-content: flex-start;
+    }
+
+    .toolbar-title {
+      flex: 0 0 100%;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .fixture-row {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .fixture-label {
+      min-width: 92px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
     }
 
     label {
@@ -123,6 +160,67 @@
     button.primary { background: var(--accent); border-color: var(--accent); color: white; }
     button:disabled { cursor: not-allowed; opacity: 0.45; }
 
+    .info-btn {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 999px;
+      color: var(--muted);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .info-dialog {
+      width: min(440px, calc(100vw - 32px));
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 0;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
+    }
+
+    .info-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.28);
+    }
+
+    .info-dialog-content {
+      display: grid;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    .info-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .info-dialog-title {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .info-dialog-body {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .info-dialog-close {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border-radius: 999px;
+      font-size: 16px;
+      line-height: 1;
+    }
+
     .viewer-stack {
       position: relative;
       display: grid;
@@ -130,6 +228,7 @@
       min-height: 0;
       align-content: stretch;
       grid-template-rows: minmax(120px, 1fr) auto auto 58px;
+      overflow: hidden;
     }
 
     .trace-info {
@@ -182,34 +281,33 @@
 
     .run-card {
       display: grid;
-      gap: 10px;
-      padding: 12px;
-      border: 1px solid rgba(126, 224, 209, 0.35);
+      gap: 6px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
       border-radius: 7px;
-      background:
-        linear-gradient(135deg, rgba(69, 182, 169, 0.13), transparent 62%),
-        var(--panel);
+      background: var(--panel);
+      width: 100%;
     }
 
     .page-run {
-      position: fixed;
-      top: 86px;
-      right: 16px;
-      z-index: 5;
-      width: 260px;
+      min-width: 0;
+    }
+
+    .page-run .section-title {
+      flex: 0 0 100%;
     }
 
     .run-row {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
       min-width: 0;
     }
 
     .run-label {
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.02em;
       text-transform: uppercase;
@@ -221,7 +319,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 700;
       text-align: right;
     }
@@ -276,7 +374,7 @@
       padding: 2px 9px;
       border: 1px solid var(--line);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
+      font-size: 11px;
       line-height: 1.35;
     }
 
@@ -715,6 +813,16 @@
     }
 
     @media (max-width: 1500px) {
+      .toolbar {
+        grid-template-columns: minmax(280px, 1fr) minmax(330px, 1fr);
+      }
+      .playback-section {
+        grid-column: 1;
+      }
+      .page-run {
+        grid-column: 2;
+        grid-row: 2;
+      }
       .trace-info { grid-template-columns: 1fr; }
       .transition-formula {
         grid-template-columns: minmax(0, 1fr) max-content max-content minmax(0, 1fr);
@@ -735,12 +843,14 @@
     @media (max-width: 760px) {
       main { padding: 10px; }
       .trace-info { grid-template-columns: 1fr; }
-      .page-run {
-        position: static;
-        width: auto;
-        justify-self: stretch;
-      }
       .viewer-stack { grid-template-rows: auto auto auto 58px; }
+      .toolbar { grid-template-columns: 1fr; }
+      .playback-section,
+      .page-run {
+        grid-column: auto;
+        grid-row: auto;
+      }
+      .toolbar-section.playback-section { justify-content: flex-start; }
       .transition-formula { grid-template-columns: 1fr; }
       .transition-field { justify-content: space-between; }
       .transition-field.write-field,
@@ -760,53 +870,74 @@
 <body>
   <main>
     <section class="toolbar">
-      <label>Meta JSON <input id="metaFile" type="file" accept=".json,application/json"></label>
-      <label>Raw TSV <input id="traceFile" type="file" accept=".tsv,text/tab-separated-values,text/plain"></label>
-      <button id="incrementerFixtureBtn">Load Incrementer Full</button>
-      <button id="walkFixtureBtn">Load R/L Demo</button>
-      <button id="walkL1FixtureBtn">Load R/L L1</button>
-      <button id="resetBtn">Reset</button>
-      <button id="playBtn" class="primary">Play</button>
-      <button id="step1Btn">+1</button>
-      <button id="step10Btn">+10</button>
-      <button id="step100Btn">+100</button>
-      <button id="step1000Btn">+1000</button>
-      <button id="stepOpBtn">+Op</button>
-      <button id="stepInstrBtn">+Instr</button>
-      <button id="stepBlockBtn">+Block</button>
-      <label class="control-group">Speed <input id="speedInput" type="range" min="1" max="100" value="12"><span id="speedValue" class="range-value">12</span></label>
-      <label class="control-group">Outer
-        <select id="outerModeSelect">
-          <option value="normal">normal</option>
-          <option value="secondary">speed</option>
-          <option value="skip">skip</option>
-        </select>
-      </label>
-      <label class="control-group">Outer speed <input id="outerSpeedInput" type="range" min="1" max="100" value="60"><span id="outerSpeedValue" class="range-value">60</span></label>
-      <label>Cells <input id="cellsInput" type="number" min="7" max="151" value="51"></label>
-    </section>
-
-    <aside class="inspector-section page-run">
-      <div class="section-title accent-run">Run</div>
-      <div class="run-card">
-        <div class="run-row">
-          <span class="run-label">Row</span>
-          <strong id="rowMetric" class="run-value">0 / 0</strong>
+      <div class="toolbar-section upload-section">
+        <span class="toolbar-title">Upload Trace</span>
+        <label>Meta JSON <input id="metaFile" type="file" accept=".json,application/json"></label>
+        <label>Raw TSV <input id="traceFile" type="file" accept=".tsv,text/tab-separated-values,text/plain"></label>
+        <button class="info-btn" type="button" aria-label="About upload trace" title="Load both files from mtm trace: --meta-out TRACE.json and --out TRACE.tsv." data-info="Upload Trace needs both files generated by mtm trace: the Meta JSON from --meta-out initializes tape/head/state, and the Raw TSV from --out contains the step rows.">?</button>
+      </div>
+      <div class="toolbar-section fixture-section">
+        <span class="toolbar-title">Load Fixture</span>
+        <div class="fixture-row">
+          <span class="fixture-label">R/L Tape</span>
+          <button id="walkFixtureBtn">Demo</button>
+          <button id="walkL1FixtureBtn">Full UTM Tape</button>
+          <button class="info-btn" type="button" aria-label="About R/L tape fixtures" title="Demo is the tiny direct raw trace; Full UTM Tape is the encoded guest tape running through the UTM." data-info="R/L Tape Demo is a tiny direct raw trace that writes and moves right/left to showcase tape growth. Full UTM Tape is the same source machine after encoding/lowering, running through the UTM raw transition trace.">?</button>
         </div>
-        <div class="run-row">
-          <span class="run-label">Status</span>
-          <strong id="statusMetric" class="status-pill">-</strong>
-        </div>
-        <div class="run-row">
-          <span class="run-label">Head</span>
-          <strong id="headMetric" class="run-value">-</strong>
-        </div>
-        <div class="run-row">
-          <span class="run-label">Symbol</span>
-          <strong id="headSymbolMetric" class="run-symbol">-</strong>
+        <div class="fixture-row">
+          <span class="fixture-label">Incrementer</span>
+          <button id="incrementerDemoFixtureBtn">Demo</button>
+          <button id="incrementerFixtureBtn">Full UTM Tape</button>
+          <button class="info-btn" type="button" aria-label="About incrementer fixtures" title="Demo is a short source-level trace; Full UTM Tape is the full encoded UTM raw trace." data-info="Incrementer Demo is a short source-level trace for the 1011 -> 1100 incrementer. Full UTM Tape is the encoded UTM raw transition trace, where most steps move through the encoded program and registers.">?</button>
         </div>
       </div>
-    </aside>
+      <div class="toolbar-section playback-section">
+        <span class="toolbar-title">Playback</span>
+        <button id="resetBtn">Reset</button>
+        <button id="playBtn" class="primary">Play</button>
+        <button id="step1Btn">+1</button>
+        <button id="step10Btn">+10</button>
+        <button id="step100Btn">+100</button>
+        <button id="step1000Btn">+1000</button>
+        <button id="stepOpBtn">+Op</button>
+        <button id="stepInstrBtn">+Instr</button>
+        <button id="stepBlockBtn">+Block</button>
+        <label class="control-group">Speed <input id="speedInput" type="range" min="1" max="100" value="12"><span id="speedValue" class="range-value">12</span></label>
+        <div class="control-group">
+          <span>Outer band</span>
+          <select id="outerModeSelect">
+            <option value="normal">normal</option>
+            <option value="secondary">speed</option>
+            <option value="skip">skip</option>
+          </select>
+          <button class="info-btn" type="button" aria-label="About outer band playback" title="Outer band playback controls program-encoding traversal." data-info-title="Outer Band" data-info="Outer band is the part of the tape that encodes the program. You can skip those steps or speed them up a lot to focus on the simulated tape, where the more interesting guest-machine changes usually happen.">?</button>
+        </div>
+        <label class="control-group">Outer band speed <input id="outerSpeedInput" type="range" min="1" max="100" value="60"><span id="outerSpeedValue" class="range-value">60</span></label>
+        <label>Cells <input id="cellsInput" type="number" min="7" max="151" value="51"></label>
+      </div>
+
+      <aside class="inspector-section page-run">
+        <div class="section-title accent-run">Run</div>
+        <div class="run-card">
+          <div class="run-row">
+            <span class="run-label">Row</span>
+            <strong id="rowMetric" class="run-value">0 / 0</strong>
+          </div>
+          <div class="run-row">
+            <span class="run-label">Status</span>
+            <strong id="statusMetric" class="status-pill">-</strong>
+          </div>
+          <div class="run-row">
+            <span class="run-label">Head</span>
+            <strong id="headMetric" class="run-value">-</strong>
+          </div>
+          <div class="run-row">
+            <span class="run-label">Symbol</span>
+            <strong id="headSymbolMetric" class="run-symbol">-</strong>
+          </div>
+        </div>
+      </aside>
+    </section>
 
     <div class="viewer-stack">
       <section id="tapeViewport" class="tape-viewport">
@@ -900,6 +1031,16 @@
     </div>
   </main>
 
+  <dialog id="infoDialog" class="info-dialog">
+    <div class="info-dialog-content">
+      <div class="info-dialog-header">
+        <strong id="infoDialogTitle" class="info-dialog-title">Info</strong>
+        <button id="infoDialogClose" class="info-dialog-close" type="button" aria-label="Close info">&times;</button>
+      </div>
+      <p id="infoDialogBody" class="info-dialog-body"></p>
+    </div>
+  </dialog>
+
   <script src="trace-viewer-assets/fixtures.js"></script>
   <script>
     const state = {
@@ -925,6 +1066,7 @@
     const fields = {
       metaFile: document.getElementById("metaFile"),
       traceFile: document.getElementById("traceFile"),
+      incrementerDemoFixtureBtn: document.getElementById("incrementerDemoFixtureBtn"),
       incrementerFixtureBtn: document.getElementById("incrementerFixtureBtn"),
       walkFixtureBtn: document.getElementById("walkFixtureBtn"),
       walkL1FixtureBtn: document.getElementById("walkL1FixtureBtn"),
@@ -943,6 +1085,10 @@
       outerSpeedInput: document.getElementById("outerSpeedInput"),
       outerSpeedValue: document.getElementById("outerSpeedValue"),
       cellsInput: document.getElementById("cellsInput"),
+      infoDialog: document.getElementById("infoDialog"),
+      infoDialogTitle: document.getElementById("infoDialogTitle"),
+      infoDialogBody: document.getElementById("infoDialogBody"),
+      infoDialogClose: document.getElementById("infoDialogClose"),
       weeeIndicator: document.getElementById("weeeIndicator"),
       rowMetric: document.getElementById("rowMetric"),
       blankInfoCell: document.getElementById("blankInfoCell"),
@@ -1714,6 +1860,37 @@
       loadTrace(fixture.meta, fixture.trace);
     }
 
+    function showInfo(button) {
+      fields.infoDialogTitle.textContent = button.dataset.infoTitle || button.getAttribute("aria-label") || "Info";
+      fields.infoDialogBody.textContent = button.dataset.info || button.title || "";
+      if (fields.infoDialog.showModal) {
+        fields.infoDialog.showModal();
+      } else {
+        fields.infoDialog.setAttribute("open", "");
+      }
+    }
+
+    function closeInfo() {
+      if (fields.infoDialog.open) {
+        if (fields.infoDialog.close) {
+          fields.infoDialog.close();
+        } else {
+          fields.infoDialog.removeAttribute("open");
+        }
+      }
+    }
+
+    document.querySelectorAll(".info-btn").forEach((button) => {
+      button.addEventListener("click", () => showInfo(button));
+    });
+    fields.infoDialogClose.addEventListener("click", closeInfo);
+    fields.infoDialog.addEventListener("click", (event) => {
+      if (event.target === fields.infoDialog) {
+        closeInfo();
+      }
+    });
+
+    fields.incrementerDemoFixtureBtn.addEventListener("click", () => loadFixture("incrementerDemo"));
     fields.incrementerFixtureBtn.addEventListener("click", () => loadFixture("incrementerFull"));
     fields.walkFixtureBtn.addEventListener("click", () => loadFixture("rightLeftWalk"));
     fields.walkL1FixtureBtn.addEventListener("click", () => loadFixture("rightLeftWalkL1"));
