@@ -46,6 +46,22 @@ Run the raw UTM on the encoded tape:
 uv run mtm run out/incrementer.tm out/incrementer.utm.band
 ```
 
+Inspect generated artifacts:
+
+```sh
+uv run mtm inspect out/incrementer.utm.band out/incrementer.tm
+uv run mtm concepts UTMBandArtifact
+```
+
+Other run views expose the decoded guest tape, concrete encoded tape, or raw
+runtime tape:
+
+```sh
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view decoded
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view encoded --when final
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view raw --around-head 80
+```
+
 Emit a raw transition trace plus metadata sidecar:
 
 ```sh
@@ -117,6 +133,10 @@ bootstrap notes.
 ## Documentation
 
 Start at [docs/index.md](docs/index.md).
+
+For the core object/artifact vocabulary, see
+[docs/reference/concepts.md](docs/reference/concepts.md) or run
+`uv run mtm concepts`.
 
 ## Primary background:
 

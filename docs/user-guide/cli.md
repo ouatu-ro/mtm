@@ -41,6 +41,10 @@ Artifact inputs are:
 - `.asm`: emitted Meta-ASM, for inspection
 - `.mtm.source`: safe serialized source artifact
 
+Use `mtm inspect` to summarize generated artifacts, and `mtm concepts` for the
+short vocabulary behind object names such as `SourceTape`, `EncodedTape`, and
+`UTMBandArtifact`.
+
 Raw `.tm` programs can also be compiled as guests in the advanced recursive
 path. That is the L2/bootstrap workflow, not the default day-to-day path.
 
@@ -71,6 +75,24 @@ uv run mtm emit-tm examples/source/incrementer_tm.py -o out/incrementer.tm
 uv run mtm emit-source examples/source/incrementer_tm.py -o out/incrementer.mtm.source
 ```
 
+## Inspect
+
+Summarize generated artifacts without running them:
+
+```sh
+uv run mtm inspect out/incrementer.utm.band
+uv run mtm inspect out/incrementer.tm out/incrementer.mtm.source
+```
+
+Print the vocabulary used by the CLI and docs:
+
+```sh
+uv run mtm concepts
+uv run mtm concepts UTMBandArtifact
+```
+
+The vocabulary source lives in [Concepts](../reference/concepts.md).
+
 ## Run
 
 Run a lowered `.tm` host on an encoded `.utm.band` input:
@@ -84,6 +106,21 @@ Use more fuel for larger runs:
 ```sh
 uv run mtm run out/incrementer.tm out/incrementer.utm.band --max-steps 1000000
 ```
+
+Choose the output view explicitly when you want to inspect a specific layer:
+
+```sh
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view decoded
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view encoded --when final
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view raw --around-head 80
+
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view raw --range -200:120
+uv run mtm run out/incrementer.tm out/incrementer.utm.band --view encoded --side right
+```
+
+`decoded` shows the simulated guest tape and registers. `encoded` shows the
+concrete split UTM tape layout. `raw` shows the actual sparse runtime tape used
+by the lowered raw TM runner.
 
 ## Trace
 
@@ -153,5 +190,6 @@ That path is expensive and experimental. The detailed bootstrap notes live in
 ## Related Docs
 
 - [MTM Specs](../specs/spec.md)
+- [Concepts](../reference/concepts.md)
 - [Debugger Guide](debugger.md)
 - [Tools](../tools/index.md)

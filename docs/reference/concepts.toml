@@ -1,0 +1,85 @@
+[SourceTape]
+kind = "object"
+summary = "Source-level guest input tape."
+meaning = "The tape seen by the source Turing machine before it is encoded for the universal machine."
+docs = ["docs/specs/object-model.md"]
+
+[SourceTape.not]
+EncodedTape = "In-memory concrete encoded UTM tape layout."
+runtime_tape = "Sparse raw TM tape dictionary keyed by integer runtime addresses."
+UTMBandArtifact = "Persisted .utm.band artifact containing encoded tape layout and ABI metadata."
+
+[EncodedTape]
+kind = "object"
+summary = "In-memory concrete encoded UTM tape layout."
+meaning = "A materialized encoded UTM input split into left_band and right_band token arrays."
+docs = ["docs/specs/object-model.md", "docs/specs/abi-and-artifacts.md"]
+
+[EncodedTape.not]
+SourceTape = "Source-level guest input tape."
+runtime_tape = "Sparse raw TM tape dictionary keyed by integer runtime addresses."
+UTMBandArtifact = "Persisted .utm.band artifact form of the same encoded layout."
+
+[UTMBandArtifact]
+kind = "artifact"
+summary = "Persisted .utm.band file."
+meaning = "A serialized encoded UTM input: split encoded tape tokens, start head, encoding, target ABI, and minimal ABI."
+docs = ["docs/specs/object-model.md", "docs/specs/abi-and-artifacts.md"]
+
+[UTMBandArtifact.not]
+SourceTape = "Source-level guest input tape."
+runtime_tape = "Sparse raw TM tape dictionary keyed by integer runtime addresses."
+EncodedTape = "In-memory concrete encoded tape layout."
+
+[UTMProgramArtifact]
+kind = "artifact"
+summary = "Persisted .tm raw transition program."
+meaning = "A serialized raw Turing-machine transition table for a host UTM, optionally carrying ABI metadata."
+docs = ["docs/specs/object-model.md", "docs/specs/abi-and-artifacts.md"]
+
+[UTMProgramArtifact.not]
+UTMBandArtifact = "The encoded input tape artifact run by this program."
+SourceArtifact = "A source-level guest TM artifact."
+runtime_tape = "The mutable sparse tape used while executing raw transitions."
+
+[SourceArtifact]
+kind = "artifact"
+summary = "Persisted .mtm.source source-machine input."
+meaning = "A safe literal artifact containing a source TM program, SourceTape, initial state, halt state, and optional notes."
+docs = ["docs/specs/object-model.md", "docs/specs/abi-and-artifacts.md"]
+
+[SourceArtifact.not]
+UTMBandArtifact = "The compiled encoded UTM input artifact."
+UTMProgramArtifact = "A raw host transition table artifact."
+EncodedTape = "The in-memory encoded UTM layout produced by compilation."
+
+[runtime_tape]
+kind = "runtime"
+summary = "Sparse raw TM tape dictionary."
+meaning = "The executable raw Turing-machine tape representation, keyed by integer runtime addresses."
+docs = ["docs/specs/object-model.md"]
+
+[runtime_tape.not]
+SourceTape = "Source-level guest input tape."
+EncodedTape = "Structured split encoded UTM layout."
+UTMBandArtifact = "Persisted artifact, not the mutable runtime dictionary."
+
+[TMAbi]
+kind = "object"
+summary = "Encoding width and grammar contract."
+meaning = "The ABI describes the state, symbol, and direction field widths plus the encoding grammar used by an encoded UTM tape and host."
+docs = ["docs/specs/abi-and-artifacts.md", "docs/specs/invariants-and-correctness.md"]
+
+[TMAbi.not]
+Encoding = "A concrete mapping from states, symbols, and directions to bit patterns."
+TMProgram = "A source-level transition program."
+
+[Encoding]
+kind = "object"
+summary = "Concrete state/symbol/direction code assignment."
+meaning = "The mapping from semantic states, symbols, and directions to fixed-width bit fields under a specific ABI."
+docs = ["docs/specs/abi-and-artifacts.md"]
+
+[Encoding.not]
+TMAbi = "The width and grammar contract; Encoding is the concrete assignment."
+SourceTape = "The source machine's tape before encoding."

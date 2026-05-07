@@ -43,6 +43,8 @@ nav:
       - Index: tools/index.md
       - Trace Viewer: tools/trace-viewer.md
       - C Runners: tools/c-runners.md
+  - Reference:
+      - Concepts: reference/concepts.md
   - Advanced:
       - L2 Bootstrap Results: results/l2-bootstrap.md
       - L2 Incrementer Runbook: runbooks/l2-incrementer.md

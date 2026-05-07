@@ -70,6 +70,7 @@ The same staged structure is described in more detail in the spec pages.
 Start here:
 
 - [User guide](user-guide/cli.md)
+- [Concepts](reference/concepts.md)
 - [Specs](specs/spec.md)
 - [Overview](specs/overview.md)
 - [Results](results/index.md)

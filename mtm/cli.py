@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
+import tomllib
 from pathlib import Path
 
+from .artifacts import RAW_TM_FORMAT, SOURCE_FORMAT, UTM_BAND_FORMAT, _read_literal_assignments
 from .compiler import Compiler
 from .debugger import DebuggerSession, DebuggerShell, RawTraceRunner
 from .lowering import ACTIVE_RULE, lower_program_with_source_map
@@ -14,9 +17,9 @@ from .meta_asm import build_universal_meta_asm
 from .utm_band_layout import EncodedTape, split_runtime_tape
 from .meta_asm import format_program
 from . import load_fixture
-from .pretty import pretty_registers, pretty_tape
+from .pretty import pretty_registers, pretty_tape, table
 from .source_file import load_python_tm_instance, source_artifact_from_python
-from .semantic_objects import RawTMInstance, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, start_head_from_encoded_tape
+from .semantic_objects import RawTMInstance, SourceArtifact, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, decoded_view_from_encoded_tape, start_head_from_encoded_tape
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
 
@@ -36,6 +39,8 @@ Compile, inspect, and run Meta Turing Machine artifacts.
 Common workflows:
   mtm compile examples/source/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm
   mtm run out/incrementer.tm out/incrementer.utm.band
+  mtm inspect out/incrementer.utm.band
+  mtm concepts UTMBandArtifact
   mtm trace out/incrementer.tm out/incrementer.utm.band --level raw --out out/raw.tsv --meta-out out/raw.json
   mtm dbg incrementer
   mtm dbg out/incrementer.tm out/incrementer.utm.band
@@ -110,8 +115,38 @@ Example:
     "run": """\
 Run a raw UTM .tm program on a .utm.band input artifact.
 
-Example:
+Views:
+  decoded  decoded simulated guest tape and registers (default)
+  encoded  concrete split encoded UTM tape
+  raw      sparse raw TM runtime tape
+
+Examples:
   mtm run out/incrementer.l1.tm out/incrementer.l1.utm.band --max-steps 200000
+  mtm run out/incrementer.tm out/incrementer.utm.band --view decoded
+  mtm run out/incrementer.tm out/incrementer.utm.band --view encoded --when final
+  mtm run out/incrementer.tm out/incrementer.utm.band --view raw --around-head 80
+  mtm run out/incrementer.tm out/incrementer.utm.band --view raw --range -200:120
+  mtm run out/incrementer.tm out/incrementer.utm.band --view encoded --side right
+""",
+    "inspect": """\
+Summarize MTM artifacts without running them.
+
+Recognized artifact formats:
+  .utm.band    encoded UTM input artifact
+  .tm          raw transition program artifact
+  .mtm.source  safe source-machine artifact
+
+Examples:
+  mtm inspect out/incrementer.utm.band
+  mtm inspect out/incrementer.tm out/incrementer.mtm.source
+""",
+    "concepts": """\
+Show the local MTM vocabulary used by docs and CLI output.
+
+Examples:
+  mtm concepts
+  mtm concepts UTMBandArtifact
+  mtm concepts SourceTape EncodedTape runtime_tape
 """,
     "trace": """\
 Emit a TSV trace for a raw UTM run.
@@ -142,6 +177,9 @@ Examples:
   mtm dbg out/incrementer.l1.tm out/incrementer.l1.utm.band --max-raw 100000
 """,
 }
+
+
+CONCEPTS_PATH = Path(__file__).resolve().parents[1] / "docs" / "reference" / "concepts.toml"
 
 
 def _target_abi_from_args(args) -> TMAbi | None:
@@ -191,6 +229,200 @@ def _add_command(
 
 def _write_text(path: str | Path, text: str) -> None:
     Path(path).write_text(text + ("\n" if not text.endswith("\n") else ""))
+
+
+def _load_concepts() -> dict[str, object]:
+    try:
+        with CONCEPTS_PATH.open("rb") as handle:
+            data = tomllib.load(handle)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"concepts file not found: {CONCEPTS_PATH}") from exc
+    return dict(data)
+
+
+def _concept_names_for_help() -> str:
+    try:
+        names = sorted(_load_concepts())
+    except SystemExit:
+        return "  unavailable; concepts file could not be loaded"
+    return "  " + "\n  ".join(names)
+
+
+def _format_concept(name: str, concept: dict[str, object]) -> str:
+    lines = [
+        name,
+        f"  kind: {concept.get('kind', '-')}",
+        f"  summary: {concept.get('summary', '-')}",
+    ]
+    meaning = concept.get("meaning")
+    if meaning:
+        lines.append(f"  meaning: {meaning}")
+    not_items = concept.get("not")
+    if isinstance(not_items, dict) and not_items:
+        lines.append("  not the same thing as:")
+        lines.extend(f"    {other}: {description}" for other, description in not_items.items())
+    docs = concept.get("docs")
+    if isinstance(docs, list) and docs:
+        lines.append("  docs:")
+        lines.extend(f"    {doc}" for doc in docs)
+    return "\n".join(lines)
+
+
+def _show_concepts(args) -> int:
+    concepts = _load_concepts()
+    if not args.names:
+        rows = [
+            [name, data.get("kind", "-"), data.get("summary", "-")]
+            for name, data in sorted(concepts.items())
+            if isinstance(data, dict)
+        ]
+        print("MTM CONCEPTS")
+        print()
+        print(table(["name", "kind", "summary"], rows))
+        print()
+        print("Use `mtm concepts NAME` for details.")
+        return 0
+
+    missing = [name for name in args.names if name not in concepts]
+    if missing:
+        known = ", ".join(sorted(concepts))
+        raise SystemExit(f"unknown concept(s): {', '.join(missing)}\nknown concepts: {known}")
+    print("\n\n".join(_format_concept(name, concepts[name]) for name in args.names))
+    return 0
+
+
+def _format_abi(abi: TMAbi | None) -> str:
+    if abi is None:
+        return "-"
+    label = abi.family_label or f"U[Wq={abi.state_width},Ws={abi.symbol_width},Wd={abi.dir_width}]"
+    return f"{label} grammar={abi.grammar_version}"
+
+
+def _format_encoding_summary(encoding) -> str:
+    return (
+        f"states={len(encoding.state_ids)} width={encoding.state_width}; "
+        f"symbols={len(encoding.symbol_ids)} width={encoding.symbol_width}; "
+        f"dirs={len(encoding.direction_ids)} width={encoding.direction_width}"
+    )
+
+
+def _inspect_utm_band(path: Path) -> str:
+    artifact = UTMBandArtifact.read(path)
+    encoded_tape = artifact.to_encoded_tape()
+    lines = [
+        f"{path}: MTM UTM band artifact",
+        f"  format: {UTM_BAND_FORMAT}",
+        f"  concept: UTMBandArtifact (more: mtm concepts UTMBandArtifact)",
+        f"  target ABI: {_format_abi(artifact.target_abi)}",
+        f"  minimal ABI: {_format_abi(artifact.minimal_abi)}",
+        f"  encoding: {_format_encoding_summary(artifact.encoding)}",
+        f"  left band tokens: {len(artifact.left_band)}",
+        f"  right band tokens: {len(artifact.right_band)}",
+        f"  start head: {artifact.start_head}",
+    ]
+    try:
+        view = decoded_view_from_encoded_tape(encoded_tape)
+    except ValueError as exc:
+        lines.append(f"  decoded view: unavailable ({exc})")
+    else:
+        simulated_tape = view.simulated_tape
+        lines.extend([
+            f"  decoded state: {view.current_state}",
+            f"  decoded simulated head: {view.simulated_head}",
+            f"  decoded source tape width: left={len(simulated_tape.left_band)} right={len(simulated_tape.right_band)}",
+            f"  rules: {len(view.rules)}",
+        ])
+    return "\n".join(lines)
+
+
+def _inspect_tm_program(path: Path) -> str:
+    artifact = UTMProgramArtifact.read(path)
+    program = artifact.program
+    states = {program.start_state, program.halt_state}
+    symbols = {program.blank, *program.alphabet}
+    for (state, read_symbol), (next_state, write_symbol, _move) in program.prog.items():
+        states.update((state, next_state))
+        symbols.update((read_symbol, write_symbol))
+    return "\n".join([
+        f"{path}: MTM raw TM program artifact",
+        f"  format: {RAW_TM_FORMAT}",
+        f"  concept: UTMProgramArtifact (more: mtm concepts UTMProgramArtifact)",
+        f"  target ABI: {_format_abi(artifact.target_abi)}",
+        f"  minimal ABI: {_format_abi(artifact.minimal_abi)}",
+        f"  transitions: {len(program.prog)}",
+        f"  states: {len(states)}",
+        f"  alphabet symbols: {len(symbols)}",
+        f"  start state: {program.start_state}",
+        f"  halt state: {program.halt_state}",
+        f"  blank: {program.blank}",
+    ])
+
+
+def _inspect_source_artifact(path: Path) -> str:
+    artifact = SourceArtifact.read(path)
+    program = artifact.program
+    tape = artifact.tape
+    states = program.states(initial_state=artifact.initial_state, halt_state=artifact.halt_state)
+    symbols = program.symbols(source_symbols=tape.cells, blank=tape.blank)
+    lines = [
+        f"{path}: MTM source artifact",
+        f"  format: {SOURCE_FORMAT}",
+        f"  concept: SourceArtifact (more: mtm concepts SourceArtifact)",
+        f"  name: {artifact.name or '-'}",
+        f"  transitions: {len(program.transitions)}",
+        f"  states: {len(states)}",
+        f"  source symbols: {len(symbols)}",
+        f"  tape width: left={len(tape.left_band)} right={len(tape.right_band)}",
+        f"  source head: {tape.head}",
+        f"  initial state: {artifact.initial_state}",
+        f"  halt state: {artifact.halt_state}",
+        f"  blank: {tape.blank}",
+    ]
+    if artifact.note:
+        lines.append(f"  note: {artifact.note}")
+    return "\n".join(lines)
+
+
+def _inspect_path(path: str | Path) -> str:
+    artifact_path = Path(path)
+    namespace = _read_literal_assignments(artifact_path)
+    format_name = namespace.get("format")
+    if format_name == UTM_BAND_FORMAT:
+        return _inspect_utm_band(artifact_path)
+    if format_name == RAW_TM_FORMAT:
+        return _inspect_tm_program(artifact_path)
+    if format_name == SOURCE_FORMAT:
+        return _inspect_source_artifact(artifact_path)
+    raise SystemExit(f"{artifact_path}: unknown MTM artifact format {format_name!r}")
+
+
+def _inspect(args) -> int:
+    print("\n\n".join(_inspect_path(path) for path in args.inputs))
+    return 0
+
+
+def _parse_range(value: str) -> tuple[int, int]:
+    try:
+        start_text, end_text = value.split(":", 1)
+        start, end = int(start_text), int(end_text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected START:END, for example -200:120") from exc
+    if start > end:
+        raise argparse.ArgumentTypeError("range start must be <= range end")
+    return start, end
+
+
+def _normalize_range_args(argv: list[str]) -> list[str]:
+    normalized: list[str] = []
+    index = 0
+    while index < len(argv):
+        if argv[index] == "--range" and index + 1 < len(argv):
+            normalized.append(f"--range={argv[index + 1]}")
+            index += 2
+            continue
+        normalized.append(argv[index])
+        index += 1
+    return normalized
 
 
 def _artifact_stem(path: str | Path) -> str:
@@ -517,9 +749,121 @@ def _write_trace(args) -> int:
     return 0
 
 
+def _result_header(result: dict[str, object], *, when: str) -> str:
+    label = when.upper()
+    return "\n".join([
+        f"{label} STATUS: {result['status']}",
+        f"{label} STATE: {result['state']}",
+        f"{label} HEAD: {result['head']}",
+        f"STEPS: {result['steps']}",
+    ])
+
+
+def _format_decoded_run_view(encoded_tape: EncodedTape, *, result: dict[str, object], when: str) -> str:
+    decoded_view_from_encoded_tape(encoded_tape)
+    label = when.upper()
+    return "\n\n".join([
+        _result_header(result, when=when),
+        f"{label} REGISTERS\n\n{pretty_registers(encoded_tape.encoding, encoded_tape.left_band)}",
+        f"{label} TAPE\n\n{pretty_tape(encoded_tape.encoding, encoded_tape.right_band)}",
+    ])
+
+
+def _encoded_rows(encoded_tape: EncodedTape, *, side: str) -> list[list[object]]:
+    rows: list[list[object]] = []
+    if side in {"both", "left"}:
+        left_width = len(encoded_tape.left_band)
+        rows.extend(["left", index, index - left_width, token] for index, token in enumerate(encoded_tape.left_band))
+    if side in {"both", "right"}:
+        rows.extend(["right", index, index, token] for index, token in enumerate(encoded_tape.right_band))
+    return rows
+
+
+def _format_encoded_run_view(encoded_tape: EncodedTape, *, result: dict[str, object], when: str, side: str) -> str:
+    label = when.upper()
+    return "\n\n".join([
+        _result_header(result, when=when),
+        f"{label} ENCODED TAPE ({side})",
+        table(["side", "index", "runtime_addr", "token"], _encoded_rows(encoded_tape, side=side)),
+    ])
+
+
+def _raw_view_bounds(
+    runtime_tape: dict[int, str],
+    *,
+    head: int,
+    blank: str,
+    raw_range: tuple[int, int] | None,
+    around_head: int | None,
+) -> tuple[int, int]:
+    if raw_range is not None:
+        return raw_range
+    if around_head is not None:
+        if around_head < 0:
+            raise SystemExit("--around-head must be non-negative")
+        return head - around_head, head + around_head
+    live = [address for address, value in runtime_tape.items() if value != blank]
+    if not live:
+        return head, head
+    return min([*live, head]), max([*live, head])
+
+
+def _format_raw_run_view(
+    runtime_tape: dict[int, str],
+    *,
+    result: dict[str, object],
+    when: str,
+    blank: str,
+    raw_range: tuple[int, int] | None,
+    around_head: int | None,
+) -> str:
+    head = int(result["head"])
+    start, end = _raw_view_bounds(runtime_tape, head=head, blank=blank, raw_range=raw_range, around_head=around_head)
+    rows = [
+        [address, "yes" if address == head else "no", "left" if address < 0 else "right", runtime_tape.get(address, blank)]
+        for address in range(start, end + 1)
+    ]
+    label = when.upper()
+    return "\n\n".join([
+        _result_header(result, when=when),
+        f"{label} RAW RUNTIME TAPE ({start}:{end})",
+        table(["addr", "head", "side", "value"], rows),
+    ])
+
+
+def _select_run_view(
+    args,
+    *,
+    initial_encoded_tape: EncodedTape,
+    final_encoded_tape: EncodedTape,
+    initial_result: dict[str, object],
+    final_result: dict[str, object],
+    initial_runtime_tape: dict[int, str],
+    final_runtime_tape: dict[int, str],
+    blank: str,
+) -> str:
+    when = args.when
+    encoded_tape = initial_encoded_tape if when == "initial" else final_encoded_tape
+    result = initial_result if when == "initial" else final_result
+    runtime_tape = initial_runtime_tape if when == "initial" else final_runtime_tape
+
+    if args.view == "decoded":
+        return _format_decoded_run_view(encoded_tape, result=result, when=when)
+    if args.view == "encoded":
+        return _format_encoded_run_view(encoded_tape, result=result, when=when, side=args.side)
+    return _format_raw_run_view(
+        runtime_tape,
+        result=result,
+        when=when,
+        blank=blank,
+        raw_range=args.raw_range,
+        around_head=args.around_head,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Compile and run MTM artifacts.",
+        description="Compile, inspect, and run MTM artifacts.",
         epilog=TOP_LEVEL_HELP,
         formatter_class=MTMHelpFormatter,
     )
@@ -546,6 +890,13 @@ def main(argv: list[str] | None = None) -> int:
     source_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
     source_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.mtm.source", help="source artifact to write")
 
+    inspect_parser = _add_command(sub, "inspect", help="Summarize MTM artifact files.")
+    inspect_parser.add_argument("inputs", nargs="+", metavar="ASSET", help=".utm.band, .tm, or .mtm.source artifact")
+
+    concepts_parser = _add_command(sub, "concepts", help="Show MTM vocabulary and object distinctions.")
+    concepts_parser.add_argument("names", nargs="*", metavar="NAME", help="concept name to describe")
+    concepts_parser.epilog = COMMAND_EXAMPLES["concepts"] + "\nAvailable concepts:\n" + _concept_names_for_help()
+
     l1_parser = _add_command(sub, "l1", help="Emit source, l1 .utm.band, and l1 .tm artifacts from a Python TM file.")
     l1_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
     l1_parser.add_argument("--out-dir", required=True, metavar="DIR", help="directory for the emitted L1 artifacts")
@@ -562,6 +913,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
     run_parser.add_argument("input", metavar="INPUT.utm.band", help="encoded guest tape artifact")
     run_parser.add_argument("--max-steps", type=int, default=200_000, metavar="N", help="raw transition fuel; default: 200000")
+    run_parser.add_argument("--view", choices=("decoded", "encoded", "raw"), default="decoded", help="run output view; default: decoded")
+    run_parser.add_argument("--when", choices=("initial", "final"), default="final", help="show the selected view before or after running; default: final")
+    run_parser.add_argument("--side", choices=("both", "left", "right"), default="both", help="encoded view side; default: both")
+    run_parser.add_argument("--around-head", type=int, metavar="N", help="raw view: show addresses from HEAD-N through HEAD+N")
+    run_parser.add_argument("--range", dest="raw_range", type=_parse_range, metavar="START:END", help="raw view: show an explicit inclusive address range")
 
     trace_parser = _add_command(sub, "trace", help="Emit a TSV trace for a .tm program and .utm.band input.")
     trace_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
@@ -578,7 +934,8 @@ def main(argv: list[str] | None = None) -> int:
     dbg_parser.add_argument("--fixture", dest="fixture_name", metavar="FIXTURE", help="debug a built-in fixture by name")
     dbg_parser.add_argument("--max-raw", type=int, default=DEBUG_DEFAULT_MAX_RAW, metavar="N", help=f"raw transition guard for grouped debugger steps; default: {DEBUG_DEFAULT_MAX_RAW}")
 
-    args = parser.parse_args(argv)
+    raw_argv = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(_normalize_range_args(list(raw_argv)))
     abi = _target_abi_from_args(args)
 
     if args.command == "compile":
@@ -603,6 +960,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "emit-source":
         source_artifact_from_python(args.input).write(args.output)
         return 0
+
+    if args.command == "inspect":
+        return _inspect(args)
+
+    if args.command == "concepts":
+        return _show_concepts(args)
 
     if args.command == "l1":
         stem = args.stem or _artifact_stem(args.input)
@@ -641,6 +1004,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.input is None:
         raise SystemExit("run requires INPUT.utm.band")
+    if args.raw_range is not None and args.around_head is not None:
+        raise SystemExit("--range and --around-head are mutually exclusive")
     artifact = UTMBandArtifact.read(args.input)
     encoded_tape = artifact.to_encoded_tape()
     program_artifact = UTMProgramArtifact.read(args.tm_file)
@@ -650,19 +1015,29 @@ def main(argv: list[str] | None = None) -> int:
     final_left_band, final_right_band = encoded_tape.left_band, encoded_tape.right_band
     if result["tape"] != runtime_tape:
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
-    final_encoded_tape = EncodedTape(encoded_tape.encoding, final_left_band, final_right_band)
-    print(f"FINAL STATUS: {result['status']}")
-    print(f"FINAL STATE: {result['state']}")
-    print(f"FINAL HEAD: {result['head']}")
-    print(f"STEPS: {result['steps']}")
-    print()
-    print("FINAL REGISTERS")
-    print()
-    print(pretty_registers(final_encoded_tape.encoding, final_encoded_tape.left_band))
-    print()
-    print("FINAL TAPE")
-    print()
-    print(pretty_tape(final_encoded_tape.encoding, final_encoded_tape.right_band))
+    final_encoded_tape = EncodedTape(
+        encoded_tape.encoding,
+        final_left_band,
+        final_right_band,
+        minimal_abi=encoded_tape.minimal_abi,
+        target_abi=encoded_tape.target_abi,
+    )
+    initial_result = {
+        "status": "initial",
+        "state": config.state,
+        "head": config.head,
+        "steps": 0,
+    }
+    print(_select_run_view(
+        args,
+        initial_encoded_tape=encoded_tape,
+        final_encoded_tape=final_encoded_tape,
+        initial_result=initial_result,
+        final_result=result,
+        initial_runtime_tape=runtime_tape,
+        final_runtime_tape=result["tape"],
+        blank=program_artifact.program.blank,
+    ))
     return 0
 
 

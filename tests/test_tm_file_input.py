@@ -147,6 +147,62 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
     assert "1 1 0 0 _ _ _ _" in output
 
 
+def test_cli_run_view_options(tmp_path: Path, capsys) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
+
+    assert cli_main(["run", str(raw_tm_path), str(utm_path), "--view", "encoded", "--when", "final", "--side", "right"]) == 0
+    encoded_output = capsys.readouterr().out
+    assert "FINAL ENCODED TAPE (right)" in encoded_output
+    assert "#TAPE" in encoded_output
+    assert "left" not in encoded_output
+
+    assert cli_main(["run", str(raw_tm_path), str(utm_path), "--view", "raw", "--range", "-2:2"]) == 0
+    raw_output = capsys.readouterr().out
+    assert "FINAL RAW RUNTIME TAPE (-2:2)" in raw_output
+    assert "addr | head | side" in raw_output
+
+    assert cli_main(["run", str(raw_tm_path), str(utm_path), "--view", "raw", "--around-head", "2", "--when", "initial"]) == 0
+    around_output = capsys.readouterr().out
+    assert "INITIAL STATUS: initial" in around_output
+    assert "INITIAL RAW RUNTIME TAPE" in around_output
+
+
+def test_cli_concepts_and_inspect(tmp_path: Path, capsys) -> None:
+    tm_path = _write_tm_file(tmp_path)
+    source_path = tmp_path / "incrementer.mtm.source"
+    utm_path = tmp_path / "incrementer.utm.band"
+    raw_tm_path = tmp_path / "utm.tm"
+
+    assert cli_main(["emit-source", str(tm_path), "-o", str(source_path)]) == 0
+    assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--tm-out", str(raw_tm_path)]) == 0
+
+    assert cli_main(["concepts"]) == 0
+    concepts_output = capsys.readouterr().out
+    assert "MTM CONCEPTS" in concepts_output
+    assert "UTMBandArtifact" in concepts_output
+    assert "Use `mtm concepts NAME` for details." in concepts_output
+
+    assert cli_main(["concepts", "UTMBandArtifact"]) == 0
+    concept_output = capsys.readouterr().out
+    assert "Persisted .utm.band file." in concept_output
+    assert "not the same thing as:" in concept_output
+    assert "SourceTape" in concept_output
+
+    assert cli_main(["inspect", str(utm_path), str(raw_tm_path), str(source_path)]) == 0
+    inspect_output = capsys.readouterr().out
+    assert "MTM UTM band artifact" in inspect_output
+    assert "concept: UTMBandArtifact (more: mtm concepts UTMBandArtifact)" in inspect_output
+    assert "decoded simulated head:" in inspect_output
+    assert "MTM raw TM program artifact" in inspect_output
+    assert "transitions:" in inspect_output
+    assert "MTM source artifact" in inspect_output
+    assert "tape width: left=0 right=8" in inspect_output
+
+
 def test_cli_compile_with_explicit_target_abi(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     utm_path = tmp_path / "incrementer.utm.band"
