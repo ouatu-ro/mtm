@@ -25,8 +25,8 @@ uv run mtm -h
 
 Normal source inputs are Python TM files. Existing examples:
 
-- `examples/incrementer_tm.py`
-- `examples/palindrome_tm.py`
+- `examples/source/incrementer_tm.py`
+- `examples/source/palindrome_tm.py`
 - `examples/demo.py`
 
 Built-in debugger fixtures live in `mtm/fixtures/`:
@@ -50,14 +50,14 @@ Compile a Python source TM into an encoded guest tape:
 
 ```sh
 mkdir -p out
-uv run mtm compile examples/incrementer_tm.py \
+uv run mtm compile examples/source/incrementer_tm.py \
   -o out/incrementer.utm.band
 ```
 
 Compile and also emit the runnable raw UTM plus Meta-ASM:
 
 ```sh
-uv run mtm compile examples/incrementer_tm.py \
+uv run mtm compile examples/source/incrementer_tm.py \
   -o out/incrementer.utm.band \
   --tm-out out/incrementer.tm \
   --asm-out out/incrementer.asm
@@ -66,9 +66,9 @@ uv run mtm compile examples/incrementer_tm.py \
 The equivalent split commands are:
 
 ```sh
-uv run mtm emit-asm examples/incrementer_tm.py -o out/incrementer.asm
-uv run mtm emit-tm examples/incrementer_tm.py -o out/incrementer.tm
-uv run mtm emit-source examples/incrementer_tm.py -o out/incrementer.mtm.source
+uv run mtm emit-asm examples/source/incrementer_tm.py -o out/incrementer.asm
+uv run mtm emit-tm examples/source/incrementer_tm.py -o out/incrementer.tm
+uv run mtm emit-source examples/source/incrementer_tm.py -o out/incrementer.mtm.source
 ```
 
 ## Run
@@ -137,7 +137,7 @@ See [Debugger Guide](debugger.md) for REPL commands and stepping levels.
 `mtm l1` emits the source artifact, L1 band, and L1 host in one bundle:
 
 ```sh
-uv run mtm l1 examples/incrementer_tm.py --out-dir out --stem incrementer
+uv run mtm l1 examples/source/incrementer_tm.py --out-dir out --stem incrementer
 ```
 
 `mtm l2` wraps an existing L1 `.tm` plus `.utm.band` as a raw guest:

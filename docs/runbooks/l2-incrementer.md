@@ -1,6 +1,6 @@
 # L2 Incrementer Runbook
 
-This note captures the concrete path from `examples/incrementer_tm.py` to L2,
+This note captures the concrete path from `examples/source/incrementer_tm.py` to L2,
 plus the current size and runtime expectations for proving `1011 -> 1100`.
 
 ## Build L1 and L2 Artifacts
@@ -9,7 +9,7 @@ plus the current size and runtime expectations for proving `1011 -> 1100`.
 out=/tmp/mtm-incrementer-l2
 rm -rf "$out"
 
-uv run mtm l1 examples/incrementer_tm.py \
+uv run mtm l1 examples/source/incrementer_tm.py \
   --out-dir "$out" \
   --stem incrementer
 

@@ -34,7 +34,7 @@ TOP_LEVEL_HELP = """\
 Compile, inspect, and run Meta Turing Machine artifacts.
 
 Common workflows:
-  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm
+  mtm compile examples/source/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm
   mtm run out/incrementer.tm out/incrementer.utm.band
   mtm trace out/incrementer.tm out/incrementer.utm.band --level raw --out out/raw.tsv --meta-out out/raw.json
   mtm dbg incrementer
@@ -46,15 +46,15 @@ Run `mtm COMMAND -h` for command-specific inputs, outputs, and examples.
 
 COMMAND_EXAMPLES = {
     "compile": """\
-Compile a Python source TM into a UTM band artifact.
+Compile a Python source TM into an encoded guest tape artifact.
 
 ABI width flags:
   --state-width, --symbol-width, and --dir-width must be supplied together.
 
 Examples:
-  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band
-  mtm compile examples/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm --asm-out out/incrementer.asm
-  mtm compile examples/incrementer_tm.py -o out/wide.utm.band --state-width 3 --symbol-width 4 --dir-width 2
+  mtm compile examples/source/incrementer_tm.py -o out/incrementer.utm.band
+  mtm compile examples/source/incrementer_tm.py -o out/incrementer.utm.band --tm-out out/incrementer.tm --asm-out out/incrementer.asm
+  mtm compile examples/source/incrementer_tm.py -o out/wide.utm.band --state-width 3 --symbol-width 4 --dir-width 2
 """,
     "emit-asm": """\
 Emit the width-specialized Meta-ASM interpreter for a Python source TM.
@@ -63,8 +63,8 @@ ABI width flags:
   --state-width, --symbol-width, and --dir-width must be supplied together.
 
 Examples:
-  mtm emit-asm examples/incrementer_tm.py -o out/incrementer.asm
-  mtm emit-asm examples/incrementer_tm.py -o out/wide.asm --state-width 3 --symbol-width 4 --dir-width 2
+  mtm emit-asm examples/source/incrementer_tm.py -o out/incrementer.asm
+  mtm emit-asm examples/source/incrementer_tm.py -o out/wide.asm --state-width 3 --symbol-width 4 --dir-width 2
 """,
     "emit-tm": """\
 Emit the lowered raw UTM transition table for a Python source TM.
@@ -73,14 +73,14 @@ ABI width flags:
   --state-width, --symbol-width, and --dir-width must be supplied together.
 
 Examples:
-  mtm emit-tm examples/incrementer_tm.py -o out/incrementer.tm
-  mtm emit-tm examples/incrementer_tm.py -o out/wide.tm --state-width 3 --symbol-width 4 --dir-width 2
+  mtm emit-tm examples/source/incrementer_tm.py -o out/incrementer.tm
+  mtm emit-tm examples/source/incrementer_tm.py -o out/wide.tm --state-width 3 --symbol-width 4 --dir-width 2
 """,
     "emit-source": """\
 Emit a safe source artifact from a Python source TM.
 
 Example:
-  mtm emit-source examples/incrementer_tm.py -o out/incrementer.mtm.source
+  mtm emit-source examples/source/incrementer_tm.py -o out/incrementer.mtm.source
 """,
     "l1": """\
 Emit the standard L1 bundle from a Python source TM.
@@ -94,8 +94,8 @@ ABI width flags:
   --state-width, --symbol-width, and --dir-width must be supplied together.
 
 Examples:
-  mtm l1 examples/incrementer_tm.py --out-dir out
-  mtm l1 examples/incrementer_tm.py --out-dir out --stem incrementer --state-width 3 --symbol-width 4 --dir-width 2
+  mtm l1 examples/source/incrementer_tm.py --out-dir out
+  mtm l1 examples/source/incrementer_tm.py --out-dir out --stem incrementer --state-width 3 --symbol-width 4 --dir-width 2
 """,
     "l2": """\
 Emit L2 artifacts by compiling an L1 raw TM plus its L1 band as a raw guest.
@@ -527,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
 
     compile_parser = _add_command(sub, "compile", help="Compile a Python TM file into a .utm.band artifact.")
     compile_parser.add_argument("input", metavar="INPUT.py", help="Python source TM file")
-    compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.utm.band", help="encoded UTM band artifact to write")
+    compile_parser.add_argument("-o", "--output", required=True, metavar="OUTPUT.utm.band", help="encoded guest tape artifact to write")
     compile_parser.add_argument("--asm-out", metavar="OUTPUT.asm", help="also write the specialized Meta-ASM program")
     compile_parser.add_argument("--tm-out", metavar="OUTPUT.tm", help="also write the lowered raw UTM transition table")
     _add_abi_args(compile_parser)
@@ -560,12 +560,12 @@ def main(argv: list[str] | None = None) -> int:
 
     run_parser = _add_command(sub, "run", help="Run a .tm program on a .utm.band artifact.")
     run_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
-    run_parser.add_argument("input", metavar="INPUT.utm.band", help="encoded UTM band artifact")
+    run_parser.add_argument("input", metavar="INPUT.utm.band", help="encoded guest tape artifact")
     run_parser.add_argument("--max-steps", type=int, default=200_000, metavar="N", help="raw transition fuel; default: 200000")
 
     trace_parser = _add_command(sub, "trace", help="Emit a TSV trace for a .tm program and .utm.band input.")
     trace_parser.add_argument("tm_file", metavar="HOST.tm", help="raw UTM transition artifact")
-    trace_parser.add_argument("band_file", metavar="INPUT.utm.band", help="encoded UTM band artifact")
+    trace_parser.add_argument("band_file", metavar="INPUT.utm.band", help="encoded guest tape artifact")
     trace_parser.add_argument("--out", required=True, metavar="TRACE.tsv", help="trace TSV output path")
     trace_parser.add_argument("--level", choices=("raw", "instruction", "block", "source", "guest"), default="raw", help="trace grouping level")
     trace_parser.add_argument("--max-steps", type=int, default=100, metavar="N", help="maximum rows/groups to emit; default: 100")

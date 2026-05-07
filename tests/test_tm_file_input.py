@@ -175,7 +175,7 @@ def test_cli_compile_with_explicit_target_abi(tmp_path: Path) -> None:
 
 def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
     raw_tm_path = tmp_path / "utm.tm"
-    assert cli_main(["emit-tm", "examples/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
+    assert cli_main(["emit-tm", "examples/source/incrementer_tm.py", "-o", str(raw_tm_path)]) == 0
     tm = TMTransitionProgram.read(raw_tm_path)
     assert tm.halt_state == "U_HALT"
 
@@ -183,7 +183,7 @@ def test_cli_emit_tm_from_example_file(tmp_path: Path) -> None:
 def test_cli_emit_source_from_example_file(tmp_path: Path) -> None:
     source_path = tmp_path / "incrementer.mtm.source"
 
-    assert cli_main(["emit-source", "examples/incrementer_tm.py", "-o", str(source_path)]) == 0
+    assert cli_main(["emit-source", "examples/source/incrementer_tm.py", "-o", str(source_path)]) == 0
     loaded = read_source_artifact(source_path)
 
     assert loaded.name == "incrementer_tm"
@@ -371,7 +371,7 @@ def test_cli_run_allows_old_tm_without_abi_metadata(tmp_path: Path, capsys) -> N
 def test_cli_l1_generates_level_artifacts(tmp_path: Path) -> None:
     out_dir = tmp_path / "artifacts"
 
-    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir)]) == 0
+    assert cli_main(["l1", "examples/source/incrementer_tm.py", "--out-dir", str(out_dir)]) == 0
 
     source_path = out_dir / "incrementer_tm.mtm.source"
     band_path = out_dir / "incrementer_tm.l1.utm.band"
@@ -387,7 +387,7 @@ def test_cli_l1_generates_level_artifacts(tmp_path: Path) -> None:
 def test_cli_l2_generates_artifacts_and_runs_for_bounded_fuel(tmp_path: Path, capsys) -> None:
     out_dir = tmp_path / "artifacts"
 
-    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
+    assert cli_main(["l1", "examples/source/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
     assert cli_main([
         "l2",
         str(out_dir / "incrementer.l1.tm"),
@@ -416,7 +416,7 @@ def test_cli_l2_from_wider_l1_abi_generates_coherent_band(tmp_path: Path, capsys
 
     assert cli_main([
         "l1",
-        "examples/incrementer_tm.py",
+        "examples/source/incrementer_tm.py",
         "--out-dir",
         str(out_dir),
         "--stem",
@@ -467,7 +467,7 @@ def test_cli_l2_from_wider_l1_abi_generates_coherent_band(tmp_path: Path, capsys
 def test_cli_trace_emits_raw_instruction_and_block_levels(tmp_path: Path) -> None:
     out_dir = tmp_path / "artifacts"
 
-    assert cli_main(["l1", "examples/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
+    assert cli_main(["l1", "examples/source/incrementer_tm.py", "--out-dir", str(out_dir), "--stem", "incrementer"]) == 0
 
     tm_path = out_dir / "incrementer.l1.tm"
     band_path = out_dir / "incrementer.l1.utm.band"

@@ -40,7 +40,7 @@ First compile a source example:
 
 ```sh
 mkdir -p out
-uv run mtm compile examples/incrementer_tm.py \
+uv run mtm compile examples/source/incrementer_tm.py \
   -o out/incrementer.utm.band \
   --tm-out out/incrementer.tm
 ```

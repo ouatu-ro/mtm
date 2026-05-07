@@ -6,12 +6,13 @@ audience: engineer
 
 # Trace Viewer
 
-The trace viewer is a browser surface built from the existing files in `tools/`:
+The trace viewer is a browser surface built from the viewer file, its fixture
+bundle, and the example inputs that generated that bundle:
 
 - `tools/trace-viewer.html`
-- `tools/assets/incrementer-raw-trace.js`
-- `tools/assets/right-left-walk.tm`
-- `tools/assets/right_left_walk_tm.py`
+- `tools/trace-viewer-assets/fixtures.js`: bundled fixture data for `tools/trace-viewer.html`
+- `examples/raw/right-left-walk.tm`
+- `examples/source/right_left_walk_tm.py`
 
 It is an HTML/JS tool with supporting assets, not a library module and not a CLI
 subcommand.
