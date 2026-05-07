@@ -11,7 +11,7 @@ import ast
 from pathlib import Path
 
 from .raw_transition_tm import TMTransitionProgram
-from .semantic_objects import SourceArtifact, TMAbi, TMBand, UTMBandArtifact, UTMProgramArtifact
+from .semantic_objects import SourceArtifact, TMAbi, SourceTape, UTMBandArtifact, UTMProgramArtifact
 from .source_encoding import Encoding, TMProgram, abi_from_literal, abi_to_literal
 
 UTM_BAND_FORMAT = "mtm-utm-band-v1"
@@ -129,12 +129,12 @@ def _program_literal(program: TMProgram) -> dict[str, object]:
     }
 
 
-def _band_literal(band: TMBand) -> dict[str, object]:
+def _tape_literal(tape: SourceTape) -> dict[str, object]:
     return {
-        "left_band": list(band.left_band),
-        "right_band": list(band.right_band),
-        "head": band.head,
-        "blank": band.blank,
+        "left_band": list(tape.left_band),
+        "right_band": list(tape.right_band),
+        "head": tape.head,
+        "blank": tape.blank,
     }
 
 
@@ -145,7 +145,7 @@ def write_source_artifact(path: str | Path, artifact: SourceArtifact) -> None:
     fields = [
         f"format = {SOURCE_FORMAT!r}",
         f"tm_program = {_literal(_program_literal(artifact.program))}",
-        f"band = {_literal(_band_literal(artifact.band))}",
+        f"tape = {_literal(_tape_literal(artifact.tape))}",
         f"initial_state = {_literal(artifact.initial_state)}",
         f"halt_state = {_literal(artifact.halt_state)}",
     ]
@@ -162,7 +162,7 @@ def read_source_artifact(path: str | Path) -> SourceArtifact:
     namespace = _read_literal_assignments(path)
     _require_format(namespace, SOURCE_FORMAT)
     program_data = namespace["tm_program"]
-    band_data = namespace["band"]
+    tape_data = namespace["tape"]
     return SourceArtifact(
         program=TMProgram(
             program_data["transitions"],
@@ -170,11 +170,11 @@ def read_source_artifact(path: str | Path) -> SourceArtifact:
             halt_state=program_data.get("halt_state"),
             blank=program_data.get("blank", "_"),
         ),
-        band=TMBand.from_bands(
-            tuple(band_data["right_band"]),
-            left_band=tuple(band_data.get("left_band", ())),
-            head=band_data["head"],
-            blank=band_data["blank"],
+        tape=SourceTape.from_bands(
+            tuple(tape_data["right_band"]),
+            left_band=tuple(tape_data.get("left_band", ())),
+            head=tape_data["head"],
+            blank=tape_data["blank"],
         ),
         initial_state=namespace["initial_state"],
         halt_state=namespace["halt_state"],

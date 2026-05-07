@@ -16,7 +16,7 @@ from typing import Iterable
 from .source_encoding import Encoding, TMAbi, TMProgram, build_encoding, encode_direction, encode_state, encode_symbol, infer_minimal_abi, L, R
 
 if TYPE_CHECKING:
-    from .semantic_objects import TMBand
+    from .semantic_objects import SourceTape
 
 REGS, END_REGS, RULES, RULE, END_RULE, END_RULES = "#REGS", "#END_REGS", "#RULES", "#RULE", "#END_RULE", "#END_RULES"
 TAPE_LEFT, END_TAPE_LEFT = "#TAPE_LEFT", "#END_TAPE_LEFT"
@@ -43,8 +43,8 @@ UTM_STRUCTURAL_ALPHABET = (
 
 
 @dataclass(frozen=True)
-class EncodedBand:
-    """Concrete left/right band layout for one encoded UTM input."""
+class EncodedTape:
+    """Concrete left/right band token layout for one encoded UTM input."""
 
     encoding: Encoding; left_band: list[str]; right_band: list[str]
     minimal_abi: TMAbi | None = None; target_abi: TMAbi | None = None
@@ -68,7 +68,7 @@ class EncodedBand:
     def runtime_tape(self) -> dict[int, str]: return self.to_runtime_tape()
 
     @classmethod
-    def from_runtime_tape(cls, encoding: Encoding, runtime_tape: dict[int, str]) -> "EncodedBand":
+    def from_runtime_tape(cls, encoding: Encoding, runtime_tape: dict[int, str]) -> "EncodedTape":
         left_band, right_band = split_runtime_tape(runtime_tape)
         return cls(encoding, left_band, right_band)
 
@@ -114,23 +114,23 @@ def build_rule_band(encoding: Encoding, tm_program: TMProgram) -> list[str]:
     return band + [END_RULES]
 
 
-def build_left_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
+def build_left_tape_band_from_source_tape(encoding: Encoding, source_tape: "SourceTape") -> list[str]:
     """Build the encoded negative side of the simulated source tape."""
 
     band = [END_TAPE_LEFT]
-    first_address = -len(source_band.left_band)
-    for index, symbol in enumerate(source_band.left_band):
+    first_address = -len(source_tape.left_band)
+    for index, symbol in enumerate(source_tape.left_band):
         address = first_address + index
-        band.extend([CELL, HEAD if address == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+        band.extend([CELL, HEAD if address == source_tape.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
     return band + [TAPE_LEFT]
 
 
-def build_tape_band_from_source_band(encoding: Encoding, source_band: "TMBand") -> list[str]:
+def build_tape_band_from_source_tape(encoding: Encoding, source_tape: "SourceTape") -> list[str]:
     """Build the encoded nonnegative side of the simulated source tape."""
 
     band = [TAPE]
-    for index, symbol in enumerate(source_band.right_band):
-        band.extend([CELL, HEAD if index == source_band.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
+    for index, symbol in enumerate(source_tape.right_band):
+        band.extend([CELL, HEAD if index == source_tape.head else NO_HEAD, *encode_symbol(encoding, symbol), END_CELL])
     return band + [END_TAPE]
 
 
@@ -169,45 +169,45 @@ def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
 
 def compile_tm_to_universal_tape(
     tm_program: TMProgram,
-    source_band: "TMBand",
+    source_tape: "SourceTape",
     *,
     initial_state: str,
     halt_state: str,
     abi: TMAbi | None = None,
-) -> EncodedBand:
+) -> EncodedTape:
     """Compile a source TM and source tape into concrete UTM input bands."""
 
-    if tm_program.blank != source_band.blank:
+    if tm_program.blank != source_tape.blank:
         raise ValueError(
             f"source blank mismatch: TMProgram.blank={tm_program.blank!r} "
-            f"!= TMBand.blank={source_band.blank!r}"
+            f"!= SourceTape.blank={source_tape.blank!r}"
         )
     minimal_abi = infer_minimal_abi(
         tm_program,
         initial_state=initial_state,
         halt_state=halt_state,
-        blank=source_band.blank,
-        source_symbols=source_band.cells,
+        blank=source_tape.blank,
+        source_symbols=source_tape.cells,
     )
     target_abi = _target_abi_from_minimal_abi(minimal_abi) if abi is None else abi
     encoding = build_encoding(
         tm_program,
         initial_state=initial_state,
         halt_state=halt_state,
-        blank=source_band.blank,
-        source_symbols=source_band.cells,
+        blank=source_tape.blank,
+        source_symbols=source_tape.cells,
         abi=target_abi,
     )
-    left_band = build_left_tape_band_from_source_band(encoding, source_band)
+    left_band = build_left_tape_band_from_source_tape(encoding, source_tape)
     left_band += build_register_band(encoding) + build_rule_band(encoding, tm_program)
-    right_band = build_tape_band_from_source_band(encoding, source_band)
-    return EncodedBand(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
+    right_band = build_tape_band_from_source_tape(encoding, source_tape)
+    return EncodedTape(encoding, left_band, right_band, minimal_abi=minimal_abi, target_abi=target_abi)
 
 
 __all__ = ["BLANK_SYMBOL", "CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_CELL", "END_FIELD", "END_REGS", "END_RULE",
-           "END_RULES", "END_TAPE", "EncodedBand", "HALT_STATE", "HEAD", "LEFT_DIR", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
+           "END_RULES", "END_TAPE", "EncodedTape", "HALT_STATE", "HEAD", "LEFT_DIR", "MOVE", "MOVE_DIR", "NEXT", "NEXT_STATE", "NO_HEAD",
            "RIGHT_DIR", "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TAPE_LEFT",
-           "END_TAPE_LEFT", "TMP", "WRITE", "WRITE_SYMBOL", "build_left_tape_band_from_source_band",
-           "UTM_STRUCTURAL_ALPHABET", "build_register_band", "build_rule_band", "build_tape_band_from_source_band",
+           "END_TAPE_LEFT", "TMP", "WRITE", "WRITE_SYMBOL", "build_left_tape_band_from_source_tape",
+           "UTM_STRUCTURAL_ALPHABET", "build_register_band", "build_rule_band", "build_tape_band_from_source_tape",
            "compile_tm_to_universal_tape", "materialize_runtime_tape", "place_on_negative_side",
            "place_on_positive_side", "split_runtime_tape", "wrap_field"]

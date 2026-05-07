@@ -44,7 +44,7 @@ class UniversalInterpreter:
     def alphabet_for_band(self, band_artifact: UTMBandArtifact) -> tuple[str, ...]:
         """Compute the raw TM alphabet needed to run one band artifact."""
 
-        return tuple(sorted(set(band_artifact.to_encoded_band().linear()) | set(UTM_STRUCTURAL_ALPHABET) | {ACTIVE_RULE}))
+        return tuple(sorted(set(band_artifact.to_encoded_tape().linear()) | set(UTM_STRUCTURAL_ALPHABET) | {ACTIVE_RULE}))
 
     def lower(
         self,

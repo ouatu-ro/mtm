@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HALT_STATE, HEAD, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RIGHT_DIR, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedBand
+from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, END_REGS, END_RULE, END_RULES, END_TAPE, END_TAPE_LEFT, HALT_STATE, HEAD, LEFT_DIR, MOVE, MOVE_DIR, NEXT, NEXT_STATE, NO_HEAD, RIGHT_DIR, RUNTIME_BLANK, READ, REGS, RULE, RULES, STATE, TAPE, TAPE_LEFT, TMP, WRITE, WRITE_SYMBOL, EncodedTape
 from .source_encoding import Encoding, L, R, encode_direction, encode_state, encode_symbol
 
 RuleRow = tuple[str, str, str, str, int]
@@ -211,7 +211,7 @@ def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str:
     return section("RUNTIME TAPE", table(["addr", "side", "value"], rows))
 
 
-def pretty_band(band: EncodedBand, *, show_runtime: bool = False) -> str:
+def pretty_band(band: EncodedTape, *, show_runtime: bool = False) -> str:
     parts = [
         pretty_encoding(band.encoding),
         pretty_registers(band.encoding, band.left_band),
@@ -224,7 +224,7 @@ def pretty_band(band: EncodedBand, *, show_runtime: bool = False) -> str:
 
 
 def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     summary = section(
         "FIXTURE",
         table(
@@ -232,15 +232,15 @@ def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
             [
                 ["name", fixture.name],
                 ["note", fixture.note or "-"],
-                ["source band", "".join(fixture.band.cells)],
-                ["source head", fixture.band.head],
-                ["states", len(band.encoding.state_ids)],
-                ["symbols", len(band.encoding.symbol_ids)],
+                ["source tape", "".join(fixture.tape.cells)],
+                ["source head", fixture.tape.head],
+                ["states", len(tape.encoding.state_ids)],
+                ["symbols", len(tape.encoding.symbol_ids)],
                 ["rules", len(fixture.tm_program)],
             ],
         ),
     )
-    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(band, show_runtime=show_runtime)
+    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(tape, show_runtime=show_runtime)
 
 
 __all__ = ["dir_name", "format_bits", "parse_registers", "parse_rules", "parse_tape", "pretty_band", "pretty_encoding",

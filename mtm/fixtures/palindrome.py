@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..semantic_objects import TMBand
+from ..semantic_objects import SourceTape
 from ..source_encoding import L, R, TMProgram
 from . import TMFixture
 
@@ -44,7 +44,7 @@ fixture = TMFixture(
         ("qReturnLeft", mark): ("qReturnLeft", mark, L),
         ("qReturnLeft", blank): ("qStart", blank, R),
     }, initial_state=initial_state, halt_state=halt_state, blank=blank),
-    band=TMBand.from_dict({-1: "1", 0: "0", 1: "1"}, head=-1, blank=blank),
+    tape=SourceTape.from_dict({-1: "1", 0: "0", 1: "1"}, head=-1, blank=blank),
     initial_state=initial_state,
     halt_state=halt_state,
     note="Binary palindrome check over source addresses -1, 0, and 1.",

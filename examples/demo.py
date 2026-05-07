@@ -7,7 +7,7 @@ from typing import Any
 
 from mtm.fixtures import list_fixtures, load_fixture
 from mtm.compiler import Compiler
-from mtm.utm_band_layout import EncodedBand, split_runtime_tape
+from mtm.utm_band_layout import EncodedTape, split_runtime_tape
 from mtm.meta_asm import format_program
 from mtm.meta_asm_host import format_meta_trace, run_meta_asm_runtime
 from mtm.pretty import pretty_fixture, pretty_registers, pretty_tape
@@ -20,7 +20,7 @@ from mtm.universal import UniversalInterpreter
 def _instance_from_fixture(fixture: Any) -> TMInstance:
     return TMInstance(
         program=fixture.tm_program,
-        band=fixture.band,
+        tape=fixture.tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
@@ -28,8 +28,8 @@ def _instance_from_fixture(fixture: Any) -> TMInstance:
 
 def _source_tape_from_fixture(fixture: Any) -> dict[int, str]:
     return {
-        **{address: symbol for address, symbol in enumerate(fixture.band.left_band, start=-len(fixture.band.left_band))},
-        **{address: symbol for address, symbol in enumerate(fixture.band.right_band)},
+        **{address: symbol for address, symbol in enumerate(fixture.tape.left_band, start=-len(fixture.tape.left_band))},
+        **{address: symbol for address, symbol in enumerate(fixture.tape.right_band)},
     }
 
 
@@ -50,12 +50,12 @@ def _format_source_snapshot(step: int, state: str, head: int, tape: dict[int, st
 def _run_source_preview(fixture: Any, *, max_steps: int) -> None:
     tape = _source_tape_from_fixture(fixture)
     state = fixture.initial_state
-    head = fixture.band.head
+    head = fixture.tape.head
     print("SOURCE TRACE")
     print()
-    print(_format_source_snapshot(0, state, head, tape, fixture.band.blank))
+    print(_format_source_snapshot(0, state, head, tape, fixture.tape.blank))
     for step in range(1, max_steps + 1):
-        read = tape.get(head, fixture.band.blank)
+        read = tape.get(head, fixture.tape.blank)
         transition = fixture.tm_program.transition_for(state, read)
         if transition is None:
             print()
@@ -65,7 +65,7 @@ def _run_source_preview(fixture: Any, *, max_steps: int) -> None:
         tape[head] = write
         head += move
         print()
-        print(_format_source_snapshot(step, state, head, tape, fixture.band.blank))
+        print(_format_source_snapshot(step, state, head, tape, fixture.tape.blank))
         if state == fixture.halt_state:
             print()
             print("HALTED")
@@ -75,7 +75,7 @@ def _run_source_preview(fixture: Any, *, max_steps: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded runtime band.")
+    parser = argparse.ArgumentParser(description="Show an MTM fixture and its encoded runtime tape.")
     parser.add_argument("fixture", nargs="?", default="incrementer")
     parser.add_argument("--list", action="store_true", help="List available fixtures.")
     parser.add_argument("--tm-file", help="Load a plain Python TM definition file instead of a fixture.")
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     instance = _instance_from_fixture(fixture)
     encoded = Compiler().compile(instance)
     band_artifact = encoded.to_band_artifact()
-    band = band_artifact.to_encoded_band()
+    tape = band_artifact.to_encoded_tape()
     interpreter = UniversalInterpreter.for_encoded(encoded)
     program = interpreter.to_meta_asm()
     program_artifact = interpreter.lower_for_band(band_artifact)
@@ -117,9 +117,9 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_program(program))
     if args.run_asm:
-        status, final_runtime_tape, trace, reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=args.max_steps)
+        status, final_runtime_tape, trace, reason = run_meta_asm_runtime(program, tape.encoding, tape.runtime_tape, max_steps=args.max_steps)
         final_left_band, final_right_band = split_runtime_tape(final_runtime_tape)
-        final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
+        final_tape = EncodedTape(tape.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)
         print()
@@ -132,13 +132,13 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print("FINAL REGISTERS")
         print()
-        print(pretty_registers(final_band.encoding, final_band.left_band))
+        print(pretty_registers(final_tape.encoding, final_tape.left_band))
         print()
         print("=" * 88)
         print()
         print("FINAL TAPE")
         print()
-        print(pretty_tape(final_band.encoding, final_band.right_band))
+        print(pretty_tape(final_tape.encoding, final_tape.right_band))
     if args.emit_raw_tm:
         print()
         print("=" * 88)
@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         config = band_artifact.to_raw_instance(program_artifact)
         result = run_raw_tm(raw_tm, config.tape, head=config.head, state=config.state, max_steps=args.max_raw_steps)
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
-        final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
+        final_tape = EncodedTape(tape.encoding, final_left_band, final_right_band)
         print()
         print("=" * 88)
         print()
@@ -163,13 +163,13 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print("FINAL REGISTERS")
         print()
-        print(pretty_registers(final_band.encoding, final_band.left_band))
+        print(pretty_registers(final_tape.encoding, final_tape.left_band))
         print()
         print("=" * 88)
         print()
         print("FINAL TAPE")
         print()
-        print(pretty_tape(final_band.encoding, final_band.right_band))
+        print(pretty_tape(final_tape.encoding, final_tape.right_band))
     return 0
 
 

@@ -6,7 +6,7 @@ from mtm.lowering import lower_program_with_source_map
 from mtm.lowering.constants import ACTIVE_RULE
 from mtm.meta_asm import Block, Goto, Program, Seek, build_universal_meta_asm
 from mtm.raw_transition_tm import S, TMBuilder
-from mtm.semantic_objects import start_head_from_encoded_band
+from mtm.semantic_objects import start_head_from_encoded_tape
 from mtm.source_encoding import Encoding
 from mtm.utm_band_layout import CUR_STATE, RULES
 
@@ -39,23 +39,23 @@ def _build_incrementer_session(
     request_decode: bool = False,
     max_raw: int = 100000,
 ) -> tuple[DebuggerSession, object]:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
     session = DebuggerSession(
         runner,
-        encoding=band.encoding if request_decode else None,
+        encoding=tape.encoding if request_decode else None,
         max_raw=max_raw,
     )
-    return session, band
+    return session, tape
 
 
 def _build_meta_session_for_block_step() -> RawTraceRunner:
@@ -127,13 +127,13 @@ def test_session_view_reports_semantic_decode_and_unavailable_mode() -> None:
 
 
 def test_session_view_reports_semantic_decode_error_without_raising() -> None:
-    band = load_fixture("incrementer").build_band()
-    builder = TMBuilder(sorted(set(band.linear()) | {"0", "1"}), blank=band.encoding.blank)
+    tape = load_fixture("incrementer").build_tape()
+    builder = TMBuilder(sorted(set(tape.linear()) | {"0", "1"}), blank=tape.encoding.blank)
     builder.emit("start", CUR_STATE, builder.halt_state, "0", S)
-    runner = RawTraceRunner(builder.build("start"), band.runtime_tape, head=start_head_from_encoded_band(band))
+    runner = RawTraceRunner(builder.build("start"), tape.runtime_tape, head=start_head_from_encoded_tape(tape))
     runner.step()
 
-    session = DebuggerSession(runner, encoding=band.encoding)
+    session = DebuggerSession(runner, encoding=tape.encoding)
     text = _render_view(session)
 
     assert "SEMANTIC     <decode error:" in text

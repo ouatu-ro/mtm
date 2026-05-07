@@ -11,12 +11,12 @@ from .compiler import Compiler
 from .debugger import DebuggerSession, DebuggerShell, RawTraceRunner
 from .lowering import ACTIVE_RULE, lower_program_with_source_map
 from .meta_asm import build_universal_meta_asm
-from .utm_band_layout import EncodedBand, split_runtime_tape
+from .utm_band_layout import EncodedTape, split_runtime_tape
 from .meta_asm import format_program
 from . import load_fixture
 from .pretty import pretty_registers, pretty_tape
 from .source_file import load_python_tm_instance, source_artifact_from_python
-from .semantic_objects import RawTMInstance, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, start_head_from_encoded_band
+from .semantic_objects import RawTMInstance, UTMBandArtifact, UTMEncoded, UTMProgramArtifact, compile_raw_guest, start_head_from_encoded_tape
 from .source_encoding import TMAbi
 from .universal import UniversalInterpreter
 
@@ -213,19 +213,19 @@ def _l2_artifact_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path]:
 
 def _build_fixture_debugger_session(name: str, *, max_raw: int = DEBUG_DEFAULT_MAX_RAW) -> DebuggerSession:
     fixture = load_fixture(name)
-    band = fixture.build_band()
-    program = build_universal_meta_asm(band.encoding)
-    band_symbols = band.linear() if hasattr(band, "linear") else tuple(band.runtime_tape.values())
-    alphabet = sorted(set(band_symbols) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    tape_symbols = tape.linear() if hasattr(tape, "linear") else tuple(tape.runtime_tape.values())
+    alphabet = sorted(set(tape_symbols) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
-    return DebuggerSession(runner, encoding=band.encoding, max_raw=max_raw)
+    return DebuggerSession(runner, encoding=tape.encoding, max_raw=max_raw)
 
 
 def _run_debugger(session: DebuggerSession, label: str) -> int:
@@ -642,15 +642,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.input is None:
         raise SystemExit("run requires INPUT.utm.band")
     artifact = UTMBandArtifact.read(args.input)
-    band = artifact.to_encoded_band()
+    tape = artifact.to_encoded_tape()
     program_artifact = UTMProgramArtifact.read(args.tm_file)
     config = artifact.to_raw_instance(program_artifact)
     runtime_tape = dict(config.tape)
     result = program_artifact.run(artifact, fuel=args.max_steps)
-    final_left_band, final_right_band = band.left_band, band.right_band
+    final_left_band, final_right_band = tape.left_band, tape.right_band
     if result["tape"] != runtime_tape:
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
-    final_band = EncodedBand(band.encoding, final_left_band, final_right_band)
+    final_band = EncodedTape(tape.encoding, final_left_band, final_right_band)
     print(f"FINAL STATUS: {result['status']}")
     print(f"FINAL STATE: {result['state']}")
     print(f"FINAL HEAD: {result['head']}")

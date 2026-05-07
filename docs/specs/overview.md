@@ -119,7 +119,7 @@ Source-level machine definition:
 
 ```text
 TMProgram
-  + TMBand
+  + SourceTape
   + initial_state
   + halt_state
     ↓
@@ -342,7 +342,7 @@ Semantic inspection reconstructs source-level meaning from encoded runtime
 state:
 
 ```text
-EncodedBand
+EncodedTape
   + Encoding
     ↓
 DecodedBandView
@@ -418,7 +418,7 @@ Responsibilities:
 The current top-level workflow is:
 
 ```python
-instance = TMInstance(program, band, initial_state=..., halt_state=...)
+instance = TMInstance(program, tape, initial_state=..., halt_state=...)
 
 compiler = Compiler(target_abi=abi)
 encoded = compiler.compile(instance)
@@ -437,7 +437,7 @@ result = program_artifact.run(band_artifact, fuel=100_000)
 Primary objects:
 
 - `TMProgram`
-- `TMBand`
+- `SourceTape`
 - `TMInstance`
 - `TMAbi`
 - `Encoding`

@@ -94,13 +94,13 @@ Responsibilities:
 - validate source-level transitions
 - support ABI inference for a source machine
 
-### `TMBand`
+### `SourceTape`
 
 Source-level tape/configuration for the object machine.
 
 Current code:
 
-- class: `mtm.semantic_objects.TMBand`
+- class: `mtm.semantic_objects.SourceTape`
 - fields:
   - `left_band`
   - `right_band`
@@ -114,7 +114,7 @@ Meaning:
 - `head` is the simulated source-machine head address
 - `blank` is the source machine blank symbol
 
-Use `TMBand.from_dict(...)` when source addresses matter directly.
+Use `SourceTape.from_dict(...)` when source addresses matter directly.
 
 ### `TMInstance`
 
@@ -125,7 +125,7 @@ Current code:
 - class: `mtm.semantic_objects.TMInstance`
 - fields:
   - `program: TMProgram`
-  - `band: TMBand`
+  - `tape: SourceTape`
   - `initial_state: str | None`
   - `halt_state: str | None`
 
@@ -262,14 +262,14 @@ Current code:
 Responsibilities:
 
 - expose the guest in semantic UTM form
-- materialize a concrete `EncodedBand`
+- materialize a concrete `EncodedTape`
 - emit a serializable `UTMBandArtifact`
 - expose a `DecodedBandView`
 
 Important methods:
 
 ```python
-encoded.to_encoded_band() -> EncodedBand
+encoded.to_encoded_tape() -> EncodedTape
 encoded.to_band_artifact() -> UTMBandArtifact
 encoded.decoded_view() -> DecodedBandView
 ```
@@ -441,7 +441,7 @@ Responsibilities:
 Important methods:
 
 ```python
-artifact.to_encoded_band() -> EncodedBand
+artifact.to_encoded_tape() -> EncodedTape
 artifact.to_runtime_tape() -> dict[int, str]
 artifact.to_raw_instance(program_artifact_or_tm) -> RawTMInstance
 artifact.write(path) -> None
@@ -606,13 +606,13 @@ TMInstance
 -> selected target TMAbi
 -> Encoding
 -> UTMEncoded
--> EncodedBand / UTMBandArtifact
+-> EncodedTape / UTMBandArtifact
 ```
 
 ## 10. Current Primary Workflow
 
 ```python
-instance = TMInstance(program, band, initial_state=..., halt_state=...)
+instance = TMInstance(program, tape, initial_state=..., halt_state=...)
 
 compiler = Compiler(target_abi=abi)
 encoded = compiler.compile(instance)
@@ -636,7 +636,7 @@ The recursive/self-hosting path now has explicit source and raw guest objects.
 Serializable source-level bundle corresponding to source guest input:
 
 - `TMProgram`
-- `TMBand`
+- `SourceTape`
 - `initial_state`
 - `halt_state`
 - optional `name` / `note`
@@ -682,7 +682,7 @@ host-vs-band ABI lattice checks are implemented.
 ### Decode entry points
 
 `UTMBandArtifact` supports semantic decode and debugging through helper
-functions after conversion to `EncodedBand`, but it does not yet expose a
+functions after conversion to `EncodedTape`, but it does not yet expose a
 direct artifact-level method such as `artifact.decoded_view()`.
 
 ### Typed run results
@@ -696,7 +696,7 @@ cleanup, but it is not the current generic run API.
 ## 13. Short Mapping
 
 - `TMProgram` = source transition semantics
-- `TMBand` = source input tape/configuration
+- `SourceTape` = source input tape/configuration
 - `TMInstance` = source guest bundle
 - `TMAbi` = universal-machine family shape
 - `Encoding` = concrete source-name-to-bitstring mapping

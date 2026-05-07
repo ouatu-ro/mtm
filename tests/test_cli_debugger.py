@@ -16,7 +16,7 @@ import mtm.semantic_objects
 def _install_debugger_stubs(monkeypatch):
     calls = {
         "load_fixture": [],
-        "build_band": [],
+        "build_tape": [],
         "build_universal": [],
         "lower_with_source_map": [],
         "start_head": [],
@@ -36,8 +36,8 @@ def _install_debugger_stubs(monkeypatch):
     class FakeFixture:
         name = "incrementer"
 
-        def build_band(self):
-            calls["build_band"].append(self.name)
+        def build_tape(self):
+            calls["build_tape"].append(self.name)
             return fake_band
 
     class FakeRawTraceRunner:
@@ -77,7 +77,7 @@ def _install_debugger_stubs(monkeypatch):
         calls["lower_with_source_map"].append((program.entry_label, len(tuple(alphabet))))
         return SimpleNamespace(raw_program="raw-program", source_map="source-map")
 
-    def fake_start_head_from_encoded_band(band):
+    def fake_start_head_from_encoded_tape(band):
         calls["start_head"].append(band is fake_band)
         return -155
 
@@ -85,7 +85,7 @@ def _install_debugger_stubs(monkeypatch):
     monkeypatch.setattr(mtm, "load_fixture", fake_load_fixture, raising=False)
     monkeypatch.setattr(mtm.lowering, "lower_program_with_source_map", fake_lower_program_with_source_map, raising=False)
     monkeypatch.setattr(mtm.meta_asm, "build_universal_meta_asm", fake_build_universal_meta_asm, raising=False)
-    monkeypatch.setattr(mtm.semantic_objects, "start_head_from_encoded_band", fake_start_head_from_encoded_band, raising=False)
+    monkeypatch.setattr(mtm.semantic_objects, "start_head_from_encoded_tape", fake_start_head_from_encoded_tape, raising=False)
     monkeypatch.setattr(mtm.debugger, "RawTraceRunner", FakeRawTraceRunner, raising=False)
     monkeypatch.setattr(mtm.debugger, "DebuggerSession", FakeDebuggerSession, raising=False)
     monkeypatch.setattr(mtm.debugger, "DebuggerShell", FakeDebuggerShell, raising=False)
@@ -94,7 +94,7 @@ def _install_debugger_stubs(monkeypatch):
     monkeypatch.setattr(mtm.debugger.trace, "RawTraceRunner", FakeRawTraceRunner, raising=False)
     monkeypatch.setattr(cli, "lower_program_with_source_map", fake_lower_program_with_source_map, raising=False)
     monkeypatch.setattr(cli, "build_universal_meta_asm", fake_build_universal_meta_asm, raising=False)
-    monkeypatch.setattr(cli, "start_head_from_encoded_band", fake_start_head_from_encoded_band, raising=False)
+    monkeypatch.setattr(cli, "start_head_from_encoded_tape", fake_start_head_from_encoded_tape, raising=False)
     monkeypatch.setattr(cli, "RawTraceRunner", FakeRawTraceRunner, raising=False)
     monkeypatch.setattr(cli, "DebuggerSession", FakeDebuggerSession, raising=False)
     monkeypatch.setattr(cli, "DebuggerShell", FakeDebuggerShell, raising=False)
@@ -115,7 +115,7 @@ def test_cli_dbg_positional_fixture_uses_shell_startup_path(monkeypatch, capsys)
     assert exit_code == 0
     assert output.strip() == "formatted:startup:incrementer"
     assert calls["load_fixture"] == ["incrementer"]
-    assert calls["build_band"] == ["incrementer"]
+    assert calls["build_tape"] == ["incrementer"]
     assert calls["build_universal"] == ["encoding"]
     assert calls["lower_with_source_map"] == [("START_STEP", 3)]
     assert calls["start_head"] == [True]

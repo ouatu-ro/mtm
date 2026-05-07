@@ -57,7 +57,7 @@ Out of scope:
   Validation: old `.tm` artifacts still read; new round-trip tests cover `.tm` with and without ABI metadata.
 
 - [x] S3: Fix compiler correctness gaps.
-  Deliverables: endpoint fallback order is `TMInstance`, then `TMProgram`, then `Compiler`; instance values override program values; compilation rejects `TMProgram.blank != TMBand.blank`; ABI validation checks `state_width`, `symbol_width`, `dir_width`, and `grammar_version`.
+  Deliverables: endpoint fallback order is `TMInstance`, then `TMProgram`, then `Compiler`; instance values override program values; compilation rejects `TMProgram.blank != SourceTape.blank`; ABI validation checks `state_width`, `symbol_width`, `dir_width`, and `grammar_version`.
   Validation: targeted compiler tests for all endpoint sources, blank mismatch, and grammar-version mismatch.
 
 - [x] S4: Add artifact compatibility checks at run time.
@@ -69,7 +69,7 @@ Out of scope:
   Validation: existing raw transition tests still pass; docs can refer to `transitions` without lying.
 
 - [x] S6: Introduce a serializable source artifact.
-  Deliverables: safe literal-assignment `*.mtm.source` artifact containing `TMProgram`, `TMBand`, `initial_state`, `halt_state`, and optional `name` / `note`; parser uses literal evaluation and no `run_path`; CLI can emit source artifact from `.py`.
+  Deliverables: safe literal-assignment `*.mtm.source` artifact containing `TMProgram`, `SourceTape`, `initial_state`, `halt_state`, and optional `name` / `note`; parser uses literal evaluation and no `run_path`; CLI can emit source artifact from `.py`.
   Validation: source artifact read/write round-trip test; CLI source emission test.
 
 - [x] S7: Rename/generalize `TMRunConfig` to `RawTMInstance`.
@@ -82,7 +82,7 @@ Out of scope:
   Validation: raw-guest encoding tests with `S`; inferred `dir_width` tests when `S` is present; host dispatch test that intentionally treats neither `L` nor `R` as stay-put.
 
 - [x] S9: Implement the raw-guest compiler path.
-  Deliverables: compile `RawTMInstance -> UTMEncoded -> UTMBandArtifact`; raw guest tape conversion mirrors `TMBand.from_dict(...)` semantics, with negative addresses on `left_band`, nonnegative addresses on `right_band`, and the current head cell included even if blank.
+  Deliverables: compile `RawTMInstance -> UTMEncoded -> UTMBandArtifact`; raw guest tape conversion mirrors `SourceTape.from_dict(...)` semantics, with negative addresses on `left_band`, nonnegative addresses on `right_band`, and the current head cell included even if blank.
   Validation: trivial `TMTransitionProgram` guest compiles into `.utm.band`; resulting band is runnable by a lowered host.
 
 - [x] S10: Add the `l1` / `l2` CLI workflow.

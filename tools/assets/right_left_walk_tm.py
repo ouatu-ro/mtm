@@ -1,7 +1,7 @@
 blank = "_"
 initial_state = "q0"
 halt_state = "qH"
-band = TMBand(right_band=(blank,), head=0, blank=blank)
+tape = SourceTape(right_band=(blank,), head=0, blank=blank)
 note = "Move right once, left three times, write C at -1, then halt at -2."
 
 tm_program = TMProgram({

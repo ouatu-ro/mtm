@@ -16,9 +16,9 @@ from typing import Callable, Mapping
 
 from ..lowering.source_map import RawTransitionSource, TransitionSourceMap
 from ..raw_transition_tm import TMTransitionProgram, Transition, TransitionKey
-from ..semantic_objects import DecodedBandView, decoded_view_from_encoded_band
+from ..semantic_objects import DecodedBandView, decoded_view_from_encoded_tape
 from ..source_encoding import Encoding
-from ..utm_band_layout import EncodedBand
+from ..utm_band_layout import EncodedTape
 
 
 @dataclass(frozen=True)
@@ -359,8 +359,8 @@ class RawTraceRunner:
         decode_error = None
         if encoding is not None:
             try:
-                band = EncodedBand.from_runtime_tape(encoding, self.current.tape_dict())
-                decoded_view = decoded_view_from_encoded_band(band)
+                tape = EncodedTape.from_runtime_tape(encoding, self.current.tape_dict())
+                decoded_view = decoded_view_from_encoded_tape(tape)
             except Exception as exc:  # pragma: no cover - exercised through public fields
                 decode_error = f"{type(exc).__name__}: {exc}"
         return RawTraceView(

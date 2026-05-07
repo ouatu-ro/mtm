@@ -7,7 +7,7 @@ pipeline we use for an ordinary guest machine. In other words, we want a real
 bootstrap story:
 
 ```text
-source TMProgram + source TMBand
+source TMProgram + source SourceTape
   -> L1 UTM host + L1 encoded band
   -> L2 UTM host + L2 encoded band
 ```
@@ -29,15 +29,15 @@ The source-level objects are:
 TMProgram
   source transition relation
 
-TMBand
+SourceTape
   source tape/input
 ```
 
 The compiler turns those into a universal-machine instance:
 
 ```text
-TMProgram + TMBand
-  -> EncodedBand / UTMBandArtifact
+TMProgram + SourceTape
+  -> EncodedTape / UTMBandArtifact
   -> UniversalInterpreter
   -> MetaASM program
   -> lowered raw TM host

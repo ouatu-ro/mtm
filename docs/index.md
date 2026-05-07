@@ -25,7 +25,7 @@ MTM is organized as a staged compiler and execution pipeline:
 
 ```text
 Source guest layer
-  TMProgram + TMBand + initial_state + halt_state
+  TMProgram + SourceTape + initial_state + halt_state
     -> TMInstance
 
 ABI and encoding layer

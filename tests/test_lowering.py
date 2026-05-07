@@ -1,10 +1,10 @@
-from mtm import TMAbi, TMBand, load_fixture
+from mtm import TMAbi, SourceTape, load_fixture
 from mtm.lowering import ACTIVE_RULE, CFGTransition, HeadAt, KeepWrite, NameSupply, ReadAny, ReadAnyExcept, ReadSymbol, ReadSymbols, RoutineCFG, Routine, SeekOp, WriteSymbolAction, assemble_cfg, compile_routine, instruction_sequence_to_routines, lower_instruction_to_routine, lower_program_to_raw_tm, lower_program_with_source_map, program_to_cfgs, validate_cfg, validate_program_cfgs
 from mtm.meta_asm import Block, BranchCmp, CompareGlobalGlobal, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, Goto, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, format_instruction
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
-from mtm.semantic_objects import decoded_view_from_encoded_band
+from mtm.semantic_objects import decoded_view_from_encoded_tape
 from mtm.source_encoding import encode_symbol
 from mtm.utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
@@ -105,11 +105,11 @@ def _head_cell_payload_anywhere(runtime_tape) -> tuple[str, ...]:
     raise AssertionError("expected runtime tape to contain a simulated head")
 
 
-def _build_wider_host_band(source_band: TMBand):
+def _build_wider_host_tape(source_tape: SourceTape):
     fixture = load_fixture("incrementer")
     return compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        source_tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
         abi=TMAbi(3, 4, 2, "mtm-v1", "U[Wq=3,Ws=4,Wd=2]"),
@@ -170,19 +170,19 @@ def test_first_lowered_fragments_smoke() -> None:
 
 def test_lowered_start_step_matches_host_block() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    program = build_universal_meta_asm(band.encoding)
+    tape = fixture.build_tape()
+    program = build_universal_meta_asm(tape.encoding)
     start_block = next(block for block in program.blocks if block.label == "START_STEP")
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    left_addresses = list(range(-len(band.left_band), 0))
-    cur_state_head = left_addresses[band.left_band.index(CUR_STATE)]
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    left_addresses = list(range(-len(tape.left_band), 0))
+    cur_state_head = left_addresses[tape.left_band.index(CUR_STATE)]
 
     for cur_state_bits, expected_label, expected_cmp in [
         ("10", "FIND_HEAD", "0"),
         ("01", "HALT", "1"),
     ]:
-        prepared_tape = _set_global_bits(band, CUR_STATE, cur_state_bits)
-        host = run_meta_asm_block_runtime(program, band.encoding, prepared_tape, label="START_STEP", max_steps=10)
+        prepared_tape = _set_global_bits(tape, CUR_STATE, cur_state_bits)
+        host = run_meta_asm_block_runtime(program, tape.encoding, prepared_tape, label="START_STEP", max_steps=10)
         builder = TMBuilder(alphabet)
         _assemble_sequence(builder, start_block.instructions, start_state="START_STEP", exit_label="DONE")
         result = run_raw_tm(builder.build("START_STEP"), prepared_tape, head=cur_state_head, max_steps=200)
@@ -196,21 +196,21 @@ def test_lowered_start_step_matches_host_block() -> None:
 
 def test_compare_global_global_matches_host_block() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
 
     for cur_state_bits, expected_cmp in [("10", "0"), ("01", "1")]:
         builder = TMBuilder(alphabet)
-        prepared_tape = _set_global_bits(band, CUR_STATE, cur_state_bits)
+        prepared_tape = _set_global_bits(tape, CUR_STATE, cur_state_bits)
         host = run_meta_asm_block_runtime(
-            Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
-            band.encoding,
+            Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, tape.encoding.state_width),)),), entry_label="START"),
+            tape.encoding,
             prepared_tape,
             label="START",
             max_steps=5,
         )
-        assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width), state="start", continuation_label="DONE")
+        assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, tape.encoding.state_width), state="start", continuation_label="DONE")
         result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_STATE), max_steps=500)
         final_left_band, _ = split_runtime_tape(result["tape"])
         cmp_index = final_left_band.index(CMP_FLAG)
@@ -223,16 +223,16 @@ def test_compare_global_global_matches_host_block() -> None:
 
 def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     prepared_tape = _rewrite_global_field(
-        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         HALT_STATE,
         ("1",),
     )
 
     result = run_meta_asm_block_runtime(
-        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, tape.encoding.state_width),)),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
@@ -246,23 +246,23 @@ def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators
 
 def test_lowered_compare_global_global_stops_at_matching_early_terminators() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
-        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         HALT_STATE,
         ("1",),
     )
     host = run_meta_asm_block_runtime(
-        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width),)),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (CompareGlobalGlobal(CUR_STATE, HALT_STATE, tape.encoding.state_width),)),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
     )
-    assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, band.encoding.state_width), state="start", continuation_label="DONE")
-    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    assemble_instruction(builder, CompareGlobalGlobal(CUR_STATE, HALT_STATE, tape.encoding.state_width), state="start", continuation_label="DONE")
+    address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
     result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_STATE), max_steps=1000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cmp_index = final_left_band.index(CMP_FLAG)
@@ -274,7 +274,7 @@ def test_lowered_compare_global_global_stops_at_matching_early_terminators() -> 
 
 
 def test_move_sim_head_right_expands_with_band_blank_symbol_payload() -> None:
-    band = _build_wider_host_band(TMBand.from_dict({0: "1"}, head=0, blank="_"))
+    band = _build_wider_host_tape(SourceTape.from_dict({0: "1"}, head=0, blank="_"))
     prepared_tape = _rewrite_global_field(band.runtime_tape, BLANK_SYMBOL, ("0", "0"))
     instructions = (FindHeadCell(), MoveSimHeadRight(band.encoding.symbol_width))
     program = Program((Block("START", instructions),), entry_label="START")
@@ -292,7 +292,7 @@ def test_move_sim_head_right_expands_with_band_blank_symbol_payload() -> None:
 
 
 def test_move_sim_head_left_expands_with_band_blank_symbol_payload() -> None:
-    band = _build_wider_host_band(TMBand.from_dict({-1: "1", 0: "0"}, head=-1, blank="_"))
+    band = _build_wider_host_tape(SourceTape.from_dict({-1: "1", 0: "0"}, head=-1, blank="_"))
     prepared_tape = _rewrite_global_field(band.runtime_tape, BLANK_SYMBOL, ("0", "0"))
     instructions = (FindHeadCell(), MoveSimHeadLeft(band.encoding.symbol_width))
     program = Program((Block("START", instructions),), entry_label="START")
@@ -311,9 +311,9 @@ def test_move_sim_head_left_expands_with_band_blank_symbol_payload() -> None:
 
 def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     prepared_tape = _rewrite_first_rule_field(
-        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         STATE,
         ("1", "0"),
     )
@@ -321,11 +321,11 @@ def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() ->
     result = run_meta_asm_block_runtime(
         Program(
             (
-                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width))),
+                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, tape.encoding.state_width))),
             ),
             entry_label="START",
         ),
-        band.encoding,
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
@@ -339,28 +339,28 @@ def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() ->
 
 def test_lowered_compare_global_local_fails_when_one_field_ends_early() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_first_rule_field(
-        _rewrite_global_field(band.runtime_tape, CUR_STATE, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         STATE,
         ("1", "0"),
     )
     host = run_meta_asm_block_runtime(
         Program(
             (
-                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width))),
+                Block("START", (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, tape.encoding.state_width))),
             ),
             entry_label="START",
         ),
-        band.encoding,
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
     )
-    _assemble_sequence(builder, (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, band.encoding.state_width)), start_state="START", exit_label="DONE")
-    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    _assemble_sequence(builder, (FindFirstRule(), CompareGlobalLocal(CUR_STATE, STATE, tape.encoding.state_width)), start_state="START", exit_label="DONE")
+    address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
     result = run_raw_tm(builder.build("START"), prepared_tape, head=address_of(RULES), max_steps=2000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cmp_index = final_left_band.index(CMP_FLAG)
@@ -373,16 +373,16 @@ def test_lowered_compare_global_local_fails_when_one_field_ends_early() -> None:
 
 def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     prepared_tape = _rewrite_global_field(
-        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         WRITE_SYMBOL,
         ("0",),
     )
 
     result = run_meta_asm_block_runtime(
-        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width),)),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, tape.encoding.symbol_width),)),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
@@ -393,23 +393,23 @@ def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> N
 
 def test_lowered_copy_global_global_preserves_early_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
-        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         WRITE_SYMBOL,
         ("0",),
     )
     host = run_meta_asm_block_runtime(
-        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width),)),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, tape.encoding.symbol_width),)),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
     )
-    assemble_instruction(builder, CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
-    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    assemble_instruction(builder, CopyGlobalGlobal(CUR_SYMBOL, WRITE_SYMBOL, tape.encoding.symbol_width), state="start", continuation_label="DONE")
+    address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
     result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(CUR_SYMBOL), max_steps=1000)
 
     assert _global_payload(host["runtime_tape"], WRITE_SYMBOL) == ("1",)
@@ -420,16 +420,16 @@ def test_lowered_copy_global_global_preserves_early_end_field_shape() -> None:
 
 def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     prepared_tape = _rewrite_global_field(
-        _rewrite_head_cell_symbol(band.runtime_tape, ("1",)),
+        _rewrite_head_cell_symbol(tape.runtime_tape, ("1",)),
         CUR_SYMBOL,
         ("0",),
     )
 
     result = run_meta_asm_block_runtime(
-        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width))),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
@@ -440,22 +440,22 @@ def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
 
 def test_lowered_copy_head_symbol_to_preserves_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
-        _rewrite_head_cell_symbol(band.runtime_tape, ("1",)),
+        _rewrite_head_cell_symbol(tape.runtime_tape, ("1",)),
         CUR_SYMBOL,
         ("0",),
     )
     host = run_meta_asm_block_runtime(
-        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width))),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
     )
-    _assemble_sequence(builder, (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width)), start_state="START", exit_label="DONE")
+    _assemble_sequence(builder, (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width)), start_state="START", exit_label="DONE")
     result = run_raw_tm(builder.build("START"), prepared_tape, head=0, max_steps=2000)
 
     assert _global_payload(host["runtime_tape"], CUR_SYMBOL) == ("1",)
@@ -466,15 +466,15 @@ def test_lowered_copy_head_symbol_to_preserves_end_field_shape() -> None:
 
 def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     prepared_tape = _rewrite_head_cell_symbol(
-        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         ("0",),
     )
 
     result = run_meta_asm_block_runtime(
-        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, tape.encoding.symbol_width))),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
@@ -485,21 +485,21 @@ def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> 
 
 def test_lowered_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_head_cell_symbol(
-        _rewrite_global_field(band.runtime_tape, CUR_SYMBOL, ("1",)),
+        _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         ("0",),
     )
     host = run_meta_asm_block_runtime(
-        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width))),), entry_label="START"),
-        band.encoding,
+        Program((Block("START", (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, tape.encoding.symbol_width))),), entry_label="START"),
+        tape.encoding,
         prepared_tape,
         label="START",
         max_steps=5,
     )
-    _assemble_sequence(builder, (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width)), start_state="START", exit_label="DONE")
+    _assemble_sequence(builder, (FindHeadCell(), CopyGlobalToHeadSymbol(CUR_SYMBOL, tape.encoding.symbol_width)), start_state="START", exit_label="DONE")
     result = run_raw_tm(builder.build("START"), prepared_tape, head=0, max_steps=2000)
 
     assert _head_symbol_payload(host["runtime_tape"]) == ("1",)
@@ -510,13 +510,13 @@ def test_lowered_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
 
 def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    prepared_tape = _rewrite_first_rule_field(band.runtime_tape, STATE, ("1",))
+    tape = fixture.build_tape()
+    prepared_tape = _rewrite_first_rule_field(tape.runtime_tape, STATE, ("1",))
 
     try:
         run_meta_asm_block_runtime(
-            Program((Block("START", (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, band.encoding.state_width))),), entry_label="START"),
-            band.encoding,
+            Program((Block("START", (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, tape.encoding.state_width))),), entry_label="START"),
+            tape.encoding,
             prepared_tape,
             label="START",
             max_steps=5,
@@ -529,13 +529,13 @@ def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
 
 def test_lowered_copy_local_global_stucks_on_delimiter_mismatch() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    prepared_tape = _rewrite_first_rule_field(band.runtime_tape, STATE, ("1",))
+    prepared_tape = _rewrite_first_rule_field(tape.runtime_tape, STATE, ("1",))
 
-    _assemble_sequence(builder, (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, band.encoding.state_width)), start_state="START", exit_label="DONE")
-    address_of = lambda marker: list(range(-len(band.left_band), 0))[band.left_band.index(marker)]
+    _assemble_sequence(builder, (FindFirstRule(), CopyLocalGlobal(STATE, CUR_STATE, tape.encoding.state_width)), start_state="START", exit_label="DONE")
+    address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
     result = run_raw_tm(builder.build("START"), prepared_tape, head=address_of(RULES), max_steps=2000)
 
     assert result["status"] == "stuck"
@@ -544,12 +544,12 @@ def test_lowered_copy_local_global_stucks_on_delimiter_mismatch() -> None:
 
 def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    prepared_tape = _set_head_cell(band, 4)
-    assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
-    result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 4 * (3 + band.encoding.symbol_width), max_steps=1000)
+    prepared_tape = _set_head_cell(tape, 4)
+    assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 4 * (3 + tape.encoding.symbol_width), max_steps=1000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
 
@@ -560,34 +560,34 @@ def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
 
 def test_copy_head_symbol_to_matches_left_band_cell() -> None:
     fixture = load_fixture("incrementer")
-    source_band = TMBand.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    band = compile_tm_to_universal_tape(
+    source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
+    tape = compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        source_tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_left_cell_address(band, 0), max_steps=2000)
+    result = run_raw_tm(builder.build("start"), tape.runtime_tape, head=_left_cell_address(tape, 0), max_steps=2000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
-    assert tuple(final_left_band[cur_symbol_index + 1:cur_symbol_index + 1 + band.encoding.symbol_width]) == encode_symbol(band.encoding, "1")
+    assert tuple(final_left_band[cur_symbol_index + 1:cur_symbol_index + 1 + tape.encoding.symbol_width]) == encode_symbol(tape.encoding, "1")
 
 
 def test_copy_global_to_head_symbol_matches_later_cell() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    prepared_tape = _set_global_bits_on_runtime_tape(band, _set_head_cell(band, 3), CUR_SYMBOL, "00")
-    assemble_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
-    result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 3 * (3 + band.encoding.symbol_width), max_steps=1500)
+    prepared_tape = _set_global_bits_on_runtime_tape(tape, _set_head_cell(tape, 3), CUR_SYMBOL, "00")
+    assemble_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, tape.encoding.symbol_width), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=1 + 3 * (3 + tape.encoding.symbol_width), max_steps=1500)
     _, final_right_band = split_runtime_tape(result["tape"])
 
     assert result["status"] == "stuck"
@@ -597,35 +597,35 @@ def test_copy_global_to_head_symbol_matches_later_cell() -> None:
 
 def test_copy_global_to_head_symbol_matches_left_band_cell() -> None:
     fixture = load_fixture("incrementer")
-    source_band = TMBand.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    band = compile_tm_to_universal_tape(
+    source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
+    tape = compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        source_tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    prepared_tape = _set_global_bits_on_runtime_tape(band, band.runtime_tape, CUR_SYMBOL, "".join(encode_symbol(band.encoding, "0")))
-    assemble_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, band.encoding.symbol_width), state="start", continuation_label="DONE")
+    prepared_tape = _set_global_bits_on_runtime_tape(tape, tape.runtime_tape, CUR_SYMBOL, "".join(encode_symbol(tape.encoding, "0")))
+    assemble_instruction(builder, CopyGlobalToHeadSymbol(CUR_SYMBOL, tape.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), prepared_tape, head=_left_cell_address(band, 0), max_steps=3000)
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_left_cell_address(tape, 0), max_steps=3000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     head_flag_index = final_left_band.index(HEAD)
 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
-    assert tuple(final_left_band[head_flag_index + 1:head_flag_index + 1 + band.encoding.symbol_width]) == encode_symbol(band.encoding, "0")
+    assert tuple(final_left_band[head_flag_index + 1:head_flag_index + 1 + tape.encoding.symbol_width]) == encode_symbol(tape.encoding, "0")
 
 
 def test_find_head_cell_branches_to_stuck_at_end_tape_boundary() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), _runtime_tape_with_no_head(band), head=0, max_steps=500)
+    result = run_raw_tm(builder.build("start"), _runtime_tape_with_no_head(tape), head=0, max_steps=500)
 
     assert result["status"] == "stuck"
     assert result["state"] == "STUCK"
@@ -633,14 +633,14 @@ def test_find_head_cell_branches_to_stuck_at_end_tape_boundary() -> None:
 
 def test_move_sim_head_right_constructs_blank_at_end_tape_boundary() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    last_cell = len([token for token in band.right_band if token == CELL]) - 1
-    prepared_tape = _set_head_cell(band, last_cell)
-    assemble_instruction(builder, MoveSimHeadRight(band.encoding.symbol_width), state="start", continuation_label="DONE")
+    last_cell = len([token for token in tape.right_band if token == CELL]) - 1
+    prepared_tape = _set_head_cell(tape, last_cell)
+    assemble_instruction(builder, MoveSimHeadRight(tape.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(band, last_cell), max_steps=5_000)
+    result = run_raw_tm(builder.build("start"), prepared_tape, head=_cell_address(tape, last_cell), max_steps=5_000)
 
     _, final_right_band = split_runtime_tape(result["tape"])
 
@@ -648,18 +648,18 @@ def test_move_sim_head_right_constructs_blank_at_end_tape_boundary() -> None:
     assert result["state"] == "DONE"
     assert final_right_band[result["head"]] == CELL
     assert final_right_band[result["head"] + 1] == HEAD
-    symbol_end = result["head"] + 2 + band.encoding.symbol_width
-    assert tuple(final_right_band[result["head"] + 2:symbol_end]) == encode_symbol(band.encoding, band.encoding.blank)
+    symbol_end = result["head"] + 2 + tape.encoding.symbol_width
+    assert tuple(final_right_band[result["head"] + 2:symbol_end]) == encode_symbol(tape.encoding, tape.encoding.blank)
 
 
 def test_move_sim_head_left_constructs_blank_at_tape_left_boundary() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadLeft(band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, MoveSimHeadLeft(tape.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_cell_address(band, 0), max_steps=5_000)
+    result = run_raw_tm(builder.build("start"), tape.runtime_tape, head=_cell_address(tape, 0), max_steps=5_000)
 
     final_left_band, _ = split_runtime_tape(result["tape"])
     left_cell_index = final_left_band.index(CELL)
@@ -667,75 +667,75 @@ def test_move_sim_head_left_constructs_blank_at_tape_left_boundary() -> None:
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
     assert final_left_band[left_cell_index + 1] == HEAD
-    symbol_end = left_cell_index + 2 + band.encoding.symbol_width
-    assert tuple(final_left_band[left_cell_index + 2:symbol_end]) == encode_symbol(band.encoding, band.encoding.blank)
+    symbol_end = left_cell_index + 2 + tape.encoding.symbol_width
+    assert tuple(final_left_band[left_cell_index + 2:symbol_end]) == encode_symbol(tape.encoding, tape.encoding.blank)
 
 
 def test_move_sim_head_left_crosses_to_materialized_left_band() -> None:
     fixture = load_fixture("incrementer")
-    source_band = TMBand.from_bands(right_band=("1",), left_band=("_",), head=0, blank="_")
-    band = compile_tm_to_universal_tape(
+    source_tape = SourceTape.from_bands(right_band=("1",), left_band=("_",), head=0, blank="_")
+    tape = compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        source_tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadLeft(band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, MoveSimHeadLeft(tape.encoding.symbol_width), state="start", continuation_label="DONE")
 
-    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=_cell_address(band, 0), max_steps=2000)
+    result = run_raw_tm(builder.build("start"), tape.runtime_tape, head=_cell_address(tape, 0), max_steps=2000)
     final_left_band, _ = split_runtime_tape(result["tape"])
     left_cell_index = final_left_band.index(CELL)
 
     assert result["status"] == "stuck"
     assert result["state"] == "DONE"
-    assert result["head"] == _left_cell_address(band, 0)
+    assert result["head"] == _left_cell_address(tape, 0)
     assert final_left_band[left_cell_index + 1] == HEAD
 
 
 def test_meta_asm_host_finds_and_reads_left_band_head_cell() -> None:
     fixture = load_fixture("incrementer")
-    source_band = TMBand.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    band = compile_tm_to_universal_tape(
+    source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
+    tape = compile_tm_to_universal_tape(
         fixture.tm_program,
-        source_band,
+        source_tape,
         initial_state=fixture.initial_state,
         halt_state=fixture.halt_state,
     )
     program = Program(
-        blocks=(Block("ENTRY", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, band.encoding.symbol_width))),),
+        blocks=(Block("ENTRY", (FindHeadCell(), CopyHeadSymbolTo(CUR_SYMBOL, tape.encoding.symbol_width))),),
         entry_label="ENTRY",
     )
 
-    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=10)
+    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, tape.encoding, tape.runtime_tape, max_steps=10)
     final_left_band, _ = split_runtime_tape(runtime_tape)
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
 
     assert status == "halted"
-    assert trace[0]["head"] == _left_cell_address(band, 0)
-    assert tuple(final_left_band[cur_symbol_index + 1:cur_symbol_index + 1 + band.encoding.symbol_width]) == encode_symbol(band.encoding, "1")
+    assert trace[0]["head"] == _left_cell_address(tape, 0)
+    assert tuple(final_left_band[cur_symbol_index + 1:cur_symbol_index + 1 + tape.encoding.symbol_width]) == encode_symbol(tape.encoding, "1")
 
 
 def test_meta_asm_host_moves_between_right_and_left_simulated_tape() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     program = Program(
         blocks=(
             Block(
                 "ENTRY",
                 (
                     FindHeadCell(),
-                    MoveSimHeadLeft(band.encoding.symbol_width),
-                    MoveSimHeadRight(band.encoding.symbol_width),
+                    MoveSimHeadLeft(tape.encoding.symbol_width),
+                    MoveSimHeadRight(tape.encoding.symbol_width),
                 ),
             ),
         ),
         entry_label="ENTRY",
     )
 
-    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=10)
-    view = decoded_view_from_encoded_band(type(band).from_runtime_tape(band.encoding, runtime_tape))
+    status, runtime_tape, trace, _reason = run_meta_asm_runtime(program, tape.encoding, tape.runtime_tape, max_steps=10)
+    view = decoded_view_from_encoded_tape(type(tape).from_runtime_tape(tape.encoding, runtime_tape))
 
     assert status == "halted"
     assert trace[1]["head"] < 0
@@ -758,15 +758,15 @@ def test_lower_instruction_to_routine_is_inspectable() -> None:
 
 def test_compile_routine_keeps_seek_cfg_structured() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = fixture.build_tape()
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     routine = lower_instruction_to_routine(Seek(RULES, "L"), state="start", cont="DONE")
     cfg = compile_routine(routine, NameSupply("seek_test"))
     builder = TMBuilder(alphabet)
 
     validate_cfg(cfg, alphabet)
     assemble_cfg(builder, cfg)
-    result = run_raw_tm(builder.build("start"), band.runtime_tape, head=0, max_steps=300)
+    result = run_raw_tm(builder.build("start"), tape.runtime_tape, head=0, max_steps=300)
 
     assert cfg.entry == "start"
     assert cfg.exits == ("DONE",)
@@ -967,7 +967,7 @@ def test_validate_program_cfgs_rejects_cross_routine_duplicate_coverage() -> Non
 
 def test_program_to_cfgs_returns_inspectable_cfgs_before_assembly() -> None:
     fixture = load_fixture("incrementer")
-    program = build_universal_meta_asm(fixture.build_band().encoding)
+    program = build_universal_meta_asm(fixture.build_tape().encoding)
     cfgs = program_to_cfgs(program)
 
     assert cfgs
@@ -1033,15 +1033,15 @@ def test_lower_program_with_source_map_maps_second_routine_rows_back_to_goto() -
 
 def test_lowered_incrementer_matches_host_run() -> None:
     fixture = load_fixture("incrementer")
-    band = fixture.build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    left_addresses = list(range(-len(band.left_band), 0))
-    start_head = left_addresses[band.left_band.index(CUR_STATE)]
+    tape = fixture.build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    left_addresses = list(range(-len(tape.left_band), 0))
+    start_head = left_addresses[tape.left_band.index(CUR_STATE)]
 
-    host_status, host_runtime_tape, _host_trace, _host_reason = run_meta_asm_runtime(program, band.encoding, band.runtime_tape, max_steps=500)
+    host_status, host_runtime_tape, _host_trace, _host_reason = run_meta_asm_runtime(program, tape.encoding, tape.runtime_tape, max_steps=500)
     raw_tm = lower_program_to_raw_tm(program, alphabet)
-    raw = run_raw_tm(raw_tm, band.runtime_tape, head=start_head, max_steps=200_000)
+    raw = run_raw_tm(raw_tm, tape.runtime_tape, head=start_head, max_steps=200_000)
     raw_left_band, raw_right_band = split_runtime_tape(raw["tape"])
     host_left_band, host_right_band = split_runtime_tape(host_runtime_tape)
 

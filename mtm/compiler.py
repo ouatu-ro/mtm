@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .utm_band_layout import compile_tm_to_universal_tape
-from .semantic_objects import TMAbi, TMInstance, UTMEncoded, infer_minimal_abi, utm_encoded_from_band
+from .semantic_objects import TMAbi, TMInstance, UTMEncoded, infer_minimal_abi, utm_encoded_from_tape
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class Compiler:
         initial_state, halt_state = self._resolve_states(instance)
         return infer_minimal_abi(
             instance.program,
-            instance.band,
+            instance.tape,
             initial_state=initial_state,
             halt_state=halt_state,
         )
@@ -38,14 +38,14 @@ class Compiler:
 
         self._validate_instance(instance)
         initial_state, halt_state = self._resolve_states(instance)
-        band = compile_tm_to_universal_tape(
+        tape = compile_tm_to_universal_tape(
             instance.program,
-            instance.band,
+            instance.tape,
             initial_state=initial_state,
             halt_state=halt_state,
             abi=self.target_abi,
         )
-        return utm_encoded_from_band(band)
+        return utm_encoded_from_tape(tape)
 
     def _resolve_states(self, instance: TMInstance) -> tuple[str, str]:
         """Resolve initial/halt states from the instance or compiler defaults."""
@@ -59,10 +59,10 @@ class Compiler:
     def _validate_instance(self, instance: TMInstance) -> None:
         """Reject source instances whose program and band contracts disagree."""
 
-        if instance.program.blank != instance.band.blank:
+        if instance.program.blank != instance.tape.blank:
             raise ValueError(
                 f"source blank mismatch: TMProgram.blank={instance.program.blank!r} "
-                f"!= TMBand.blank={instance.band.blank!r}"
+                f"!= SourceTape.blank={instance.tape.blank!r}"
             )
 
 

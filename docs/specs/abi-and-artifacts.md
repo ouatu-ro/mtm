@@ -51,18 +51,18 @@ The blank symbol is always assigned id `0`, so its encoded bitstring is all
 zeroes at the selected symbol width.
 
 `TMAbi` is compatibility metadata. `Encoding` is the guest-specific semantic
-dictionary used to recover source-level meaning from an encoded band.
+dictionary used to recover source-level meaning from an encoded tape.
 
 Runtime UTM compatibility is a lattice, not exact ABI equality:
 
 ```text
-band_abi <= host_abi  => executable
-band_abi > host_abi   => rejected before execution
+guest_abi <= host_abi  => executable
+guest_abi > host_abi   => rejected before execution
 ```
 
-The encoded band is the authority for guest field lengths and guest constants.
+The encoded tape is the authority for guest field lengths and guest constants.
 The host UTM's selected widths are upper bounds that keep generated routines
-finite. A wider host must not reinterpret a narrower band field by padding or
+finite. A wider host must not reinterpret a narrower guest field by padding or
 inheriting host-width literals. Field and cell terminators delimit the actual
 guest values at runtime.
 
@@ -78,8 +78,8 @@ Semantic decoding depends on encoding.
 Compatibility checks depend on ABI.
 ```
 
-`UTMBandArtifact` serializes the semantic UTM object into a concrete split
-encoded band:
+`UTMBandArtifact` serializes an `EncodedTape`: a concrete split encoded UTM
+tape persisted as a `.utm.band` artifact. The file stores two token regions:
 
 ```text
 left band:   encoded negative simulated tape region
@@ -105,7 +105,7 @@ the registry entry point rather than at the simulated tape head.
 
 Current `.utm.band` files persist:
 
-- concrete encoded band contents
+- concrete encoded tape contents, stored as `left_band` and `right_band` token arrays
 - `encoding`
 - `start_head`
 - `target_abi`
@@ -167,7 +167,7 @@ Transition record semantics:
 ```
 
 `#HALT_STATE`, `#BLANK_SYMBOL`, `#LEFT_DIR`, and `#RIGHT_DIR` are copied from
-the band's guest encoding. They prevent the generated UTM from baking
+the encoded tape's guest encoding. They prevent the generated UTM from baking
 host-width halt, blank, or direction literals into runtime decisions.
 
 ### 6.2 Right Band
@@ -194,7 +194,7 @@ nonnegative side after `#TAPE`, but not both.
 
 ### 6.3 Field Widths
 
-Generated bands use one fixed payload width per field kind:
+Generated encoded tapes use one fixed payload width per field kind:
 
 ```text
 state field width  = state_width
@@ -209,7 +209,6 @@ Fields also carry terminators:
 #CELL #HEAD 00000001 #END_CELL
 ```
 
-The band width is the semantic width of that encoded guest. A host UTM may use
-wider maximum widths, but runtime comparison and copying must treat the
+The encoded guest width is the semantic width of that encoded tape. A host UTM
+may use wider maximum widths, but runtime comparison and copying must treat the
 terminators as the actual field boundaries.
-

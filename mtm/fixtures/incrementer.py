@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..semantic_objects import TMBand
+from ..semantic_objects import SourceTape
 from ..source_encoding import L, R, TMProgram
 from . import TMFixture
 
@@ -20,7 +20,7 @@ fixture = TMFixture(
         ("qAdd", "1"): ("qAdd", "0", L),
         ("qAdd", blank): ("qDone", "1", L),
     }, initial_state="qFindMargin", halt_state="qDone", blank=blank),
-    band=TMBand(right_band=tuple("1011____"), head=0, blank=blank),
+    tape=SourceTape(right_band=tuple("1011____"), head=0, blank=blank),
     initial_state="qFindMargin",
     halt_state="qDone",
     note="Binary increment by one.",

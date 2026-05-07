@@ -4,7 +4,7 @@ from mtm.lowering import lower_program_with_source_map
 from mtm.lowering.constants import ACTIVE_RULE
 from mtm.meta_asm import Block, Goto, Program, Seek, format_instruction
 from mtm.raw_transition_tm import R, S, TMBuilder
-from mtm.semantic_objects import start_head_from_encoded_band
+from mtm.semantic_objects import start_head_from_encoded_tape
 from mtm.utm_band_layout import CUR_STATE, RULES
 from mtm.meta_asm import build_universal_meta_asm
 
@@ -289,14 +289,14 @@ def test_raw_trace_grouped_block_step_and_back_follow_source_boundaries() -> Non
 
 
 def test_raw_trace_grouped_source_step_advances_to_next_utm_cycle_boundary() -> None:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
@@ -312,14 +312,14 @@ def test_raw_trace_grouped_source_step_advances_to_next_utm_cycle_boundary() -> 
 
 
 def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_boundary() -> None:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
@@ -352,14 +352,14 @@ def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_bounda
 
 
 def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> None:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
@@ -489,19 +489,19 @@ def test_raw_trace_grouped_source_step_uses_configured_boundary_label() -> None:
 
 
 def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
 
-    view = runner.current_view(encoding=band.encoding)
+    view = runner.current_view(encoding=tape.encoding)
 
     assert view.snapshot == runner.current
     assert view.next_raw_transition_key == runner.current_transition_key
@@ -516,14 +516,14 @@ def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
 
 
 def test_raw_trace_current_view_reports_decode_error_for_incoherent_runtime_tape() -> None:
-    band = load_fixture("incrementer").build_band()
-    start_head = start_head_from_encoded_band(band)
-    builder = TMBuilder(sorted(set(band.linear()) | {"0", "1"}), blank=band.encoding.blank)
+    tape = load_fixture("incrementer").build_tape()
+    start_head = start_head_from_encoded_tape(tape)
+    builder = TMBuilder(sorted(set(tape.linear()) | {"0", "1"}), blank=tape.encoding.blank)
     builder.emit("start", CUR_STATE, builder.halt_state, "0", S)
-    runner = RawTraceRunner(builder.build("start"), band.runtime_tape, head=start_head)
+    runner = RawTraceRunner(builder.build("start"), tape.runtime_tape, head=start_head)
 
     stepped = runner.step()
-    view = runner.current_view(encoding=band.encoding)
+    view = runner.current_view(encoding=tape.encoding)
 
     assert stepped.status == "stepped"
     assert view.decoded_view is None
@@ -589,19 +589,19 @@ def test_format_source_location_and_group_step_result_render_lowered_location() 
 
 
 def test_format_trace_view_renders_semantic_summary_for_decoded_band() -> None:
-    band = load_fixture("incrementer").build_band()
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    tape = load_fixture("incrementer").build_tape()
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        band.runtime_tape,
-        head=start_head_from_encoded_band(band),
+        tape.runtime_tape,
+        head=start_head_from_encoded_tape(tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
 
-    rendered = format_trace_view(runner.current_view(encoding=band.encoding), raw_window=1, semantic_window=2)
+    rendered = format_trace_view(runner.current_view(encoding=tape.encoding), raw_window=1, semantic_window=2)
 
     assert rendered == "\n".join([
         "snapshot: step=0 state='START_STEP' head=-169",

@@ -2,7 +2,7 @@ blank = "_"
 mark = "X"
 initial_state = "qStart"
 halt_state = "qAccept"
-band = TMBand.from_dict({-1: "1", 0: "0", 1: "1"}, head=-1, blank=blank)
+tape = SourceTape.from_dict({-1: "1", 0: "0", 1: "1"}, head=-1, blank=blank)
 note = "Binary palindrome check over source addresses -1, 0, and 1."
 
 tm_program = TMProgram({

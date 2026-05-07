@@ -34,12 +34,12 @@ def set_head_cell(band, cell_index: int):
 
 
 def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
-    band = fixture.build_band()
-    left_band = band.left_band
+    tape = fixture.build_tape()
+    left_band = tape.left_band
     left_addresses = list(range(-len(left_band), 0))
     address_of = lambda marker: left_addresses[left_band.index(marker)]
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
-    runtime_tape = band.runtime_tape
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    runtime_tape = tape.runtime_tape
     rows: list[list[object]] = []
 
     builder = TMBuilder(alphabet)
@@ -101,13 +101,13 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
     rows.append(["FIND_HEAD_CELL", result["status"], result["state"], result["head"], "at head #CELL"])
 
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadRight(band.encoding.symbol_width), state="start", continuation_label="DONE")
+    assemble_instruction(builder, MoveSimHeadRight(tape.encoding.symbol_width), state="start", continuation_label="DONE")
     result = run_raw_tm(builder.build("start"), runtime_tape, head=1, max_steps=200)
     rows.append(["MOVE_SIM_HEAD_RIGHT", result["status"], result["state"], result["head"], "head moved to next cell"])
 
     builder = TMBuilder(alphabet)
-    assemble_instruction(builder, MoveSimHeadLeft(band.encoding.symbol_width), state="start", continuation_label="DONE")
-    result = run_raw_tm(builder.build("start"), set_head_cell(band, 1), head=1 + (3 + band.encoding.symbol_width), max_steps=200)
+    assemble_instruction(builder, MoveSimHeadLeft(tape.encoding.symbol_width), state="start", continuation_label="DONE")
+    result = run_raw_tm(builder.build("start"), set_head_cell(tape, 1), head=1 + (3 + tape.encoding.symbol_width), max_steps=200)
     rows.append(["MOVE_SIM_HEAD_LEFT", result["status"], result["state"], result["head"], "head moved to previous cell"])
 
     builder = TMBuilder(alphabet)
@@ -119,7 +119,7 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
 
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, CopyGlobalGlobal(WRITE_SYMBOL, CUR_SYMBOL, 2), state="start", continuation_label="DONE")
-    prepared_tape = set_global_bits(band, WRITE_SYMBOL, "01")
+    prepared_tape = set_global_bits(tape, WRITE_SYMBOL, "01")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=address_of(WRITE_SYMBOL), max_steps=500)
     final_left_band, _ = split_runtime_tape(result["tape"])
     cur_symbol_index = final_left_band.index(CUR_SYMBOL)
@@ -134,7 +134,7 @@ def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
 
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, CopyGlobalToHeadSymbol(WRITE_SYMBOL, 2), state="start", continuation_label="DONE")
-    prepared_tape = set_global_bits(band, WRITE_SYMBOL, "00")
+    prepared_tape = set_global_bits(tape, WRITE_SYMBOL, "00")
     result = run_raw_tm(builder.build("start"), prepared_tape, head=1, max_steps=1500)
     _, final_right_band = split_runtime_tape(result["tape"])
     rows.append(["COPY_GLOBAL_TO_HEAD_SYMBOL", result["status"], result["state"], result["head"], f"head_symbol={''.join(final_right_band[3:5])}"])

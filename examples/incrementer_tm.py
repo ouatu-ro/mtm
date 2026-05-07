@@ -1,7 +1,7 @@
 blank = "_"
 initial_state = "qFindMargin"
 halt_state = "qDone"
-band = TMBand(right_band=tuple("1011____"), head=0, blank=blank)
+tape = SourceTape(right_band=tuple("1011____"), head=0, blank=blank)
 note = "Binary increment by one."
 
 tm_program = TMProgram({

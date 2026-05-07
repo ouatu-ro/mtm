@@ -1,12 +1,15 @@
-"""Host interpreter for Meta-ASM over compiled runtime bands."""
+"""Meta-ASM host interpreter over sparse runtime tapes split into encoded UTM band tokens."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from .utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, END_CELL, END_FIELD, END_RULE, END_RULES, END_TAPE, HEAD, NO_HEAD, RULE, RULES, TAPE_LEFT, materialize_runtime_tape, split_runtime_tape
 from .meta_asm import BranchAt, BranchCmp, CompareGlobalGlobal, CompareGlobalLiteral, CompareGlobalLocal, CopyGlobalGlobal, CopyGlobalToHeadSymbol, CopyHeadSymbolTo, CopyLocalGlobal, FindFirstRule, FindHeadCell, FindNextRule, Goto, Halt, MoveSimHeadLeft, MoveSimHeadRight, Program, Seek, SeekOneOf, Unimplemented, WriteGlobal, format_instruction
 from .pretty import table
+
+Side = Literal["left", "right"]
 
 
 def left_index(left_band: list[str], address: int) -> int:
@@ -19,29 +22,29 @@ def token_at(left_band: list[str], right_band: list[str], address: int) -> str:
 
 @dataclass(frozen=True)
 class DelimitedRegion:
-    band_name: str
+    side: Side
     start: int
     end: int
     terminator: str
     label: str
 
 
-def _band_for_region(left_band: list[str], right_band: list[str], region: DelimitedRegion) -> list[str]:
-    return left_band if region.band_name == "left" else right_band
+def _tokens_for_region(left_band: list[str], right_band: list[str], region: DelimitedRegion) -> list[str]:
+    return left_band if region.side == "left" else right_band
 
 
 def _region_token(left_band: list[str], right_band: list[str], region: DelimitedRegion, offset: int) -> str:
-    band = _band_for_region(left_band, right_band, region)
+    tokens = _tokens_for_region(left_band, right_band, region)
     index = region.start + offset
     if index > region.end:
         raise ValueError(f"offset {offset} crosses terminator for {region.label}")
-    return band[index]
+    return tokens[index]
 
 
 def _write_region_token(left_band: list[str], right_band: list[str], region: DelimitedRegion, offset: int, token: str) -> tuple[list[str], list[str]]:
     if region.start + offset >= region.end:
         raise ValueError(f"cannot write through terminator for {region.label}")
-    if region.band_name == "left":
+    if region.side == "left":
         left_band = list(left_band)
         left_band[region.start + offset] = token
         return left_band, right_band
@@ -101,11 +104,11 @@ def set_global_bits(left_band: list[str], marker: str, bits: tuple[str, ...]) ->
     return left_band
 
 
-def runtime_address(left_band: list[str], side: str, index: int) -> int:
+def runtime_address(left_band: list[str], side: Side, index: int) -> int:
     return index if side == "right" else index - len(left_band)
 
 
-def band_position(left_band: list[str], right_band: list[str], address: int) -> tuple[str, int]:
+def band_position(left_band: list[str], right_band: list[str], address: int) -> tuple[Side, int]:
     if address >= 0:
         return "right", address
     return "left", left_index(left_band, address)
@@ -182,15 +185,15 @@ def is_simulated_cell(left_band: list[str], right_band: list[str], head_address:
     if head_address is None:
         return False
     side, index = band_position(left_band, right_band, head_address)
-    band = right_band if side == "right" else left_band
-    return 0 <= index < len(band) and band[index] == CELL
+    tokens = right_band if side == "right" else left_band
+    return 0 <= index < len(tokens) and tokens[index] == CELL
 
 
 def head_symbol_region(left_band: list[str], right_band: list[str], head_address: int) -> DelimitedRegion:
     side, index = band_position(left_band, right_band, head_address)
-    band = right_band if side == "right" else left_band
+    tokens = right_band if side == "right" else left_band
     start = index + 2
-    end = band.index(END_CELL, start)
+    end = tokens.index(END_CELL, start)
     return DelimitedRegion(side, start, end, END_CELL, "head symbol")
 
 

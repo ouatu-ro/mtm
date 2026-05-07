@@ -10,7 +10,7 @@ from mtm.lowering import ACTIVE_RULE, lower_program_to_raw_tm
 from mtm.meta_asm import build_universal_meta_asm
 from mtm.source_file import load_python_tm, load_python_tm_instance, source_artifact_from_python
 from mtm.raw_transition_tm import TMTransitionProgram
-from mtm.semantic_objects import TMBand, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_band, encoded_band_from_utm_artifact, utm_artifact_from_band
+from mtm.semantic_objects import SourceTape, UTMBandArtifact, UTMProgramArtifact, decoded_view_from_encoded_tape, encoded_tape_from_utm_artifact, utm_artifact_from_tape
 from mtm.source_encoding import R, TMAbi, TMProgram
 
 
@@ -18,7 +18,7 @@ INCREMENTER_FILE = """\
 blank = "_"
 initial_state = "qFindMargin"
 halt_state = "qDone"
-band = TMBand(right_band=tuple("1011____"), head=0, blank=blank)
+tape = SourceTape(right_band=tuple("1011____"), head=0, blank=blank)
 
 tm_program = TMProgram({
     ("qFindMargin", "0"): ("qFindMargin", "0", R),
@@ -40,15 +40,15 @@ def _write_tm_file(tmp_path: Path) -> Path:
 def test_load_python_tm_file(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    band = fixture.build_band()
+    tape = fixture.build_tape()
 
     assert fixture.name == "incrementer_tm"
     assert isinstance(fixture.tm_program, TMProgram)
-    assert fixture.band == TMBand(right_band=tuple("1011____"), head=0, blank="_")
+    assert fixture.tape == SourceTape(right_band=tuple("1011____"), head=0, blank="_")
     assert fixture.initial_state == "qFindMargin"
     assert fixture.halt_state == "qDone"
     assert len(fixture.tm_program) == 6
-    assert band.encoding.halt_state == "qDone"
+    assert tape.encoding.halt_state == "qDone"
 
 
 def test_load_python_tm_file_requires_tm_program_object(tmp_path: Path) -> None:
@@ -56,7 +56,7 @@ def test_load_python_tm_file_requires_tm_program_object(tmp_path: Path) -> None:
     path.write_text("""\
 initial_state = "q0"
 halt_state = "qHalt"
-band = TMBand(right_band=("_",), head=0, blank="_")
+tape = SourceTape(right_band=("_",), head=0, blank="_")
 tm_program = {("q0", "_"): ("qHalt", "_", R)}
 """)
 
@@ -71,9 +71,9 @@ def test_load_python_tm_instance(tmp_path: Path) -> None:
     assert instance.program[("qFindMargin", "0")] == ("qFindMargin", "0", R)
     assert instance.initial_state == "qFindMargin"
     assert instance.halt_state == "qDone"
-    assert instance.band.blank == "_"
-    assert instance.band.head == 0
-    assert instance.band.cells[:4] == tuple("1011")
+    assert instance.tape.blank == "_"
+    assert instance.tape.head == 0
+    assert instance.tape.cells[:4] == tuple("1011")
 
 
 def test_source_artifact_from_python_round_trips_without_execution(tmp_path: Path) -> None:
@@ -87,7 +87,7 @@ def test_source_artifact_from_python_round_trips_without_execution(tmp_path: Pat
     assert loaded.initial_state == "qFindMargin"
     assert loaded.halt_state == "qDone"
     assert loaded.program == load_python_tm(tm_path).tm_program
-    assert loaded.band == TMBand(right_band=tuple("1011____"), head=0, blank="_")
+    assert loaded.tape == SourceTape(right_band=tuple("1011____"), head=0, blank="_")
 
 
 def test_source_artifact_reader_rejects_executable_code(tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ def test_source_artifact_reader_rejects_executable_code(tmp_path: Path) -> None:
     source_path.write_text(f"""\
 format = 'mtm-source-v1'
 tm_program = __import__('pathlib').Path({str(marker)!r}).write_text('bad')
-band = {{}}
+tape = {{}}
 initial_state = 'start'
 halt_state = 'halt'
 """)
@@ -128,13 +128,13 @@ def test_cli_compile_emit_and_run_pipeline(tmp_path: Path, capsys) -> None:
 
     assert cli_main(["compile", str(tm_path), "-o", str(utm_path), "--asm-out", str(asm_path), "--tm-out", str(raw_tm_path)]) == 0
     artifact = read_utm_artifact(utm_path)
-    band = artifact.to_encoded_band()
+    tape = artifact.to_encoded_tape()
     tm = UTMProgramArtifact.read(raw_tm_path)
 
     assert utm_path.exists()
     assert asm_path.exists()
     assert raw_tm_path.exists()
-    assert artifact.to_encoded_band() == band
+    assert artifact.to_encoded_tape() == tape
     assert artifact.start_head < 0
     assert tm.program.start_state == "START_STEP"
     assert tm.target_abi == artifact.target_abi
@@ -195,34 +195,34 @@ def test_cli_emit_source_from_example_file(tmp_path: Path) -> None:
 def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     utm_path = tmp_path / "incrementer.utm.band"
 
-    utm_artifact_from_band(band).write(utm_path)
+    utm_artifact_from_tape(tape).write(utm_path)
     artifact = read_utm_artifact(utm_path)
-    reconstructed_band = encoded_band_from_utm_artifact(artifact)
+    reconstructed_band = encoded_tape_from_utm_artifact(artifact)
 
     assert artifact.start_head < 0
-    assert reconstructed_band.left_band == band.left_band
-    assert reconstructed_band.right_band == band.right_band
+    assert reconstructed_band.left_band == tape.left_band
+    assert reconstructed_band.right_band == tape.right_band
 
 
 def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    band = fixture.build_band()
+    tape = fixture.build_tape()
     utm_path = tmp_path / "incrementer.utm.band"
     raw_tm_path = tmp_path / "utm.tm"
 
-    utm_artifact_from_band(band).write(utm_path)
-    program = build_universal_meta_asm(band.encoding)
-    alphabet = sorted(set(band.linear()) | {"0", "1", ACTIVE_RULE})
+    utm_artifact_from_tape(tape).write(utm_path)
+    program = build_universal_meta_asm(tape.encoding)
+    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lower_program_to_raw_tm(program, alphabet).write(raw_tm_path)
 
     artifact = UTMBandArtifact.read(utm_path)
     tm = TMTransitionProgram.read(raw_tm_path)
 
-    assert artifact.to_encoded_band() == band
+    assert artifact.to_encoded_tape() == tape
     assert tm.start_state == "START_STEP"
 
 
@@ -442,7 +442,7 @@ def test_cli_l2_from_wider_l1_abi_generates_coherent_band(tmp_path: Path, capsys
     l1_program = UTMProgramArtifact.read(out_dir / "incrementer-wide.l1.tm")
     l2_band = UTMBandArtifact.read(out_dir / "incrementer-wide.l2.utm.band")
     l2_program = UTMProgramArtifact.read(out_dir / "incrementer-wide.l2.tm")
-    l2_view = decoded_view_from_encoded_band(l2_band.to_encoded_band())
+    l2_view = decoded_view_from_encoded_tape(l2_band.to_encoded_tape())
 
     assert l1_band.minimal_abi == TMAbi(2, 2, 1, "mtm-v1", "min[Wq=2,Ws=2,Wd=1]")
     assert l1_band.target_abi == l1_target
