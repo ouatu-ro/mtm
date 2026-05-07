@@ -221,6 +221,13 @@ BRANCH_AT marker label_true label_false
 
 Branch according to the marker currently under the runtime head.
 
+For a small executable hand-written example, see
+`examples/meta_asm/micro_step.py`. It does not build a complete UTM; it
+constructs an encoded UTM tape, lowers a few Meta-ASM blocks to raw TM
+transitions, and runs those transitions against that tape. This is the most
+direct demonstration that Meta-ASM instructions are intertwined with the encoded
+band grammar.
+
 
 ## 9. Universal Interpreter Program
 

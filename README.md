@@ -78,6 +78,15 @@ Inspect traces in the browser viewer:
 open tools/trace-viewer.html
 ```
 
+Run a small hand-written Meta-ASM example:
+
+```sh
+uv run python examples/meta_asm/micro_step.py
+```
+
+This example constructs an encoded UTM tape, lowers a few Meta-ASM blocks into
+raw TM transitions, and runs those transitions against the encoded tape.
+
 Open the debugger on a built-in fixture:
 
 ```sh
