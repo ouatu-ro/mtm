@@ -6,7 +6,7 @@ from mtm.meta_asm_host import run_meta_asm_block_runtime, run_meta_asm_runtime
 from tests.lowering_checks import assemble_instruction, lowering_smoke_rows
 from mtm.semantic_objects import decoded_view_from_encoded_tape
 from mtm.source_encoding import encode_symbol
-from mtm.utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_universal_tape, materialize_runtime_tape, split_runtime_tape
+from mtm.utm_band_layout import BLANK_SYMBOL, CELL, CMP_FLAG, CUR_STATE, CUR_SYMBOL, END_CELL, END_FIELD, HALT_STATE, HEAD, NO_HEAD, RULE, RULES, STATE, TAPE_LEFT, WRITE_SYMBOL, compile_tm_to_encoded_tape, materialize_runtime_tape, split_runtime_tape
 from mtm.raw_transition_tm import TMBuilder, run_raw_tm
 
 
@@ -107,7 +107,7 @@ def _head_cell_payload_anywhere(runtime_tape) -> tuple[str, ...]:
 
 def _build_wider_host_tape(source_tape: SourceTape):
     fixture = load_fixture("incrementer")
-    return compile_tm_to_universal_tape(
+    return compile_tm_to_encoded_tape(
         fixture.tm_program,
         source_tape,
         initial_state=fixture.initial_state,
@@ -170,7 +170,7 @@ def test_first_lowered_fragments_smoke() -> None:
 
 def test_lowered_start_step_matches_host_block() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     start_block = next(block for block in program.blocks if block.label == "START_STEP")
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
@@ -196,7 +196,7 @@ def test_lowered_start_step_matches_host_block() -> None:
 
 def test_compare_global_global_matches_host_block() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     address_of = lambda marker: list(range(-len(tape.left_band), 0))[tape.left_band.index(marker)]
 
@@ -223,7 +223,7 @@ def test_compare_global_global_matches_host_block() -> None:
 
 def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_global_field(
         _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         HALT_STATE,
@@ -246,7 +246,7 @@ def test_meta_asm_host_compare_global_global_stops_at_matching_early_terminators
 
 def test_lowered_compare_global_global_stops_at_matching_early_terminators() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
@@ -311,7 +311,7 @@ def test_move_sim_head_left_expands_with_band_blank_symbol_payload() -> None:
 
 def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_first_rule_field(
         _rewrite_global_field(tape.runtime_tape, CUR_STATE, ("1",)),
         STATE,
@@ -339,7 +339,7 @@ def test_meta_asm_host_compare_global_local_fails_when_one_field_ends_early() ->
 
 def test_lowered_compare_global_local_fails_when_one_field_ends_early() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_first_rule_field(
@@ -373,7 +373,7 @@ def test_lowered_compare_global_local_fails_when_one_field_ends_early() -> None:
 
 def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_global_field(
         _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         WRITE_SYMBOL,
@@ -393,7 +393,7 @@ def test_meta_asm_host_copy_global_global_preserves_early_end_field_shape() -> N
 
 def test_lowered_copy_global_global_preserves_early_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
@@ -420,7 +420,7 @@ def test_lowered_copy_global_global_preserves_early_end_field_shape() -> None:
 
 def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_global_field(
         _rewrite_head_cell_symbol(tape.runtime_tape, ("1",)),
         CUR_SYMBOL,
@@ -440,7 +440,7 @@ def test_meta_asm_host_copy_head_symbol_to_preserves_end_field_shape() -> None:
 
 def test_lowered_copy_head_symbol_to_preserves_end_field_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_global_field(
@@ -466,7 +466,7 @@ def test_lowered_copy_head_symbol_to_preserves_end_field_shape() -> None:
 
 def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_head_cell_symbol(
         _rewrite_global_field(tape.runtime_tape, CUR_SYMBOL, ("1",)),
         ("0",),
@@ -485,7 +485,7 @@ def test_meta_asm_host_copy_global_to_head_symbol_preserves_end_cell_shape() -> 
 
 def test_lowered_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_head_cell_symbol(
@@ -510,7 +510,7 @@ def test_lowered_copy_global_to_head_symbol_preserves_end_cell_shape() -> None:
 
 def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     prepared_tape = _rewrite_first_rule_field(tape.runtime_tape, STATE, ("1",))
 
     try:
@@ -529,7 +529,7 @@ def test_meta_asm_host_copy_local_global_raises_on_delimiter_mismatch() -> None:
 
 def test_lowered_copy_local_global_stucks_on_delimiter_mismatch() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _rewrite_first_rule_field(tape.runtime_tape, STATE, ("1",))
@@ -544,7 +544,7 @@ def test_lowered_copy_local_global_stucks_on_delimiter_mismatch() -> None:
 
 def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _set_head_cell(tape, 4)
@@ -561,7 +561,7 @@ def test_copy_head_symbol_to_matches_later_blank_cell() -> None:
 def test_copy_head_symbol_to_matches_left_band_cell() -> None:
     fixture = load_fixture("incrementer")
     source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    tape = compile_tm_to_universal_tape(
+    tape = compile_tm_to_encoded_tape(
         fixture.tm_program,
         source_tape,
         initial_state=fixture.initial_state,
@@ -582,7 +582,7 @@ def test_copy_head_symbol_to_matches_left_band_cell() -> None:
 
 def test_copy_global_to_head_symbol_matches_later_cell() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     prepared_tape = _set_global_bits_on_runtime_tape(tape, _set_head_cell(tape, 3), CUR_SYMBOL, "00")
@@ -598,7 +598,7 @@ def test_copy_global_to_head_symbol_matches_later_cell() -> None:
 def test_copy_global_to_head_symbol_matches_left_band_cell() -> None:
     fixture = load_fixture("incrementer")
     source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    tape = compile_tm_to_universal_tape(
+    tape = compile_tm_to_encoded_tape(
         fixture.tm_program,
         source_tape,
         initial_state=fixture.initial_state,
@@ -620,7 +620,7 @@ def test_copy_global_to_head_symbol_matches_left_band_cell() -> None:
 
 def test_find_head_cell_branches_to_stuck_at_end_tape_boundary() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, FindHeadCell(), state="start", continuation_label="DONE")
@@ -633,7 +633,7 @@ def test_find_head_cell_branches_to_stuck_at_end_tape_boundary() -> None:
 
 def test_move_sim_head_right_constructs_blank_at_end_tape_boundary() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     last_cell = len([token for token in tape.right_band if token == CELL]) - 1
@@ -654,7 +654,7 @@ def test_move_sim_head_right_constructs_blank_at_end_tape_boundary() -> None:
 
 def test_move_sim_head_left_constructs_blank_at_tape_left_boundary() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     builder = TMBuilder(alphabet)
     assemble_instruction(builder, MoveSimHeadLeft(tape.encoding.symbol_width), state="start", continuation_label="DONE")
@@ -674,7 +674,7 @@ def test_move_sim_head_left_constructs_blank_at_tape_left_boundary() -> None:
 def test_move_sim_head_left_crosses_to_materialized_left_band() -> None:
     fixture = load_fixture("incrementer")
     source_tape = SourceTape.from_bands(right_band=("1",), left_band=("_",), head=0, blank="_")
-    tape = compile_tm_to_universal_tape(
+    tape = compile_tm_to_encoded_tape(
         fixture.tm_program,
         source_tape,
         initial_state=fixture.initial_state,
@@ -697,7 +697,7 @@ def test_move_sim_head_left_crosses_to_materialized_left_band() -> None:
 def test_meta_asm_host_finds_and_reads_left_band_head_cell() -> None:
     fixture = load_fixture("incrementer")
     source_tape = SourceTape.from_bands(right_band=("0",), left_band=("1",), head=-1, blank="_")
-    tape = compile_tm_to_universal_tape(
+    tape = compile_tm_to_encoded_tape(
         fixture.tm_program,
         source_tape,
         initial_state=fixture.initial_state,
@@ -719,7 +719,7 @@ def test_meta_asm_host_finds_and_reads_left_band_head_cell() -> None:
 
 def test_meta_asm_host_moves_between_right_and_left_simulated_tape() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     program = Program(
         blocks=(
             Block(
@@ -758,7 +758,7 @@ def test_lower_instruction_to_routine_is_inspectable() -> None:
 
 def test_compile_routine_keeps_seek_cfg_structured() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     routine = lower_instruction_to_routine(Seek(RULES, "L"), state="start", cont="DONE")
     cfg = compile_routine(routine, NameSupply("seek_test"))
@@ -967,7 +967,7 @@ def test_validate_program_cfgs_rejects_cross_routine_duplicate_coverage() -> Non
 
 def test_program_to_cfgs_returns_inspectable_cfgs_before_assembly() -> None:
     fixture = load_fixture("incrementer")
-    program = build_universal_meta_asm(fixture.build_tape().encoding)
+    program = build_universal_meta_asm(fixture.build_encoded_tape().encoding)
     cfgs = program_to_cfgs(program)
 
     assert cfgs
@@ -1033,7 +1033,7 @@ def test_lower_program_with_source_map_maps_second_routine_rows_back_to_goto() -
 
 def test_lowered_incrementer_matches_host_run() -> None:
     fixture = load_fixture("incrementer")
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     left_addresses = list(range(-len(tape.left_band), 0))

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make a wider generated UTM host run a valid narrower encoded band without
+Make a wider generated UTM host run a valid narrower encoded tape without
 padding or reinterpreting guest fields, while preserving exact-ABI behavior.
 
 ## Scope
@@ -86,7 +86,7 @@ Out of scope:
 - 2026-05-06 07:43 EEST: S2 completed. Added `COMPARE_GLOBAL_GLOBAL`, switched
   the universal program to band-field halt and direction comparisons, updated
   debugger/trace expectations, and kept compare semantics exact-width for now.
-  Validation: `uv run python -m pytest tests/test_meta_asm.py tests/test_semantic_objects.py::test_universal_dispatch_treats_non_left_non_right_direction_as_stay tests/test_lowering.py::test_lowered_start_step_matches_host_block tests/test_lowering.py::test_compare_global_global_matches_host_block tests/test_debugger_session.py::test_session_status_query_and_render_include_cursor_latest_and_max_raw tests/test_debugger_session.py::test_session_where_renders_setup_for_entry_location tests/test_debugger_presenter.py::test_presenter_status_doc_exposes_block_structure tests/test_raw_trace.py::test_format_trace_view_renders_semantic_summary_for_decoded_band tests/test_tm_file_input.py::test_cli_trace_emits_raw_instruction_and_block_levels`.
+  Validation: `uv run python -m pytest tests/test_meta_asm.py tests/test_semantic_objects.py::test_universal_dispatch_treats_non_left_non_right_direction_as_stay tests/test_lowering.py::test_lowered_start_step_matches_host_block tests/test_lowering.py::test_compare_global_global_matches_host_block tests/test_debugger_session.py::test_session_status_query_and_render_include_cursor_latest_and_max_raw tests/test_debugger_session.py::test_session_where_renders_setup_for_entry_location tests/test_debugger_presenter.py::test_presenter_status_doc_exposes_block_structure tests/test_raw_trace.py::test_format_trace_view_renders_semantic_summary_for_decoded_utm_view tests/test_tm_file_input.py::test_cli_trace_emits_raw_instruction_and_block_levels`.
 - 2026-05-06 07:49 EEST: S3 completed. MetaASM host compare/copy now uses
   delimiter-aware, width-bounded field and cell regions while preserving
   destination terminator shape. Validation: `uv run python -m py_compile

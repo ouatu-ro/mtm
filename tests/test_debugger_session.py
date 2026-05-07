@@ -39,23 +39,23 @@ def _build_incrementer_session(
     request_decode: bool = False,
     max_raw: int = 100000,
 ) -> tuple[DebuggerSession, object]:
-    tape = load_fixture("incrementer").build_tape()
-    program = build_universal_meta_asm(tape.encoding)
-    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    encoded_tape = load_fixture("incrementer").build_encoded_tape()
+    program = build_universal_meta_asm(encoded_tape.encoding)
+    alphabet = sorted(set(encoded_tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        tape.runtime_tape,
-        head=start_head_from_encoded_tape(tape),
+        encoded_tape.runtime_tape,
+        head=start_head_from_encoded_tape(encoded_tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
     session = DebuggerSession(
         runner,
-        encoding=tape.encoding if request_decode else None,
+        encoding=encoded_tape.encoding if request_decode else None,
         max_raw=max_raw,
     )
-    return session, tape
+    return session, encoded_tape
 
 
 def _build_meta_session_for_block_step() -> RawTraceRunner:
@@ -127,13 +127,13 @@ def test_session_view_reports_semantic_decode_and_unavailable_mode() -> None:
 
 
 def test_session_view_reports_semantic_decode_error_without_raising() -> None:
-    tape = load_fixture("incrementer").build_tape()
-    builder = TMBuilder(sorted(set(tape.linear()) | {"0", "1"}), blank=tape.encoding.blank)
+    encoded_tape = load_fixture("incrementer").build_encoded_tape()
+    builder = TMBuilder(sorted(set(encoded_tape.linear()) | {"0", "1"}), blank=encoded_tape.encoding.blank)
     builder.emit("start", CUR_STATE, builder.halt_state, "0", S)
-    runner = RawTraceRunner(builder.build("start"), tape.runtime_tape, head=start_head_from_encoded_tape(tape))
+    runner = RawTraceRunner(builder.build("start"), encoded_tape.runtime_tape, head=start_head_from_encoded_tape(encoded_tape))
     runner.step()
 
-    session = DebuggerSession(runner, encoding=tape.encoding)
+    session = DebuggerSession(runner, encoding=encoded_tape.encoding)
     text = _render_view(session)
 
     assert "SEMANTIC     <decode error:" in text

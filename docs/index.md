@@ -37,8 +37,9 @@ Source guest compiler
   TMInstance
     -> UTMEncoded
 
-Encoded UTM band
+Encoded guest tape
   UTMEncoded
+    -> EncodedTape
     -> UTMBandArtifact
 
 Universal interpreter generator

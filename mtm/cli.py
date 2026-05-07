@@ -213,19 +213,19 @@ def _l2_artifact_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path]:
 
 def _build_fixture_debugger_session(name: str, *, max_raw: int = DEBUG_DEFAULT_MAX_RAW) -> DebuggerSession:
     fixture = load_fixture(name)
-    tape = fixture.build_tape()
-    program = build_universal_meta_asm(tape.encoding)
-    tape_symbols = tape.linear() if hasattr(tape, "linear") else tuple(tape.runtime_tape.values())
+    encoded_tape = fixture.build_encoded_tape()
+    program = build_universal_meta_asm(encoded_tape.encoding)
+    tape_symbols = encoded_tape.linear() if hasattr(encoded_tape, "linear") else tuple(encoded_tape.runtime_tape.values())
     alphabet = sorted(set(tape_symbols) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        tape.runtime_tape,
-        head=start_head_from_encoded_tape(tape),
+        encoded_tape.runtime_tape,
+        head=start_head_from_encoded_tape(encoded_tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
-    return DebuggerSession(runner, encoding=tape.encoding, max_raw=max_raw)
+    return DebuggerSession(runner, encoding=encoded_tape.encoding, max_raw=max_raw)
 
 
 def _run_debugger(session: DebuggerSession, label: str) -> int:
@@ -554,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
 
     l2_parser = _add_command(sub, "l2", help="Emit l2 artifacts from l1 .tm and l1 .utm.band artifacts.")
     l2_parser.add_argument("tm_file", metavar="L1.tm", help="L1 raw UTM transition artifact")
-    l2_parser.add_argument("band_file", metavar="L1.utm.band", help="L1 encoded band artifact")
+    l2_parser.add_argument("band_file", metavar="L1.utm.band", help="L1 .utm.band artifact")
     l2_parser.add_argument("--out-dir", required=True, metavar="DIR", help="directory for the emitted L2 artifacts")
     l2_parser.add_argument("--stem", metavar="NAME", help="artifact filename stem; defaults from the L1 band stem")
 
@@ -642,15 +642,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.input is None:
         raise SystemExit("run requires INPUT.utm.band")
     artifact = UTMBandArtifact.read(args.input)
-    tape = artifact.to_encoded_tape()
+    encoded_tape = artifact.to_encoded_tape()
     program_artifact = UTMProgramArtifact.read(args.tm_file)
     config = artifact.to_raw_instance(program_artifact)
     runtime_tape = dict(config.tape)
     result = program_artifact.run(artifact, fuel=args.max_steps)
-    final_left_band, final_right_band = tape.left_band, tape.right_band
+    final_left_band, final_right_band = encoded_tape.left_band, encoded_tape.right_band
     if result["tape"] != runtime_tape:
         final_left_band, final_right_band = split_runtime_tape(result["tape"])
-    final_band = EncodedTape(tape.encoding, final_left_band, final_right_band)
+    final_encoded_tape = EncodedTape(encoded_tape.encoding, final_left_band, final_right_band)
     print(f"FINAL STATUS: {result['status']}")
     print(f"FINAL STATE: {result['state']}")
     print(f"FINAL HEAD: {result['head']}")
@@ -658,11 +658,11 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print("FINAL REGISTERS")
     print()
-    print(pretty_registers(final_band.encoding, final_band.left_band))
+    print(pretty_registers(final_encoded_tape.encoding, final_encoded_tape.left_band))
     print()
     print("FINAL TAPE")
     print()
-    print(pretty_tape(final_band.encoding, final_band.right_band))
+    print(pretty_tape(final_encoded_tape.encoding, final_encoded_tape.right_band))
     return 0
 
 

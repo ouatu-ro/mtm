@@ -36,7 +36,7 @@ Built-in debugger fixtures live in `mtm/fixtures/`:
 
 Artifact inputs are:
 
-- `.utm.band`: encoded UTM input band
+- `.utm.band`: encoded guest tape artifact
 - `.tm`: lowered raw TM transition table
 - `.asm`: emitted Meta-ASM, for inspection
 - `.mtm.source`: safe serialized source artifact
@@ -46,7 +46,7 @@ path. That is the L2/bootstrap workflow, not the default day-to-day path.
 
 ## Compile A Python TM
 
-Compile a Python source TM into an encoded band:
+Compile a Python source TM into an encoded guest tape:
 
 ```sh
 mkdir -p out

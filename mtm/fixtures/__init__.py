@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from pkgutil import iter_modules
 
-from ..utm_band_layout import EncodedTape, compile_tm_to_universal_tape
+from ..utm_band_layout import EncodedTape, compile_tm_to_encoded_tape
 from ..source_encoding import TMAbi, TMProgram
 from ..semantic_objects import SourceTape
 
@@ -23,8 +23,8 @@ class TMFixture:
         if not isinstance(self.tape, SourceTape):
             raise TypeError("TMFixture.tape must be a SourceTape")
 
-    def build_tape(self, *, abi: TMAbi | None = None) -> EncodedTape:
-        return compile_tm_to_universal_tape(
+    def build_encoded_tape(self, *, abi: TMAbi | None = None) -> EncodedTape:
+        return compile_tm_to_encoded_tape(
             self.tm_program,
             self.tape,
             initial_state=self.initial_state,

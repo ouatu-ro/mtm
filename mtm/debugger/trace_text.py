@@ -8,7 +8,7 @@ renderers.
 from __future__ import annotations
 
 from ..lowering.source_map import RawTransitionSource
-from ..semantic_objects import DecodedBandView, UTMSimulatedTape
+from ..semantic_objects import DecodedUTMView, UTMSimulatedTape
 from .trace import RawTraceGroupStepResult, RawTraceView
 
 
@@ -93,7 +93,7 @@ def _format_last_transition(transition) -> str:
     )
 
 
-def _format_decoded_view(view: DecodedBandView, *, semantic_window: int) -> list[str]:
+def _format_decoded_view(view: DecodedUTMView, *, semantic_window: int) -> list[str]:
     registers = view.registers
     tmp_bits = "".join(registers.tmp_bits) or "-"
     return [

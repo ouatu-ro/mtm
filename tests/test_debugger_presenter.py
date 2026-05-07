@@ -10,18 +10,18 @@ from mtm.semantic_objects import start_head_from_encoded_tape
 
 
 def _build_session() -> DebuggerSession:
-    tape = load_fixture("incrementer").build_tape()
-    program = build_universal_meta_asm(tape.encoding)
-    alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
+    encoded_tape = load_fixture("incrementer").build_encoded_tape()
+    program = build_universal_meta_asm(encoded_tape.encoding)
+    alphabet = sorted(set(encoded_tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
     runner = RawTraceRunner(
         lowered.raw_program,
-        tape.runtime_tape,
-        head=start_head_from_encoded_tape(tape),
+        encoded_tape.runtime_tape,
+        head=start_head_from_encoded_tape(encoded_tape),
         state=program.entry_label,
         source_map=lowered.source_map,
     )
-    return DebuggerSession(runner, encoding=tape.encoding)
+    return DebuggerSession(runner, encoding=encoded_tape.encoding)
 
 
 def test_presenter_status_doc_exposes_block_structure() -> None:

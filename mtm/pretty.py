@@ -1,4 +1,4 @@
-"""Pretty-printers for MTM fixtures and encoded bands."""
+"""Pretty-printers for MTM fixtures and encoded tapes."""
 
 from __future__ import annotations
 
@@ -211,20 +211,20 @@ def pretty_runtime_tape(runtime_tape: dict[int, str]) -> str:
     return section("RUNTIME TAPE", table(["addr", "side", "value"], rows))
 
 
-def pretty_band(band: EncodedTape, *, show_runtime: bool = False) -> str:
+def pretty_encoded_tape(encoded_tape: EncodedTape, *, show_runtime: bool = False) -> str:
     parts = [
-        pretty_encoding(band.encoding),
-        pretty_registers(band.encoding, band.left_band),
-        pretty_rules(band.encoding, band.left_band),
-        pretty_tape(band.encoding, band.right_band),
+        pretty_encoding(encoded_tape.encoding),
+        pretty_registers(encoded_tape.encoding, encoded_tape.left_band),
+        pretty_rules(encoded_tape.encoding, encoded_tape.left_band),
+        pretty_tape(encoded_tape.encoding, encoded_tape.right_band),
     ]
     if show_runtime:
-        parts.append(pretty_runtime_tape(band.runtime_tape))
+        parts.append(pretty_runtime_tape(encoded_tape.runtime_tape))
     return ("\n\n" + "=" * 88 + "\n\n").join(parts)
 
 
 def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
-    tape = fixture.build_tape()
+    encoded_tape = fixture.build_encoded_tape()
     summary = section(
         "FIXTURE",
         table(
@@ -234,14 +234,14 @@ def pretty_fixture(fixture, *, show_runtime: bool = False) -> str:
                 ["note", fixture.note or "-"],
                 ["source tape", "".join(fixture.tape.cells)],
                 ["source head", fixture.tape.head],
-                ["states", len(tape.encoding.state_ids)],
-                ["symbols", len(tape.encoding.symbol_ids)],
+                ["states", len(encoded_tape.encoding.state_ids)],
+                ["symbols", len(encoded_tape.encoding.symbol_ids)],
                 ["rules", len(fixture.tm_program)],
             ],
         ),
     )
-    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_band(tape, show_runtime=show_runtime)
+    return summary + "\n\n" + "=" * 88 + "\n\n" + pretty_encoded_tape(encoded_tape, show_runtime=show_runtime)
 
 
-__all__ = ["dir_name", "format_bits", "parse_registers", "parse_rules", "parse_tape", "pretty_band", "pretty_encoding",
+__all__ = ["dir_name", "format_bits", "parse_registers", "parse_rules", "parse_tape", "pretty_encoded_tape", "pretty_encoding",
            "pretty_fixture", "pretty_runtime_tape", "pretty_registers", "pretty_rules", "pretty_tape", "section", "table"]

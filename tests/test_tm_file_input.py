@@ -40,7 +40,7 @@ def _write_tm_file(tmp_path: Path) -> Path:
 def test_load_python_tm_file(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
 
     assert fixture.name == "incrementer_tm"
     assert isinstance(fixture.tm_program, TMProgram)
@@ -195,7 +195,7 @@ def test_cli_emit_source_from_example_file(tmp_path: Path) -> None:
 def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     utm_path = tmp_path / "incrementer.utm.band"
 
     utm_artifact_from_tape(tape).write(utm_path)
@@ -210,7 +210,7 @@ def test_utm_artifact_roundtrip(tmp_path: Path) -> None:
 def test_primary_program_and_band_artifact_readers(tmp_path: Path) -> None:
     tm_path = _write_tm_file(tmp_path)
     fixture = load_python_tm(tm_path)
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     utm_path = tmp_path / "incrementer.utm.band"
     raw_tm_path = tmp_path / "utm.tm"
 

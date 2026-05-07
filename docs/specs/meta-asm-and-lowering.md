@@ -233,7 +233,7 @@ Wd = encoding.direction_width
 ```
 
 These widths are upper bounds for runtime routines. Guest-owned constants are
-read from the encoded band:
+read from the encoded guest tape:
 
 ```text
 #HALT_STATE

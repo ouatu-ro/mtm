@@ -167,7 +167,7 @@ def _target_abi_from_minimal_abi(minimal_abi: TMAbi) -> TMAbi:
     )
 
 
-def compile_tm_to_universal_tape(
+def compile_tm_to_encoded_tape(
     tm_program: TMProgram,
     source_tape: "SourceTape",
     *,
@@ -175,7 +175,7 @@ def compile_tm_to_universal_tape(
     halt_state: str,
     abi: TMAbi | None = None,
 ) -> EncodedTape:
-    """Compile a source TM and source tape into concrete UTM input bands."""
+    """Compile a source TM and source tape into a concrete encoded tape."""
 
     if tm_program.blank != source_tape.blank:
         raise ValueError(
@@ -209,5 +209,5 @@ __all__ = ["BLANK_SYMBOL", "CELL", "CMP_FLAG", "CUR_STATE", "CUR_SYMBOL", "END_C
            "RIGHT_DIR", "RUNTIME_BLANK", "READ", "REGS", "RULE", "RULES", "STATE", "TAPE", "TAPE_LEFT",
            "END_TAPE_LEFT", "TMP", "WRITE", "WRITE_SYMBOL", "build_left_tape_band_from_source_tape",
            "UTM_STRUCTURAL_ALPHABET", "build_register_band", "build_rule_band", "build_tape_band_from_source_tape",
-           "compile_tm_to_universal_tape", "materialize_runtime_tape", "place_on_negative_side",
+           "compile_tm_to_encoded_tape", "materialize_runtime_tape", "place_on_negative_side",
            "place_on_positive_side", "split_runtime_tape", "wrap_field"]

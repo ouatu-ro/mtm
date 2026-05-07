@@ -34,7 +34,7 @@ def set_head_cell(band, cell_index: int):
 
 
 def lowering_smoke_rows(fixture: TMFixture) -> list[list[object]]:
-    tape = fixture.build_tape()
+    tape = fixture.build_encoded_tape()
     left_band = tape.left_band
     left_addresses = list(range(-len(left_band), 0))
     address_of = lambda marker: left_addresses[left_band.index(marker)]

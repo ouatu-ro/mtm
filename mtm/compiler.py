@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .utm_band_layout import compile_tm_to_universal_tape
+from .utm_band_layout import compile_tm_to_encoded_tape
 from .semantic_objects import TMAbi, TMInstance, UTMEncoded, infer_minimal_abi, utm_encoded_from_tape
 
 
@@ -38,14 +38,14 @@ class Compiler:
 
         self._validate_instance(instance)
         initial_state, halt_state = self._resolve_states(instance)
-        tape = compile_tm_to_universal_tape(
+        encoded_tape = compile_tm_to_encoded_tape(
             instance.program,
             instance.tape,
             initial_state=initial_state,
             halt_state=halt_state,
             abi=self.target_abi,
         )
-        return utm_encoded_from_tape(tape)
+        return utm_encoded_from_tape(encoded_tape)
 
     def _resolve_states(self, instance: TMInstance) -> tuple[str, str]:
         """Resolve initial/halt states from the instance or compiler defaults."""

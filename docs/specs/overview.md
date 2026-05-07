@@ -8,14 +8,14 @@ audience: implementers
 ## 1. Goal
 
 Build a staged system where a source-level Turing machine is compiled into an
-encoded UTM input band, and a generated universal interpreter executes that band
-on an ordinary TM runner.
+encoded guest tape artifact, and a generated universal interpreter executes that
+artifact on an ordinary TM runner.
 
 The two primary emitted runtime artifacts are:
 
 ```text
 object.l1.tm        lowered universal-machine transition program for level 1
-object.l1.utm.band  encoded guest input band for level 1
+object.l1.utm.band  encoded guest tape artifact for level 1
 ```
 
 Execution pairs them as:
@@ -32,6 +32,7 @@ There are two compilation pipelines:
 Source-guest compiler:
   TMInstance
   -> UTMEncoded
+  -> EncodedTape
   -> UTMBandArtifact
 
 Universal interpreter compiler:
@@ -48,6 +49,7 @@ second path for raw guests:
 Raw-guest compiler:
   RawTMInstance
   -> UTMEncoded
+  -> EncodedTape
   -> UTMBandArtifact
 ```
 
@@ -216,7 +218,7 @@ Artifact output:
 object.l1.utm.band
 ```
 
-The encoded band contains:
+The concrete encoded tape contains:
 
 ```text
 negative simulated tape
@@ -300,7 +302,7 @@ Responsibilities:
 
 * persist raw executable transition tables
 * optionally persist host ABI metadata
-* execute encoded UTM bands
+* execute encoded UTM tapes
 
 ---
 
@@ -345,7 +347,7 @@ state:
 EncodedTape
   + Encoding
     ↓
-DecodedBandView
+DecodedUTMView
 ```
 
 Responsibilities:
@@ -449,5 +451,5 @@ Primary objects:
 - `TMTransitionProgram`
 - `UTMProgramArtifact`
 - `RawTMInstance`
-- `DecodedBandView`
+- `DecodedUTMView`
 - `SourceArtifact`

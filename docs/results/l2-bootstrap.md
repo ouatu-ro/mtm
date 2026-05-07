@@ -8,12 +8,12 @@ bootstrap story:
 
 ```text
 source TMProgram + source SourceTape
-  -> L1 UTM host + L1 encoded band
-  -> L2 UTM host + L2 encoded band
+  -> L1 UTM host + L1 encoded guest tape
+  -> L2 UTM host + L2 encoded guest tape
 ```
 
-At L1, the source program and source input band are encoded into one UTM band,
-then run by a lowered UTM host. At L2, the L1 raw host and L1 runtime band are
+At L1, the source program and source input tape are encoded into one UTM tape,
+then run by a lowered UTM host. At L2, the L1 raw host and L1 runtime tape are
 themselves encoded as a guest and run by another UTM.
 
 This gets large quickly. The L2 guest is no longer the tiny source incrementer;

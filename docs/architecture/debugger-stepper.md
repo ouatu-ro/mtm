@@ -59,14 +59,14 @@ an encoded source machine.
 ## 4. Semantic band decode
 
 `RawTraceRunner.current_view(encoding=...)` adds a decoded semantic view when
-the current runtime tape is a coherent encoded UTM band.
+the current runtime tape can be split into a coherent EncodedTape.
 
 `RawTraceView` combines:
 
 - the current raw snapshot
 - the next raw row
 - source metadata for the next or last row
-- an optional `DecodedBandView`
+- an optional `DecodedUTMView`
 
 This is the teaching-friendly "show me both the raw interpreter state and the
 simulated source-machine state" layer.

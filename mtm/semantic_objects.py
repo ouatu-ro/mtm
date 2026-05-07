@@ -179,8 +179,9 @@ class UTMEncoded:
     """A source TM compiled into semantic universal-machine input.
 
     The object is still semantic: registers, rule records, and simulated tape
-    are named fields. Use ``to_encoded_tape`` or ``to_band_artifact`` when a
-    concrete ``.utm.band`` layout is needed.
+    are named fields. Use ``to_encoded_tape`` or ``to_band_artifact`` when
+    concrete encoded tape contents or the ``.utm.band`` tape artifact are
+    needed.
     """
 
     encoding: Encoding
@@ -197,7 +198,7 @@ class UTMEncoded:
     def current_state(self) -> str: return self.registers.cur_state
 
     def to_encoded_tape(self) -> EncodedTape:
-        """Materialize this semantic object into the concrete band layout."""
+        """Materialize this semantic object into the concrete encoded tape layout."""
 
         left_band = _left_tape_band_from_semantics(self.encoding, self.simulated_tape)
         left_band += _register_band_from_semantics(self.encoding, self.registers)
@@ -212,14 +213,14 @@ class UTMEncoded:
         )
 
     def to_band_artifact(self) -> "UTMBandArtifact":
-        """Return the serializable ``.utm.band`` artifact object."""
+        """Return the serializable tape artifact object for ``.utm.band``."""
 
         return utm_artifact_from_tape(self.to_encoded_tape(), minimal_abi=self.minimal_abi)
 
-    def decoded_view(self) -> "DecodedBandView":
+    def decoded_view(self) -> "DecodedUTMView":
         """Return a decoded read-only view of this encoded UTM input."""
 
-        return DecodedBandView(
+        return DecodedUTMView(
             registers=self.registers,
             rules=self.rules,
             simulated_tape=self.simulated_tape,
@@ -243,7 +244,7 @@ class UTMBandArtifact:
     minimal_abi: TMAbi
 
     def to_encoded_tape(self) -> EncodedTape:
-        """Convert this artifact to the lower-level encoded band layout."""
+        """Convert this artifact to the lower-level concrete encoded tape layout."""
 
         return encoded_tape_from_utm_artifact(self)
 
@@ -325,8 +326,8 @@ class UTMProgramArtifact:
 
 
 @dataclass(frozen=True)
-class DecodedBandView:
-    """Decoded semantic view recovered from an encoded UTM band."""
+class DecodedUTMView:
+    """Decoded semantic view recovered from an encoded UTM tape."""
 
     registers: UTMRegisters
     rules: tuple[UTMEncodedRule, ...]
@@ -597,20 +598,20 @@ def compile_raw_guest(
     )
 
 
-def start_head_from_encoded_tape(band: EncodedTape) -> int:
-    left_addresses = list(range(-len(band.left_band), 0))
-    return left_addresses[band.left_band.index("#CUR_STATE")]
+def start_head_from_encoded_tape(encoded_tape: EncodedTape) -> int:
+    left_addresses = list(range(-len(encoded_tape.left_band), 0))
+    return left_addresses[encoded_tape.left_band.index("#CUR_STATE")]
 
 
-def decoded_view_from_encoded_tape(band: EncodedTape) -> DecodedBandView:
-    registers, rule_start = parse_registers(band.encoding, band.left_band)
-    rules = tuple(UTMEncodedRule(*rule) for rule in parse_rules(band.encoding, band.left_band, rule_start))
-    left_cells, left_head = parse_left_tape(band.encoding, band.left_band)
-    right_cells, right_head = parse_tape(band.encoding, band.right_band, require_head=False)
+def decoded_view_from_encoded_tape(encoded_tape: EncodedTape) -> DecodedUTMView:
+    registers, rule_start = parse_registers(encoded_tape.encoding, encoded_tape.left_band)
+    rules = tuple(UTMEncodedRule(*rule) for rule in parse_rules(encoded_tape.encoding, encoded_tape.left_band, rule_start))
+    left_cells, left_head = parse_left_tape(encoded_tape.encoding, encoded_tape.left_band)
+    right_cells, right_head = parse_tape(encoded_tape.encoding, encoded_tape.right_band, require_head=False)
     heads = [head for head in (left_head, right_head) if head is not None]
     if len(heads) != 1:
-        raise ValueError("encoded UTM band must contain exactly one simulated head")
-    return DecodedBandView(
+        raise ValueError("encoded UTM tape must contain exactly one simulated head")
+    return DecodedUTMView(
         registers=UTMRegisters(
             cur_state=registers["CUR_STATE"],
             cur_symbol=registers["CUR_SYMBOL"],
@@ -629,42 +630,42 @@ def decoded_view_from_encoded_tape(band: EncodedTape) -> DecodedBandView:
             left_band=tuple(left_cells),
             right_band=tuple(right_cells),
             head=heads[0],
-            blank=band.encoding.blank,
+            blank=encoded_tape.encoding.blank,
         ),
-        encoding=band.encoding,
+        encoding=encoded_tape.encoding,
     )
 
 
-def _target_abi_for_encoded_tape(band: EncodedTape) -> TMAbi:
-    return band.target_abi or abi_from_encoding(band.encoding)
+def _target_abi_for_encoded_tape(encoded_tape: EncodedTape) -> TMAbi:
+    return encoded_tape.target_abi or abi_from_encoding(encoded_tape.encoding)
 
 
-def _minimal_abi_for_encoded_tape(band: EncodedTape) -> TMAbi:
-    return band.minimal_abi or _target_abi_for_encoded_tape(band)
+def _minimal_abi_for_encoded_tape(encoded_tape: EncodedTape) -> TMAbi:
+    return encoded_tape.minimal_abi or _target_abi_for_encoded_tape(encoded_tape)
 
 
-def utm_encoded_from_tape(band: EncodedTape, *, minimal_abi: TMAbi | None = None) -> UTMEncoded:
-    view = decoded_view_from_encoded_tape(band)
-    target_abi = _target_abi_for_encoded_tape(band)
+def utm_encoded_from_tape(encoded_tape: EncodedTape, *, minimal_abi: TMAbi | None = None) -> UTMEncoded:
+    view = decoded_view_from_encoded_tape(encoded_tape)
+    target_abi = _target_abi_for_encoded_tape(encoded_tape)
     return UTMEncoded(
-        encoding=band.encoding,
+        encoding=encoded_tape.encoding,
         registers=view.registers,
         rules=view.rules,
         simulated_tape=view.simulated_tape,
-        minimal_abi=_minimal_abi_for_encoded_tape(band) if minimal_abi is None else minimal_abi,
+        minimal_abi=_minimal_abi_for_encoded_tape(encoded_tape) if minimal_abi is None else minimal_abi,
         target_abi=target_abi,
     )
 
 
-def utm_artifact_from_tape(band: EncodedTape, *, minimal_abi: TMAbi | None = None) -> UTMBandArtifact:
-    target_abi = _target_abi_for_encoded_tape(band)
+def utm_artifact_from_tape(encoded_tape: EncodedTape, *, minimal_abi: TMAbi | None = None) -> UTMBandArtifact:
+    target_abi = _target_abi_for_encoded_tape(encoded_tape)
     return UTMBandArtifact(
-        encoding=band.encoding,
-        left_band=tuple(band.left_band),
-        right_band=tuple(band.right_band),
-        start_head=start_head_from_encoded_tape(band),
+        encoding=encoded_tape.encoding,
+        left_band=tuple(encoded_tape.left_band),
+        right_band=tuple(encoded_tape.right_band),
+        start_head=start_head_from_encoded_tape(encoded_tape),
         target_abi=target_abi,
-        minimal_abi=_minimal_abi_for_encoded_tape(band) if minimal_abi is None else minimal_abi,
+        minimal_abi=_minimal_abi_for_encoded_tape(encoded_tape) if minimal_abi is None else minimal_abi,
     )
 
 
@@ -678,7 +679,7 @@ def encoded_tape_from_utm_artifact(artifact: UTMBandArtifact) -> EncodedTape:
     )
 
 
-__all__ = ["DecodedBandView", "RawTMInstance", "SourceArtifact", "SourceTape", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
+__all__ = ["DecodedUTMView", "RawTMInstance", "SourceArtifact", "SourceTape", "TMAbi", "TMInstance", "UTMEncoded", "UTMProgramArtifact",
            "UTMBandArtifact", "UTMEncodedRule", "UTMRegisters", "UTMSimulatedTape", "abi_from_encoding",
            "build_raw_guest_encoding", "compile_raw_guest", "decoded_view_from_encoded_tape", "encoded_tape_from_utm_artifact",
            "infer_minimal_abi", "infer_raw_guest_minimal_abi", "start_head_from_encoded_tape",

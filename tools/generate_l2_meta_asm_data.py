@@ -99,7 +99,7 @@ def _head_position(left: tuple[str, ...], right: tuple[str, ...]) -> tuple[int, 
     for ordinal, index in enumerate(right_cells):
         if right[index + 1] == HEAD:
             return 1, ordinal
-    raise ValueError("encoded band has no simulated head")
+    raise ValueError("encoded tape has no simulated head")
 
 
 def _array(name: str, values: list[int] | tuple[int, ...], *, ctype: str = "int") -> list[str]:

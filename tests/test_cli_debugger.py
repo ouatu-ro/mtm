@@ -16,7 +16,7 @@ import mtm.semantic_objects
 def _install_debugger_stubs(monkeypatch):
     calls = {
         "load_fixture": [],
-        "build_tape": [],
+        "build_encoded_tape": [],
         "build_universal": [],
         "lower_with_source_map": [],
         "start_head": [],
@@ -36,8 +36,8 @@ def _install_debugger_stubs(monkeypatch):
     class FakeFixture:
         name = "incrementer"
 
-        def build_tape(self):
-            calls["build_tape"].append(self.name)
+        def build_encoded_tape(self):
+            calls["build_encoded_tape"].append(self.name)
             return fake_band
 
     class FakeRawTraceRunner:
@@ -115,7 +115,7 @@ def test_cli_dbg_positional_fixture_uses_shell_startup_path(monkeypatch, capsys)
     assert exit_code == 0
     assert output.strip() == "formatted:startup:incrementer"
     assert calls["load_fixture"] == ["incrementer"]
-    assert calls["build_tape"] == ["incrementer"]
+    assert calls["build_encoded_tape"] == ["incrementer"]
     assert calls["build_universal"] == ["encoding"]
     assert calls["lower_with_source_map"] == [("START_STEP", 3)]
     assert calls["start_head"] == [True]

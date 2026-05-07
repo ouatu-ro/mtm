@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..lowering.source_map import RawTransitionSource
-from ..semantic_objects import DecodedBandView
+from ..semantic_objects import DecodedUTMView
 from ..source_encoding import Encoding
 from .instructions import explain_meta_instruction
 from .trace import RawTraceRunner, RawTraceSnapshot
@@ -216,7 +216,7 @@ class TraceFacts:
     def _semantic_fact(self) -> SemanticFact:
         if self.encoding is None:
             return SemanticFact(status="unavailable")
-        decoded_view: DecodedBandView | None = None
+        decoded_view: DecodedUTMView | None = None
         decode_error: str | None = None
         try:
             decoded_view = self.runner.current_view(encoding=self.encoding).decoded_view

@@ -289,7 +289,7 @@ def test_raw_trace_grouped_block_step_and_back_follow_source_boundaries() -> Non
 
 
 def test_raw_trace_grouped_source_step_advances_to_next_utm_cycle_boundary() -> None:
-    tape = load_fixture("incrementer").build_tape()
+    tape = load_fixture("incrementer").build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
@@ -312,7 +312,7 @@ def test_raw_trace_grouped_source_step_advances_to_next_utm_cycle_boundary() -> 
 
 
 def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_boundary() -> None:
-    tape = load_fixture("incrementer").build_tape()
+    tape = load_fixture("incrementer").build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
@@ -352,7 +352,7 @@ def test_raw_trace_grouped_source_step_back_rewinds_to_previous_utm_cycle_bounda
 
 
 def test_raw_trace_grouped_source_step_back_rewinds_to_initial_boundary() -> None:
-    tape = load_fixture("incrementer").build_tape()
+    tape = load_fixture("incrementer").build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
@@ -489,7 +489,7 @@ def test_raw_trace_grouped_source_step_uses_configured_boundary_label() -> None:
 
 
 def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
-    tape = load_fixture("incrementer").build_tape()
+    tape = load_fixture("incrementer").build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)
@@ -516,7 +516,7 @@ def test_raw_trace_current_view_projects_raw_and_decoded_state() -> None:
 
 
 def test_raw_trace_current_view_reports_decode_error_for_incoherent_runtime_tape() -> None:
-    tape = load_fixture("incrementer").build_tape()
+    tape = load_fixture("incrementer").build_encoded_tape()
     start_head = start_head_from_encoded_tape(tape)
     builder = TMBuilder(sorted(set(tape.linear()) | {"0", "1"}), blank=tape.encoding.blank)
     builder.emit("start", CUR_STATE, builder.halt_state, "0", S)
@@ -588,8 +588,8 @@ def test_format_source_location_and_group_step_result_render_lowered_location() 
     ])
 
 
-def test_format_trace_view_renders_semantic_summary_for_decoded_band() -> None:
-    tape = load_fixture("incrementer").build_tape()
+def test_format_trace_view_renders_semantic_summary_for_decoded_utm_view() -> None:
+    tape = load_fixture("incrementer").build_encoded_tape()
     program = build_universal_meta_asm(tape.encoding)
     alphabet = sorted(set(tape.linear()) | {"0", "1", ACTIVE_RULE})
     lowered = lower_program_with_source_map(program, alphabet)

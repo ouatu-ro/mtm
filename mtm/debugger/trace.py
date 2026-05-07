@@ -16,7 +16,7 @@ from typing import Callable, Mapping
 
 from ..lowering.source_map import RawTransitionSource, TransitionSourceMap
 from ..raw_transition_tm import TMTransitionProgram, Transition, TransitionKey
-from ..semantic_objects import DecodedBandView, decoded_view_from_encoded_tape
+from ..semantic_objects import DecodedUTMView, decoded_view_from_encoded_tape
 from ..source_encoding import Encoding
 from ..utm_band_layout import EncodedTape
 
@@ -96,7 +96,7 @@ class RawTraceView:
     next_raw_transition_source: RawTransitionSource | None
     last_transition: RawTraceTransition | None
     last_transition_source: RawTransitionSource | None
-    decoded_view: DecodedBandView | None
+    decoded_view: DecodedUTMView | None
     decode_error: str | None
 
 
@@ -359,8 +359,8 @@ class RawTraceRunner:
         decode_error = None
         if encoding is not None:
             try:
-                tape = EncodedTape.from_runtime_tape(encoding, self.current.tape_dict())
-                decoded_view = decoded_view_from_encoded_tape(tape)
+                encoded_tape = EncodedTape.from_runtime_tape(encoding, self.current.tape_dict())
+                decoded_view = decoded_view_from_encoded_tape(encoded_tape)
             except Exception as exc:  # pragma: no cover - exercised through public fields
                 decode_error = f"{type(exc).__name__}: {exc}"
         return RawTraceView(

@@ -33,7 +33,7 @@ Semantic interpretation requires:
 
 - `Encoding`
 - UTM layout grammar
-- encoded runtime tape or `UTMBandArtifact`
+- concrete encoded tape (`EncodedTape`) or `UTMBandArtifact`
 
 So:
 
@@ -184,12 +184,12 @@ Responsibilities:
 - preserve source-level meaning during UTM decode and debugging
 
 `Encoding` is not required to execute the raw machine. It is required to say
-what an encoded band means semantically.
+what a concrete encoded tape means semantically.
 
 ## 4. Semantic Compiled Guest Objects
 
 These objects describe the compiled guest before it is flattened into concrete
-left/right UTM bands.
+encoded tape contents.
 
 ### `UTMRegisters`
 
@@ -262,16 +262,16 @@ Current code:
 Responsibilities:
 
 - expose the guest in semantic UTM form
-- materialize a concrete `EncodedTape`
+- materialize concrete encoded tape contents as an `EncodedTape`
 - emit a serializable `UTMBandArtifact`
-- expose a `DecodedBandView`
+- expose a `DecodedUTMView`
 
 Important methods:
 
 ```python
 encoded.to_encoded_tape() -> EncodedTape
 encoded.to_band_artifact() -> UTMBandArtifact
-encoded.decoded_view() -> DecodedBandView
+encoded.decoded_view() -> DecodedUTMView
 ```
 
 ## 5. Interpreter and Lowering IR
@@ -418,15 +418,15 @@ the current API.
 
 ### `UTMBandArtifact`
 
-Serializable encoded guest input emitted as `*.utm.band`.
+Serializable encoded guest tape input emitted as `*.utm.band`.
 
 Current code:
 
 - class: `mtm.semantic_objects.UTMBandArtifact`
 - fields:
   - `encoding`
-  - `left_band`
-  - `right_band`
+  - `left_band` token region
+  - `right_band` token region
   - `start_head`
   - `target_abi`
   - `minimal_abi`
@@ -465,7 +465,7 @@ not as an object field.
 
 It should carry:
 
-- concrete encoded band contents
+- concrete encoded tape contents
 - `start_head`
 - `Encoding`
 - `target_abi`
@@ -706,7 +706,7 @@ cleanup, but it is not the current generic run API.
 - `UTMProgramArtifact` = typed wrapper around a host `.tm`
 - `TMTransitionProgram` = raw executable transition table
 - `RawTMInstance` = raw program plus tape/head/state, used for running and recursive guest compilation
-- `DecodedBandView` = decoded semantic inspection view
+- `DecodedUTMView` = decoded semantic inspection view
 - `TransitionSourceMap` = raw-row-to-lowered-source provenance
 - `RawTraceRunner` = reversible raw debugger
 - `TraceFacts` / `DebuggerQueries` = debugger read model
